@@ -7,13 +7,15 @@ const publicPrefixes = [
   "/api/v1/health",
   "/api/v1/ready",
   "/api/v1/metrics",
-  "/muster-logo.png",
+  "/icons/",
   "/sw.js",
   "/manifest.webmanifest",
 ];
 
 export function proxy(request: NextRequest) {
-  if (publicPrefixes.some((prefix) => request.nextUrl.pathname.startsWith(prefix))) {
+  if (
+    publicPrefixes.some((prefix) => request.nextUrl.pathname.startsWith(prefix))
+  ) {
     return NextResponse.next();
   }
   const hasSession =

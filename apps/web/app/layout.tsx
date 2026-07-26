@@ -13,8 +13,18 @@ export const metadata: Metadata = {
     "Muster is the shared workspace for human and agent-driven security operations.",
   applicationName: "Muster",
   icons: {
-    icon: "/muster-logo.png",
-    apple: "/muster-logo.png",
+    icon: [
+      { url: "/icons/muster-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/icons/muster-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/muster-48.png", sizes: "48x48", type: "image/png" },
+      { url: "/icons/muster-96.png", sizes: "96x96", type: "image/png" },
+    ],
+    shortcut: [
+      { url: "/icons/muster-32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [
+      { url: "/icons/muster-180.png", sizes: "180x180", type: "image/png" },
+    ],
   },
   appleWebApp: {
     capable: true,

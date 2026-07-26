@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { test } from "@playwright/test";
 
 const captures = [
+  ["login", "/login"],
   ["workspace", "/"],
   ["room-soc-operations", "/rooms/soc-operations"],
   ["room-alerts", "/rooms/alerts"],

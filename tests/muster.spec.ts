@@ -7,6 +7,62 @@ test("local administrator can sign in", async ({ page }) => {
   await login(page);
 });
 
+test("product branding and PWA icon metadata are consistent", async ({
+  page,
+}) => {
+  const manifestResponse = await page.request.get("/manifest.webmanifest");
+  expect(manifestResponse.ok()).toBe(true);
+  expect((await manifestResponse.json()).icons).toEqual([
+    {
+      src: "/icons/muster-192.png",
+      sizes: "192x192",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: "/icons/muster-512.png",
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "any",
+    },
+  ]);
+  for (const size of [16, 32, 48, 96, 180, 192, 512]) {
+    const iconResponse = await page.request.get(`/icons/muster-${size}.png`);
+    expect(iconResponse.ok(), `${size}px icon`).toBe(true);
+    expect(iconResponse.headers()["content-type"]).toContain("image/png");
+  }
+
+  await page.goto("/login");
+  await expect(
+    page
+      .getByRole("img", { name: "Muster shield and tree logo" })
+      .filter({ visible: true }),
+  ).toBeVisible();
+  const iconLinks = await page
+    .locator('link[rel="icon"]')
+    .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+  expect(iconLinks).toEqual(
+    expect.arrayContaining([
+      "/icons/muster-16.png",
+      "/icons/muster-32.png",
+      "/icons/muster-48.png",
+      "/icons/muster-96.png",
+    ]),
+  );
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute(
+    "href",
+    "/icons/muster-180.png",
+  );
+  await page.goto("/offline");
+  await expect(
+    page.getByRole("img", { name: "Muster shield and tree logo" }),
+  ).toBeVisible();
+  await page.goto("/rooms/soc-operations");
+  await expect(
+    page.locator('img[src*="muster-32.png"]').first(),
+  ).toBeAttached();
+});
+
 test("room workspace and command palette are accessible", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveURL(/\/rooms\/soc-operations$/);

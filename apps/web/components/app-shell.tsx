@@ -361,7 +361,7 @@ export function AppShell({
       <aside className="navigation-sidebar hidden min-h-0 border-r bg-[var(--color-paper-2)] desktop:flex desktop:flex-col">
         <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
           <Image
-            src="/muster-logo.png"
+            src="/icons/muster-32.png"
             alt=""
             width={30}
             height={30}

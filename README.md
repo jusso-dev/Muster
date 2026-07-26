@@ -1,4 +1,8 @@
-# Muster
+<p align="center">
+  <img src="apps/web/public/icons/muster-96.png" alt="Muster shield and tree logo" width="96" height="96">
+</p>
+
+<h1 align="center">Muster</h1>
 
 > Muster is the shared workspace for human and agent-driven security operations.
 

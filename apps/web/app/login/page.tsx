@@ -6,8 +6,8 @@ export default function LoginPage() {
     <main className="grid min-h-dvh bg-background wide:grid-cols-[minmax(0,1.1fr)_minmax(28rem,0.9fr)]">
       <section className="hidden border-r p-12 wide:flex wide:flex-col wide:justify-between">
         <Image
-          src="/muster-logo.png"
-          alt="Muster"
+          src="/icons/muster-48.png"
+          alt="Muster shield and tree logo"
           width={48}
           height={48}
           className="size-12 rounded-lg"
@@ -33,8 +33,8 @@ export default function LoginPage() {
       <section className="grid place-items-center p-5">
         <div className="w-full max-w-sm">
           <Image
-            src="/muster-logo.png"
-            alt="Muster"
+            src="/icons/muster-48.png"
+            alt="Muster shield and tree logo"
             width={48}
             height={48}
             className="mb-8 size-12 rounded-lg wide:hidden"
