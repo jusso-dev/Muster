@@ -71,6 +71,20 @@
       "when": 1785092421777,
       "tag": "0009_task_create_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785097170408,
+      "tag": "0010_milky_songbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785097199004,
+      "tag": "0011_lazy_darkstar",
+      "breakpoints": true
     }
   ]
 }

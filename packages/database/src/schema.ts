@@ -914,6 +914,9 @@ export const agentDefinitions = pgTable(
       .notNull()
       .default(["internal"]),
     approvalRequirements: jsonb("approval_requirements").notNull().default({}),
+    requestedPermissionMode: text("requested_permission_mode")
+      .notNull()
+      .default("read_only"),
     killSwitch: boolean("kill_switch").notNull().default(false),
     ...timestamps,
   },
@@ -921,6 +924,79 @@ export const agentDefinitions = pgTable(
     uniqueIndex("agent_definitions_org_name_unique").on(
       table.organisationId,
       table.name,
+    ),
+    check(
+      "agent_definitions_requested_permission_check",
+      sql`${table.requestedPermissionMode} in ('read_only','approval_gated')`,
+    ),
+  ],
+);
+
+export const agentReadinessSnapshots = pgTable(
+  "agent_readiness_snapshots",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agentDefinitions.id),
+    processIdentity: text("process_identity").notNull(),
+    gatewayState: text("gateway_state").notNull(),
+    authenticationState: text("authentication_state").notNull(),
+    observerState: text("observer_state").notNull(),
+    lifecycleEvidenceState: text("lifecycle_evidence_state").notNull(),
+    lifecycleState: text("lifecycle_state").notNull(),
+    capabilityState: text("capability_state").notNull(),
+    toolState: text("tool_state").notNull(),
+    permissionState: text("permission_state").notNull(),
+    reportedRuntime: text("reported_runtime").notNull(),
+    reportedProvider: text("reported_provider").notNull(),
+    reportedModel: text("reported_model").notNull(),
+    inputCapabilities: jsonb("input_capabilities").notNull().default([]),
+    outputCapabilities: jsonb("output_capabilities").notNull().default([]),
+    availableCommands: jsonb("available_commands").notNull().default([]),
+    toolSources: jsonb("tool_sources").notNull().default([]),
+    toolRiskClasses: jsonb("tool_risk_classes").notNull().default([]),
+    requestedPermissionMode: text("requested_permission_mode").notNull(),
+    effectivePermissionMode: text("effective_permission_mode").notNull(),
+    limitations: jsonb("limitations").notNull().default([]),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }).notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("agent_readiness_org_agent_verified_idx").on(
+      table.organisationId,
+      table.agentId,
+      table.verifiedAt,
+    ),
+    index("agent_readiness_org_process_verified_idx").on(
+      table.organisationId,
+      table.processIdentity,
+      table.verifiedAt,
+    ),
+    check(
+      "agent_readiness_evidence_states_check",
+      sql`${table.gatewayState} in ('reported','unavailable','unknown')
+        and ${table.authenticationState} in ('reported','unavailable','unknown')
+        and ${table.observerState} in ('reported','unavailable','unknown')
+        and ${table.lifecycleEvidenceState} in ('reported','unavailable','unknown')
+        and ${table.capabilityState} in ('reported','unavailable','unknown')
+        and ${table.toolState} in ('reported','unavailable','unknown')
+        and ${table.permissionState} in ('reported','unavailable','unknown')`,
+    ),
+    check(
+      "agent_readiness_lifecycle_state_check",
+      sql`${table.lifecycleState} in ('idle','running','stopped','failed','unknown')`,
+    ),
+    check(
+      "agent_readiness_permission_modes_check",
+      sql`${table.requestedPermissionMode} in ('read_only','approval_gated','unknown')
+        and ${table.effectivePermissionMode} in ('read_only','approval_gated','unknown')`,
     ),
   ],
 );
