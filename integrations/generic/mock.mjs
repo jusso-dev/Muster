@@ -28,6 +28,18 @@ const server = createServer((request, response) => {
         },
       ],
     });
+  if (request.method === "GET" && url.pathname === "/api/alerts")
+    return json(response, 200, {
+      value: [
+        {
+          id: "synthetic-mde-alert-1",
+          title: "Synthetic Defender for Endpoint verification",
+          severity: "Low",
+          evidence: "Generated test data only",
+        },
+      ],
+      "@odata.nextLink": "",
+    });
   if (url.pathname === "/rate-limit")
     return json(
       response,
