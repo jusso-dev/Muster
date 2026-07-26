@@ -42,10 +42,10 @@ Published releases are available from GitHub Container Registry:
 docker pull ghcr.io/jusso-dev/muster:latest
 ```
 
-The default CI workflow publishes multi-architecture `linux/amd64` and
-`linux/arm64` images as `latest`, version tags, and immutable SHA tags with SBOM
-and provenance on pushes to `main`. Its final publication gate logs out of GHCR
-and verifies an anonymous pull, so CI fails if the package is not public.
+The default CI workflow publishes an Intel/AMD `linux/amd64` image as `latest`,
+version tags, and immutable SHA tags with SBOM and provenance on pushes to
+`main`. Its final publication gate logs out of GHCR and verifies an anonymous
+pull, so CI fails if the package is not public.
 
 Muster uses the Codex SDK and your ChatGPT Codex subscription for agent runs.
 Authenticate the persistent private Docker volume once:
