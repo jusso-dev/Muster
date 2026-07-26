@@ -185,7 +185,11 @@ await db
       actorType: "agent",
       displayName: "Jessie",
       identityReference: "agent:jessie-hunt",
-      capabilityAssignments: ["tawny.telemetry.read", "tawny.hunts.execute"],
+      capabilityAssignments: [
+        "tawny.telemetry.read",
+        "tawny.hunts.execute",
+        "unifi.network.read",
+      ],
     },
     {
       id: demoIds.actors.bowerHealth,
@@ -263,9 +267,17 @@ await db
       model: process.env.MUSTER_CODEX_MODEL?.trim() || "configured",
       ownerActorId: demoIds.actors.jordan,
       systemPromptVersion: "jessie-v1",
-      allowedTools: ["tawny.telemetry.read", "tawny.hunts.execute"],
+      allowedTools: [
+        "tawny.telemetry.read",
+        "tawny.hunts.execute",
+        "unifi.network.read",
+      ],
       allowedRooms: [demoIds.rooms.soc, demoIds.rooms.tawnyDirect],
-      capabilityRequirements: ["tawny.telemetry.read", "tawny.hunts.execute"],
+      capabilityRequirements: [
+        "tawny.telemetry.read",
+        "tawny.hunts.execute",
+        "unifi.network.read",
+      ],
       approvalRequirements: { externalWrites: "human" },
     },
     {

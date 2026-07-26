@@ -7,9 +7,21 @@ export const severityValues = [
   "low",
   "informational",
 ] as const;
-export const tlpValues = ["clear", "green", "amber", "amber-strict", "red"] as const;
+export const tlpValues = [
+  "clear",
+  "green",
+  "amber",
+  "amber-strict",
+  "red",
+] as const;
 export const papValues = ["clear", "green", "amber", "red"] as const;
-export const actorTypeValues = ["human", "agent", "product", "service", "system"] as const;
+export const actorTypeValues = [
+  "human",
+  "agent",
+  "product",
+  "service",
+  "system",
+] as const;
 export const roomTypeValues = [
   "operations",
   "incident",
@@ -143,13 +155,19 @@ export type MsepEventType = z.infer<typeof MsepEventTypeSchema>;
 export const EvidenceReferenceSchema = z.object({
   type: z.string().min(1).max(120),
   reference: z.string().min(1).max(500),
-  sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+  sha256: z
+    .string()
+    .regex(/^[a-fA-F0-9]{64}$/)
+    .optional(),
 });
 
 const AgentEvidenceReferenceSchema = z.object({
   type: z.string().min(1).max(120),
   reference: z.string().min(1).max(500),
-  sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).nullable(),
+  sha256: z
+    .string()
+    .regex(/^[a-fA-F0-9]{64}$/)
+    .nullable(),
 });
 
 export const MsepEnvelopeSchema = z
@@ -251,6 +269,113 @@ export const EndpointHuntResultSchema = structuredFindingBase.extend({
   networkCount: z.number().int().nonnegative(),
   fileCount: z.number().int().nonnegative(),
 });
+export const HuntResultSchema = z.object({
+  title: z.string().min(1).max(240),
+  summary: z.string().min(1).max(10_000),
+  question: z.string().min(1).max(4_000),
+  trainingMode: z.boolean(),
+  confidence: z.number().min(0).max(1),
+  queries: z
+    .array(
+      z.object({
+        source: z.string().min(1).max(160),
+        templateKey: z.string().min(1).max(80),
+        status: z.enum(["succeeded", "failed", "skipped"]),
+        recordCount: z.number().int().nonnegative(),
+        evidenceReferences: z.array(AgentEvidenceReferenceSchema).max(100),
+        gap: z.string().max(1_000).nullable(),
+      }),
+    )
+    .min(1)
+    .max(20),
+  observedFacts: z
+    .array(
+      z.object({
+        statement: z.string().min(1).max(2_000),
+        source: z.string().min(1).max(160),
+        confidence: z.number().min(0).max(1),
+        evidenceReferences: z
+          .array(AgentEvidenceReferenceSchema)
+          .min(1)
+          .max(50),
+      }),
+    )
+    .max(100),
+  inferences: z
+    .array(
+      z.object({
+        statement: z.string().min(1).max(2_000),
+        basis: z.string().min(1).max(2_000),
+        confidence: z.number().min(0).max(1),
+        evidenceReferences: z.array(AgentEvidenceReferenceSchema).max(50),
+      }),
+    )
+    .max(100),
+  observables: z
+    .array(
+      z.object({
+        type: z.enum([
+          "ip",
+          "domain",
+          "url",
+          "hash",
+          "identity",
+          "endpoint",
+          "cloud_resource",
+        ]),
+        value: z.string().min(1).max(4_000),
+        normalizedValue: z.string().min(1).max(4_000),
+        confidence: z.number().min(0).max(1),
+        evidenceReferences: z.array(AgentEvidenceReferenceSchema).max(50),
+      }),
+    )
+    .max(200),
+  attackMappings: z
+    .array(
+      z.object({
+        techniqueId: z.string().regex(/^T\d{4}(?:\.\d{3})?$/),
+        techniqueName: z.string().min(1).max(240),
+        confidence: z.number().min(0).max(1),
+        evidenceReferences: z
+          .array(AgentEvidenceReferenceSchema)
+          .min(1)
+          .max(50),
+        supportingReferences: z.array(z.url()).max(20),
+      }),
+    )
+    .max(100),
+  evidenceReferences: z.array(AgentEvidenceReferenceSchema).max(300),
+  gaps: z.array(z.string().min(1).max(1_000)).max(50),
+  recommendedNextSteps: z.array(z.string().min(1).max(1_000)).max(30),
+  coachingNotes: z.array(z.string().min(1).max(1_000)).max(30),
+  enrichmentProposal: z
+    .object({
+      caseId: z.string().min(1).max(200).nullable(),
+      finding: z.string().min(1).max(10_000),
+      timelineEntry: z.string().min(1).max(10_000),
+      observables: z
+        .array(
+          z.object({
+            type: z.enum([
+              "ip",
+              "domain",
+              "url",
+              "file_hash",
+              "email",
+              "hostname",
+              "username",
+              "registry_key",
+              "other",
+            ]),
+            value: z.string().min(1).max(4_000),
+            description: z.string().max(2_000),
+          }),
+        )
+        .max(50),
+      evidenceReferences: z.array(AgentEvidenceReferenceSchema).max(100),
+    })
+    .nullable(),
+});
 export const TelemetryGapFindingSchema = structuredFindingBase.extend({
   collectorId: z.string(),
   affectedSources: z.array(z.string()),
@@ -306,6 +431,7 @@ export const AgentStructuredOutputSchemas = {
   TriageRecommendation: TriageRecommendationSchema,
   ThreatIntelFinding: ThreatIntelFindingSchema,
   EndpointHuntResult: EndpointHuntResultSchema,
+  HuntResult: HuntResultSchema,
   TelemetryGapFinding: TelemetryGapFindingSchema,
   CasePromotionDraft: CasePromotionDraftSchema,
   DetectionProposal: DetectionProposalSchema,
@@ -314,7 +440,8 @@ export const AgentStructuredOutputSchemas = {
   ExecutiveUpdate: ExecutiveUpdateSchema,
 } as const;
 
-export type AgentStructuredOutputName = keyof typeof AgentStructuredOutputSchemas;
+export type AgentStructuredOutputName =
+  keyof typeof AgentStructuredOutputSchemas;
 
 export const WorkflowStepSchema: z.ZodType<WorkflowStep> = z.lazy(() =>
   z.object({
@@ -349,7 +476,9 @@ export interface WorkflowStep {
   agent?: string | undefined;
   query?: string | undefined;
   condition?: string | undefined;
-  approval?: { capability: string; timeout: string; count?: number | undefined } | undefined;
+  approval?:
+    | { capability: string; timeout: string; count?: number | undefined }
+    | undefined;
   delay?: string | undefined;
   notification?: string | undefined;
   parallel?: WorkflowStep[] | undefined;

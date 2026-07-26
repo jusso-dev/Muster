@@ -1867,6 +1867,101 @@ export const integrationQueryRuns = pgTable(
   ],
 );
 
+export const huntRuns = pgTable(
+  "hunt_runs",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    agentRunId: uuid("agent_run_id")
+      .notNull()
+      .references(() => agentRuns.id),
+    taskId: uuid("task_id").references(() => tasks.id),
+    sourceMessageId: uuid("source_message_id").references(() => messages.id),
+    roomId: uuid("room_id")
+      .notNull()
+      .references(() => rooms.id),
+    linkedCaseId: text("linked_case_id"),
+    requestedByActorId: uuid("requested_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    question: text("question").notNull(),
+    trainingMode: boolean("training_mode").notNull().default(false),
+    plan: jsonb("plan").notNull(),
+    status: text("status").notNull().default("planned"),
+    approvalId: uuid("approval_id").references(() => approvals.id),
+    result: jsonb("result"),
+    failureCode: text("failure_code"),
+    error: text("error"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("hunt_runs_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
+    ),
+    uniqueIndex("hunt_runs_org_agent_run_unique").on(
+      table.organisationId,
+      table.agentRunId,
+    ),
+    index("hunt_runs_org_status_idx").on(
+      table.organisationId,
+      table.status,
+      table.createdAt,
+    ),
+    check(
+      "hunt_runs_status_check",
+      sql`${table.status} in ('planned','awaiting_approval','querying','analysing','completed','failed','cancelled')`,
+    ),
+  ],
+);
+
+export const huntQueries = pgTable(
+  "hunt_queries",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    huntId: uuid("hunt_id")
+      .notNull()
+      .references(() => huntRuns.id),
+    integrationId: uuid("integration_id")
+      .notNull()
+      .references(() => integrationRecords.id),
+    templateId: uuid("template_id")
+      .notNull()
+      .references(() => integrationQueryTemplates.id),
+    queryRunId: uuid("query_run_id")
+      .notNull()
+      .references(() => integrationQueryRuns.id),
+    sourceKey: text("source_key").notNull(),
+    displayName: text("display_name").notNull(),
+    sequence: integer("sequence").notNull(),
+    rationale: text("rationale").notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("hunt_queries_org_query_run_unique").on(
+      table.organisationId,
+      table.queryRunId,
+    ),
+    uniqueIndex("hunt_queries_org_hunt_sequence_unique").on(
+      table.organisationId,
+      table.huntId,
+      table.sequence,
+    ),
+    index("hunt_queries_org_hunt_idx").on(
+      table.organisationId,
+      table.huntId,
+      table.sequence,
+    ),
+  ],
+);
+
 export const idempotencyRecords = pgTable(
   "idempotency_records",
   {

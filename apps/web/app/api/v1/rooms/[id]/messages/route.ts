@@ -1,8 +1,10 @@
 import { requireCapability } from "@muster/authz";
+import { redactObservationText } from "@muster/config";
 import { PostMessageSchema, RoomService } from "@muster/rooms";
 import { apiSubject, problemResponse, requestTraceId } from "@/lib/api-context";
 import { enforceApiRateLimit } from "@/lib/api-rate-limit";
 import { publishRealtime } from "@/lib/realtime";
+import { JessieHuntDomainService } from "@/lib/jessie-hunt-domain";
 
 export async function GET(
   request: Request,
@@ -46,6 +48,34 @@ export async function POST(
       roomId: id,
     });
     const result = await new RoomService().postMessage(subject, input, traceId);
+    let jessieHunt: Awaited<
+      ReturnType<JessieHuntDomainService["maybeCreateFromMention"]>
+    > = null;
+    let jessieHuntError: string | null = null;
+    if (result.created) {
+      try {
+        jessieHunt = await new JessieHuntDomainService().maybeCreateFromMention(
+          subject,
+          {
+            messageId: result.message.id,
+            roomId: id,
+            plainText: input.plainText,
+            ...(input.relatedInvestigationId !== undefined
+              ? {
+                  relatedInvestigationId: input.relatedInvestigationId,
+                }
+              : {}),
+          },
+          traceId,
+        );
+      } catch (error) {
+        jessieHuntError = redactObservationText(
+          error instanceof Error
+            ? error.message
+            : "Jessie could not prepare the hunt.",
+        );
+      }
+    }
     const realtimeDelivered = await publishRealtime(subject.organisationId, {
       type: input.threadParentId
         ? "room.thread.created"
@@ -61,6 +91,8 @@ export async function POST(
       {
         data: result.message,
         duplicate: !result.created,
+        jessieHunt,
+        jessieHuntError,
         realtimeDegraded: !realtimeDelivered,
         traceId,
       },

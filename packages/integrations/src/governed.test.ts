@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   GovernedConnectorError,
+  connectorPresets,
   decryptConnectorAuth,
   encryptConnectorAuth,
   executeGovernedQuery,
@@ -111,6 +112,51 @@ describe("governed connector credentials", () => {
 });
 
 describe("governed connector egress", () => {
+  it("ships bounded official UniFi read templates with API-key authentication", async () => {
+    const mock = await server((request, response) => {
+      expect(request.headers["x-api-key"]).toBe("synthetic-unifi-key");
+      expect(request.url).toBe(
+        "/v1/sites/site-1/clients?offset=0&limit=25&filter=",
+      );
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          offset: 0,
+          limit: 25,
+          count: 1,
+          totalCount: 1,
+          data: [{ id: "synthetic-client", ipAddress: "192.0.2.10" }],
+        }),
+      );
+    });
+    const clientTemplate = connectorPresets.unifi?.find(
+      (candidate) => candidate.key === "unifi.clients.list",
+    );
+    if (!clientTemplate) throw new Error("UniFi client preset required");
+    const result = await executeGovernedQuery({
+      configuration: {
+        ...configuration(mock.url),
+        product: "unifi",
+        auth: {
+          type: "api_key",
+          headerName: "X-API-Key",
+          token: "synthetic-unifi-key",
+        },
+      },
+      auth: {
+        type: "api_key",
+        headerName: "X-API-Key",
+        token: "synthetic-unifi-key",
+      },
+      template: clientTemplate,
+      values: { siteId: "site-1", offset: 0, limit: 25, filter: "" },
+    });
+    expect(result).toMatchObject({
+      data: [{ id: "synthetic-client", ipAddress: "192.0.2.10" }],
+      metadata: { pages: 1, records: 1, truncated: false },
+    });
+  });
+
   it("denies private DNS without explicit test policy and denies host escape", async () => {
     await expect(
       resolveSafeTarget("https://127.0.0.1/test", {

@@ -53,18 +53,23 @@ export function ConnectorAdminView() {
     setMessage("");
     const baseUrl = String(form.get("baseUrl") ?? "");
     const token = String(form.get("token") ?? "");
+    const product = String(form.get("product") ?? "");
     const response = await fetch("/api/v1/connectors", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        product: form.get("product"),
+        product,
         instanceId: form.get("instanceId"),
         displayName: form.get("displayName"),
         baseUrl,
         allowedHosts: [new URL(baseUrl).hostname],
         allowPrivateNetwork: form.get("allowPrivateNetwork") === "on",
         testMode: form.get("testMode") === "on",
-        auth: token ? { type: "bearer", token } : { type: "none" },
+        auth: token
+          ? product === "unifi"
+            ? { type: "api_key", headerName: "X-API-Key", token }
+            : { type: "bearer", token }
+          : { type: "none" },
         limits: {
           timeoutMs: 10_000,
           maxResponseBytes: 1_000_000,
@@ -102,8 +107,9 @@ export function ConnectorAdminView() {
             tawny: "tawny.inventory.list",
             tawny_response: "tawny.inventory.list",
             kelpie: "kelpie.cases.list",
+            unifi: "unifi.sites.list",
           }[connector.product] ?? "generic.alerts.list",
-        input: {},
+        input: connector.product === "unifi" ? { offset: 0, limit: 25 } : {},
         idempotencyKey: `connector-test-${browserUuid()}`,
       }),
     });
@@ -169,6 +175,7 @@ export function ConnectorAdminView() {
                 <option value="tawny">Tawny read-only</option>
                 <option value="tawny_response">Tawny approved response</option>
                 <option value="kelpie">Kelpie case management</option>
+                <option value="unifi">UniFi Network read-only</option>
               </select>
             </label>
             {[

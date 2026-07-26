@@ -83,6 +83,8 @@ async function taskView(organisationId: string, includeEvidence: boolean) {
             status: schema.agentRuns.status,
             runtime: schema.agentRuns.runtime,
             model: schema.agentRuns.model,
+            request: schema.agentRuns.request,
+            progress: schema.agentRuns.progress,
             tokenUsage: schema.agentRuns.tokenUsage,
             estimatedCostCents: schema.agentRuns.estimatedCostCents,
             structuredOutput: schema.agentRuns.structuredOutput,

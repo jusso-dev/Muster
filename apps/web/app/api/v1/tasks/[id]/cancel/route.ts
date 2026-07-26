@@ -36,7 +36,9 @@ export async function POST(
     if (!task) throw new ApiProblem(404, "Not found", "Task not found.");
     if (
       !task.agentRunId ||
-      (task.agentRunStatus !== "running" && task.agentRunStatus !== "queued")
+      !["awaiting_approval", "waiting_sources", "queued", "running"].includes(
+        task.agentRunStatus ?? "",
+      )
     ) {
       throw new ApiProblem(
         409,

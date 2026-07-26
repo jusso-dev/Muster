@@ -30,6 +30,8 @@ const operationalTables = {
   integrationConnectorCredentials: schema.integrationConnectorCredentials,
   integrationQueryTemplates: schema.integrationQueryTemplates,
   integrationQueryRuns: schema.integrationQueryRuns,
+  huntRuns: schema.huntRuns,
+  huntQueries: schema.huntQueries,
   idempotencyRecords: schema.idempotencyRecords,
   outboxEvents: schema.outboxEvents,
   auditEvents: schema.auditEvents,

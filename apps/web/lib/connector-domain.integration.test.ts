@@ -343,7 +343,17 @@ describeIntegration("connector domain governance", () => {
       },
       "kelpie-comment",
     );
-    expect(queued).toMatchObject({ status: "queued", duplicate: false });
+    expect(queued).toMatchObject({
+      status: "awaiting_approval",
+      duplicate: false,
+    });
+    if (!queued.approvalId) throw new Error("Kelpie approval required");
+    await new ApprovalDomainService().decide(
+      subject,
+      queued.approvalId,
+      { status: "approved", reason: "Synthetic enrichment reviewed" },
+      "kelpie-comment-approved",
+    );
     const [outbox] = await database()
       .select()
       .from(schema.outboxEvents)

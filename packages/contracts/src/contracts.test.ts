@@ -54,6 +54,74 @@ describe("workflow contract", () => {
 });
 
 describe("agent structured output contracts", () => {
+  it("validates a typed HuntResult that separates facts from inference", () => {
+    const reference = {
+      type: "integration-query",
+      reference: "integration-query:synthetic",
+      sha256: null,
+    };
+    expect(
+      AgentStructuredOutputSchemas.HuntResult.parse({
+        title: "Synthetic hunt",
+        summary: "One bounded source completed.",
+        question: "What saw 192.0.2.4?",
+        trainingMode: false,
+        confidence: 0.7,
+        queries: [
+          {
+            source: "Synthetic source",
+            templateKey: "synthetic.events",
+            status: "succeeded",
+            recordCount: 1,
+            evidenceReferences: [reference],
+            gap: null,
+          },
+        ],
+        observedFacts: [
+          {
+            statement: "One source observed the address.",
+            source: "Synthetic source",
+            confidence: 1,
+            evidenceReferences: [reference],
+          },
+        ],
+        inferences: [
+          {
+            statement: "Further review may be warranted.",
+            basis: "One bounded observation.",
+            confidence: 0.4,
+            evidenceReferences: [reference],
+          },
+        ],
+        observables: [
+          {
+            type: "ip",
+            value: "192.0.2.4",
+            normalizedValue: "192.0.2.4",
+            confidence: 1,
+            evidenceReferences: [reference],
+          },
+        ],
+        attackMappings: [
+          {
+            techniqueId: "T1071.001",
+            techniqueName: "Web Protocols",
+            confidence: 0.4,
+            evidenceReferences: [reference],
+            supportingReferences: [
+              "https://attack.mitre.org/techniques/T1071/001/",
+            ],
+          },
+        ],
+        evidenceReferences: [reference],
+        gaps: [],
+        recommendedNextSteps: ["Review evidence."],
+        coachingNotes: [],
+        enrichmentProposal: null,
+      }),
+    ).toMatchObject({ confidence: 0.7, trainingMode: false });
+  });
+
   it("generates an OpenAI strict-compatible evidence-reference schema", () => {
     const schema = z.toJSONSchema(
       AgentStructuredOutputSchemas.TriageRecommendation,

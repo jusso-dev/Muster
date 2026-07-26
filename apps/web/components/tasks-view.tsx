@@ -50,6 +50,8 @@ type AgentRun = {
   status: string;
   runtime: string;
   model: string;
+  request: unknown;
+  progress: unknown;
   tokenUsage: unknown;
   estimatedCostCents: number;
   structuredOutput: unknown;
@@ -198,7 +200,9 @@ export function TasksView() {
         .filter(
           (task) =>
             task.agentRunId &&
-            (task.agentRunStatus === "queued" ||
+            (task.agentRunStatus === "awaiting_approval" ||
+              task.agentRunStatus === "waiting_sources" ||
+              task.agentRunStatus === "queued" ||
               task.agentRunStatus === "running"),
         )
         .map((task) => task.id),
@@ -361,6 +365,31 @@ export function TasksView() {
       await loadTasks();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Task action failed");
+    } finally {
+      setPendingTaskId(null);
+    }
+  }
+
+  async function requestEnrichment(task: BoardTask, huntId: string) {
+    setPendingTaskId(task.id);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/v1/hunts/${encodeURIComponent(huntId)}/enrichment`,
+        { method: "POST" },
+      );
+      if (!response.ok) {
+        throw new Error(
+          await responseDetail(response, "Case enrichment request failed"),
+        );
+      }
+      await loadTasks();
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Case enrichment request failed",
+      );
     } finally {
       setPendingTaskId(null);
     }
@@ -644,8 +673,45 @@ export function TasksView() {
                     {columnTasks.map((task) => {
                       const agent = task.assignee?.actorType === "agent";
                       const running =
+                        task.agentRunStatus === "awaiting_approval" ||
+                        task.agentRunStatus === "waiting_sources" ||
                         task.agentRunStatus === "running" ||
                         task.agentRunStatus === "queued";
+                      const huntPlan =
+                        task.run?.request &&
+                        typeof task.run.request === "object" &&
+                        !Array.isArray(task.run.request) &&
+                        "huntPlan" in task.run.request
+                          ? (
+                              task.run.request as {
+                                huntPlan?: unknown;
+                              }
+                            ).huntPlan
+                          : null;
+                      const huntId =
+                        task.run?.request &&
+                        typeof task.run.request === "object" &&
+                        !Array.isArray(task.run.request) &&
+                        "huntId" in task.run.request &&
+                        typeof (task.run.request as { huntId?: unknown })
+                          .huntId === "string"
+                          ? (
+                              task.run.request as {
+                                huntId: string;
+                              }
+                            ).huntId
+                          : null;
+                      const enrichmentProposal =
+                        task.run?.structuredOutput &&
+                        typeof task.run.structuredOutput === "object" &&
+                        !Array.isArray(task.run.structuredOutput) &&
+                        "enrichmentProposal" in task.run.structuredOutput
+                          ? (
+                              task.run.structuredOutput as {
+                                enrichmentProposal?: unknown;
+                              }
+                            ).enrichmentProposal
+                          : null;
                       const retryable =
                         task.agentRunStatus === "failed" ||
                         task.agentRunStatus === "cancelled";
@@ -761,6 +827,17 @@ export function TasksView() {
                             <p className="mt-2 text-xs text-muted-foreground">
                               Case {task.relatedCaseId}
                             </p>
+                          )}
+
+                          {huntPlan !== null && huntPlan !== undefined && (
+                            <details className="mt-3 rounded-md border bg-muted/30 p-2 text-xs">
+                              <summary className="cursor-pointer font-semibold">
+                                Jessie bounded query plan
+                              </summary>
+                              <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap text-xs">
+                                {JSON.stringify(huntPlan, null, 2)}
+                              </pre>
+                            </details>
                           )}
 
                           {task.run?.handoff ? (
@@ -896,15 +973,29 @@ export function TasksView() {
                                 </Button>
                               )}
                             {task.status === "review" && (
-                              <Button
-                                size="sm"
-                                className="ml-auto"
-                                onClick={() =>
-                                  void updateTask(task.id, { status: "done" })
-                                }
-                              >
-                                <Check /> Mark done
-                              </Button>
+                              <>
+                                {huntId && enrichmentProposal && (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    disabled={pendingTaskId === task.id}
+                                    onClick={() =>
+                                      void requestEnrichment(task, huntId)
+                                    }
+                                  >
+                                    <ShieldCheck /> Request case enrichment
+                                  </Button>
+                                )}
+                                <Button
+                                  size="sm"
+                                  className="ml-auto"
+                                  onClick={() =>
+                                    void updateTask(task.id, { status: "done" })
+                                  }
+                                >
+                                  <Check /> Mark done
+                                </Button>
+                              </>
                             )}
                           </div>
                         </article>

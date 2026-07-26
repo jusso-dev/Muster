@@ -78,6 +78,7 @@ const authoritativeProcessor: Processor = async (job) => {
       job.data.organisationId,
       job.data.aggregateId,
       job.data.traceId,
+      job.attemptsMade + 1 >= (job.opts.attempts ?? 1),
     );
   }
   if (
@@ -112,6 +113,7 @@ async function processConnectorQuery(
   organisationId: string,
   runId: string,
   traceId: string,
+  finalAttempt: boolean,
 ) {
   const db = database();
   const [row] = await db
@@ -306,6 +308,7 @@ async function processConnectorQuery(
         });
       }
     });
+    await maybeQueueJessieAnalysis(organisationId, runId, traceId);
   } catch (error) {
     const failure =
       error instanceof GovernedConnectorError
@@ -362,12 +365,141 @@ async function processConnectorQuery(
         traceId,
       });
     });
-    if (
-      failure.code === "rate_limited" ||
-      failure.code === "source_unavailable"
-    )
-      throw failure;
+    const retryable =
+      failure.code === "rate_limited" || failure.code === "source_unavailable";
+    if (retryable && !finalAttempt) throw failure;
+    await maybeQueueJessieAnalysis(organisationId, runId, traceId);
   }
+}
+
+async function maybeQueueJessieAnalysis(
+  organisationId: string,
+  queryRunId: string,
+  traceId: string,
+) {
+  const db = database();
+  const [link] = await db
+    .select({
+      huntId: schema.huntQueries.huntId,
+      agentRunId: schema.huntRuns.agentRunId,
+    })
+    .from(schema.huntQueries)
+    .innerJoin(
+      schema.huntRuns,
+      and(
+        eq(schema.huntRuns.organisationId, organisationId),
+        eq(schema.huntRuns.id, schema.huntQueries.huntId),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.huntQueries.organisationId, organisationId),
+        eq(schema.huntQueries.queryRunId, queryRunId),
+      ),
+    )
+    .limit(1);
+  if (!link) return;
+  const statuses = await db
+    .select({ status: schema.integrationQueryRuns.status })
+    .from(schema.huntQueries)
+    .innerJoin(
+      schema.integrationQueryRuns,
+      and(
+        eq(schema.integrationQueryRuns.organisationId, organisationId),
+        eq(schema.integrationQueryRuns.id, schema.huntQueries.queryRunId),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.huntQueries.organisationId, organisationId),
+        eq(schema.huntQueries.huntId, link.huntId),
+      ),
+    );
+  const terminal = new Set(["succeeded", "failed", "cancelled"]);
+  if (
+    statuses.length === 0 ||
+    statuses.some((query) => !terminal.has(query.status))
+  ) {
+    return;
+  }
+  await db.transaction(async (tx) => {
+    const [queued] = await tx
+      .update(schema.agentRuns)
+      .set({
+        status: "queued",
+        progress: { stage: "sources_collected", percent: 60 },
+      })
+      .where(
+        and(
+          eq(schema.agentRuns.organisationId, organisationId),
+          eq(schema.agentRuns.id, link.agentRunId),
+          eq(schema.agentRuns.status, "waiting_sources"),
+        ),
+      )
+      .returning({
+        id: schema.agentRuns.id,
+        agentId: schema.agentRuns.agentId,
+      });
+    if (!queued) return;
+    const succeeded = statuses.filter(
+      (query) => query.status === "succeeded",
+    ).length;
+    await tx
+      .update(schema.huntRuns)
+      .set({ status: "analysing", updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.huntRuns.organisationId, organisationId),
+          eq(schema.huntRuns.id, link.huntId),
+        ),
+      );
+    await tx
+      .update(schema.tasks)
+      .set({ agentRunStatus: "queued", updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.tasks.organisationId, organisationId),
+          eq(schema.tasks.agentRunId, link.agentRunId),
+        ),
+      );
+    await tx.insert(schema.agentRunEvents).values({
+      id: newId(),
+      organisationId,
+      runId: link.agentRunId,
+      eventType: "sources_collected",
+      message: "Governed hunt sources reached a terminal state",
+      payload: {
+        huntId: link.huntId,
+        queryCount: statuses.length,
+        succeeded,
+        failed: statuses.length - succeeded,
+      },
+    });
+    await writeOutbox(tx, {
+      organisationId,
+      eventType: "agent.run.queued",
+      aggregateType: "agent_run",
+      aggregateId: link.agentRunId,
+      queueName: "muster-agents",
+      payload: { runId: link.agentRunId, huntId: link.huntId },
+      idempotencyKey: `agent.run.queued:jessie-hunt:${link.huntId}`,
+      traceId,
+    });
+    await appendAuditEvent(tx, {
+      organisationId,
+      actorId: queued.agentId,
+      actorType: "agent",
+      action: "hunt.sources.collected",
+      targetType: "hunt_run",
+      targetId: link.huntId,
+      metadata: {
+        agentRunId: link.agentRunId,
+        queryCount: statuses.length,
+        succeeded,
+      },
+      traceId,
+    });
+  });
 }
 
 const TawnyActionResponseSchema = z

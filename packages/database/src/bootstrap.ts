@@ -34,6 +34,7 @@ const administratorCapabilities = [
   "kelpie.cases.update",
   "tawny.telemetry.read",
   "tawny.hunts.execute",
+  "unifi.network.read",
   "tawny.response.kill_process",
   "tawny.response.isolate_host",
   "bower.fleet.read",
@@ -125,6 +126,7 @@ await db
         "kelpie.cases.update",
         "tawny.telemetry.read",
         "tawny.hunts.execute",
+        "unifi.network.read",
         "sentinel.query.execute",
       ],
     },
@@ -197,6 +199,7 @@ await db
       allowedTools: [
         "tawny.telemetry.read",
         "tawny.hunts.execute",
+        "unifi.network.read",
         "sentinel.query.execute",
         "kelpie.cases.read",
       ],
@@ -204,6 +207,7 @@ await db
       capabilityRequirements: [
         "tawny.telemetry.read",
         "tawny.hunts.execute",
+        "unifi.network.read",
         "sentinel.query.execute",
         "kelpie.cases.read",
       ],

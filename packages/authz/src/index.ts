@@ -22,6 +22,7 @@ export const capabilities = [
   "kelpie.cases.update",
   "tawny.telemetry.read",
   "tawny.hunts.execute",
+  "unifi.network.read",
   "tawny.response.kill_process",
   "tawny.response.isolate_host",
   "bower.fleet.read",
@@ -70,7 +71,10 @@ const readCapabilities: Capability[] = [
   "evidence.read",
 ];
 
-export const starterRoleCapabilities: Record<StarterRole, readonly Capability[]> = {
+export const starterRoleCapabilities: Record<
+  StarterRole,
+  readonly Capability[]
+> = {
   administrator: capabilities,
   security_manager: capabilities.filter(
     (capability) =>
@@ -93,6 +97,7 @@ export const starterRoleCapabilities: Record<StarterRole, readonly Capability[]>
     "kelpie.cases.update",
     "tawny.telemetry.read",
     "tawny.hunts.execute",
+    "unifi.network.read",
     "tawny.response.isolate_host",
     "agents.invoke",
     "agents.cancel",
@@ -116,6 +121,7 @@ export const starterRoleCapabilities: Record<StarterRole, readonly Capability[]>
     "kelpie.cases.create",
     "tawny.telemetry.read",
     "tawny.hunts.execute",
+    "unifi.network.read",
     "agents.invoke",
     "agents.cancel",
     "workflows.execute",
@@ -134,6 +140,7 @@ export const starterRoleCapabilities: Record<StarterRole, readonly Capability[]>
     "investigations.update",
     "tawny.telemetry.read",
     "tawny.hunts.execute",
+    "unifi.network.read",
     "agents.invoke",
     "workflows.execute",
     "evidence.upload",
@@ -163,12 +170,18 @@ export const starterRoleCapabilities: Record<StarterRole, readonly Capability[]>
     "investigations.update",
     "tawny.telemetry.read",
     "tawny.hunts.execute",
+    "unifi.network.read",
     "sentinel.query.execute",
     "agents.invoke",
     "workflows.execute",
   ],
   read_only: readCapabilities,
-  auditor: [...readCapabilities, "audit.read", "audit.export", "evidence.export"],
+  auditor: [
+    ...readCapabilities,
+    "audit.read",
+    "audit.export",
+    "evidence.export",
+  ],
 };
 
 export interface AuthorisationSubject {
@@ -199,7 +212,18 @@ export function requireCapability(
 }
 
 export const actionApprovalPolicy = {
-  "investigation.promote": { approvalCount: 1, capability: "investigations.promote" },
+  "hunt.execute-broad": {
+    approvalCount: 1,
+    capability: "workflows.approve",
+  },
+  "kelpie.case.enrich": {
+    approvalCount: 1,
+    capability: "kelpie.cases.update",
+  },
+  "investigation.promote": {
+    approvalCount: 1,
+    capability: "investigations.promote",
+  },
   "endpoint.kill_process": {
     approvalCount: 1,
     capability: "tawny.response.kill_process",
@@ -240,14 +264,19 @@ export type ApprovalAction = keyof typeof actionApprovalPolicy;
 
 export function assertExecutableApproval(
   action: ApprovalAction,
-  approvals: ReadonlyArray<{ actorId: string; status: "approved" | "rejected" }>,
+  approvals: ReadonlyArray<{
+    actorId: string;
+    status: "approved" | "rejected";
+  }>,
 ): void {
   const policy = actionApprovalPolicy[action];
   if ("prohibited" in policy && policy.prohibited) {
     throw new ForbiddenError("evidence.export");
   }
   const distinctApprovers = new Set(
-    approvals.filter((approval) => approval.status === "approved").map((approval) => approval.actorId),
+    approvals
+      .filter((approval) => approval.status === "approved")
+      .map((approval) => approval.actorId),
   );
   const requiredCount = "approvalCount" in policy ? policy.approvalCount : 0;
   if (distinctApprovers.size < requiredCount) {

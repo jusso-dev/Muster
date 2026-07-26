@@ -11,6 +11,7 @@ import {
 } from "@/lib/api-context";
 import { agentReadinessEntry } from "@/lib/agent-readiness-domain";
 import { queueAgentRun } from "@/lib/task-domain";
+import { JessieHuntDomainService } from "@/lib/jessie-hunt-domain";
 
 export async function POST(
   request: Request,
@@ -50,6 +51,7 @@ export async function POST(
     const [agent] = await db
       .select({
         id: schema.actors.id,
+        name: schema.agentDefinitions.name,
         promptVersion: schema.agentDefinitions.systemPromptVersion,
         runtime: schema.agentDefinitions.runtime,
         model: schema.agentDefinitions.model,
@@ -93,8 +95,8 @@ export async function POST(
       throw new ApiProblem(
         409,
         "Agent not ready",
-        readiness?.readiness.reason
-          ?? "Agent readiness evidence is unavailable.",
+        readiness?.readiness.reason ??
+          "Agent readiness evidence is unavailable.",
       );
     }
 
@@ -109,30 +111,49 @@ export async function POST(
         "Idempotency key exceeds 200 characters.",
       );
     }
-    const result = await queueAgentRun(
-      {
-        organisationId: subject.organisationId,
-        actorId: subject.actorId,
-        traceId,
-      },
-      task.id,
-      {
-        runId: newId(),
-        status: "queued",
-        runtime: agent.runtime,
-        agentId: agent.id,
-        roomId: task.roomId,
-        investigationId: task.investigationId,
-        promptVersion: agent.promptVersion,
-        model: agent.model,
-        inputHash: createHash("sha256").update(humanRequest).digest("hex"),
-        request: { humanRequest, traceId },
-        idempotencyKey,
-        maximumRuntimeSeconds: agent.maximumRuntimeSeconds,
-        maximumTokenBudget: agent.maximumTokenBudget,
-        maximumCostCents: agent.maximumCostCents,
-      },
-    );
+    const result =
+      agent.name === "Jessie" && task.roomId
+        ? await new JessieHuntDomainService().create(
+            subject,
+            {
+              question: humanRequest,
+              roomId: task.roomId,
+              taskId: task.id,
+              investigationId: task.investigationId ?? undefined,
+              linkedCaseId: task.relatedCaseId ?? undefined,
+              trainingMode: /\b(?:teach|training|explain|coach)\b/i.test(
+                humanRequest,
+              ),
+              idempotencyKey,
+            },
+            traceId,
+          )
+        : await queueAgentRun(
+            {
+              organisationId: subject.organisationId,
+              actorId: subject.actorId,
+              traceId,
+            },
+            task.id,
+            {
+              runId: newId(),
+              status: "queued",
+              runtime: agent.runtime,
+              agentId: agent.id,
+              roomId: task.roomId,
+              investigationId: task.investigationId,
+              promptVersion: agent.promptVersion,
+              model: agent.model,
+              inputHash: createHash("sha256")
+                .update(humanRequest)
+                .digest("hex"),
+              request: { humanRequest, traceId },
+              idempotencyKey,
+              maximumRuntimeSeconds: agent.maximumRuntimeSeconds,
+              maximumTokenBudget: agent.maximumTokenBudget,
+              maximumCostCents: agent.maximumCostCents,
+            },
+          );
     return Response.json({ data: result, traceId }, { status: 202 });
   } catch (error) {
     return problemResponse(error, traceId);

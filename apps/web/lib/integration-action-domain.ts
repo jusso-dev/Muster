@@ -18,7 +18,7 @@ import {
   IntegrationActionRequestSchema,
   type IntegrationActionRequest,
 } from "@muster/integrations";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { ApiProblem } from "./api-context.ts";
 
@@ -50,7 +50,11 @@ function actionPolicy(request: IntegrationActionRequest): ActionPolicy {
     case "kelpie.case.update":
     case "kelpie.timeline.comment":
     case "kelpie.observable.add":
-      return { product: "kelpie", capability: "kelpie.cases.update" };
+      return {
+        product: "kelpie",
+        capability: "kelpie.cases.update",
+        approvalAction: "kelpie.case.enrich",
+      };
   }
 }
 
@@ -254,7 +258,9 @@ export class IntegrationActionDomainService {
           riskSummary:
             request.operation === "tawny.isolate_host"
               ? "Isolates one Tawny endpoint from the network."
-              : "Creates a formal external Kelpie case from selected evidence.",
+              : request.operation === "kelpie.case.create"
+                ? "Creates a formal external Kelpie case from selected evidence."
+                : "Adds approved enrichment to an external Kelpie case.",
           expiresAt: new Date(Date.now() + 30 * 60_000),
           requiredCapability: approvalPolicy.capability,
           requiredApprovalCount: approvalPolicy.approvalCount,
@@ -432,11 +438,15 @@ export class ApprovalDomainService {
             eq(schema.approvals.id, approval.id),
           ),
         );
-      const target = z
+      const deliveryTarget = z
         .object({ deliveryId: z.uuid() })
         .passthrough()
         .safeParse(approval.target);
-      if (target.success && status === "approved") {
+      const huntTarget = z
+        .object({ huntId: z.uuid(), agentRunId: z.uuid() })
+        .passthrough()
+        .safeParse(approval.target);
+      if (deliveryTarget.success && status === "approved") {
         await tx
           .update(schema.integrationDeliveries)
           .set({ status: "queued", updatedAt: new Date() })
@@ -446,20 +456,23 @@ export class ApprovalDomainService {
                 schema.integrationDeliveries.organisationId,
                 subject.organisationId,
               ),
-              eq(schema.integrationDeliveries.id, target.data.deliveryId),
+              eq(
+                schema.integrationDeliveries.id,
+                deliveryTarget.data.deliveryId,
+              ),
             ),
           );
         await writeOutbox(tx, {
           organisationId: subject.organisationId,
           eventType: "integration.action.queued",
           aggregateType: "integration_delivery",
-          aggregateId: target.data.deliveryId,
+          aggregateId: deliveryTarget.data.deliveryId,
           queueName: "muster-integrations",
-          payload: { deliveryId: target.data.deliveryId },
-          idempotencyKey: `integration.action:${target.data.deliveryId}`,
+          payload: { deliveryId: deliveryTarget.data.deliveryId },
+          idempotencyKey: `integration.action:${deliveryTarget.data.deliveryId}`,
           traceId,
         });
-      } else if (target.success && status === "rejected") {
+      } else if (deliveryTarget.success && status === "rejected") {
         await tx
           .update(schema.integrationDeliveries)
           .set({
@@ -473,7 +486,171 @@ export class ApprovalDomainService {
                 schema.integrationDeliveries.organisationId,
                 subject.organisationId,
               ),
-              eq(schema.integrationDeliveries.id, target.data.deliveryId),
+              eq(
+                schema.integrationDeliveries.id,
+                deliveryTarget.data.deliveryId,
+              ),
+            ),
+          );
+      } else if (huntTarget.success && status === "approved") {
+        const queryRuns = await tx
+          .update(schema.integrationQueryRuns)
+          .set({ status: "queued", updatedAt: new Date() })
+          .where(
+            and(
+              eq(
+                schema.integrationQueryRuns.organisationId,
+                subject.organisationId,
+              ),
+              inArray(
+                schema.integrationQueryRuns.id,
+                tx
+                  .select({ id: schema.huntQueries.queryRunId })
+                  .from(schema.huntQueries)
+                  .where(
+                    and(
+                      eq(
+                        schema.huntQueries.organisationId,
+                        subject.organisationId,
+                      ),
+                      eq(schema.huntQueries.huntId, huntTarget.data.huntId),
+                    ),
+                  ),
+              ),
+              eq(schema.integrationQueryRuns.status, "planned"),
+            ),
+          )
+          .returning({ id: schema.integrationQueryRuns.id });
+        await tx
+          .update(schema.huntRuns)
+          .set({ status: "querying", updatedAt: new Date() })
+          .where(
+            and(
+              eq(schema.huntRuns.organisationId, subject.organisationId),
+              eq(schema.huntRuns.id, huntTarget.data.huntId),
+            ),
+          );
+        await tx
+          .update(schema.agentRuns)
+          .set({
+            status: "waiting_sources",
+            progress: { stage: "querying", percent: 5 },
+          })
+          .where(
+            and(
+              eq(schema.agentRuns.organisationId, subject.organisationId),
+              eq(schema.agentRuns.id, huntTarget.data.agentRunId),
+            ),
+          );
+        await tx
+          .update(schema.tasks)
+          .set({ agentRunStatus: "waiting_sources", updatedAt: new Date() })
+          .where(
+            and(
+              eq(schema.tasks.organisationId, subject.organisationId),
+              eq(schema.tasks.agentRunId, huntTarget.data.agentRunId),
+            ),
+          );
+        await tx.insert(schema.agentRunEvents).values({
+          id: newId(),
+          organisationId: subject.organisationId,
+          runId: huntTarget.data.agentRunId,
+          eventType: "approved",
+          message: "Human approved the exact bounded hunt plan",
+          payload: {
+            approvalId: approval.id,
+            huntId: huntTarget.data.huntId,
+            queryCount: queryRuns.length,
+          },
+        });
+        for (const queryRun of queryRuns) {
+          await writeOutbox(tx, {
+            organisationId: subject.organisationId,
+            eventType: "connector.query.queued",
+            aggregateType: "integration_query",
+            aggregateId: queryRun.id,
+            queueName: "muster-integrations",
+            payload: {
+              queryRunId: queryRun.id,
+              huntId: huntTarget.data.huntId,
+            },
+            idempotencyKey: `connector.query:jessie-hunt:${queryRun.id}`,
+            traceId,
+          });
+        }
+      } else if (huntTarget.success && status === "rejected") {
+        await tx
+          .update(schema.huntRuns)
+          .set({
+            status: "cancelled",
+            error: "Human approval rejected the hunt plan.",
+            completedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.huntRuns.organisationId, subject.organisationId),
+              eq(schema.huntRuns.id, huntTarget.data.huntId),
+            ),
+          );
+        await tx
+          .update(schema.agentRuns)
+          .set({
+            status: "cancelled",
+            cancellationReason: "Human approval rejected the hunt plan.",
+            completedAt: new Date(),
+            progress: { stage: "cancelled", percent: 100 },
+          })
+          .where(
+            and(
+              eq(schema.agentRuns.organisationId, subject.organisationId),
+              eq(schema.agentRuns.id, huntTarget.data.agentRunId),
+            ),
+          );
+        await tx
+          .update(schema.integrationQueryRuns)
+          .set({
+            status: "cancelled",
+            errorCode: "approval_rejected",
+            errorMessage: "Human approval rejected the hunt plan.",
+            completedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(
+                schema.integrationQueryRuns.organisationId,
+                subject.organisationId,
+              ),
+              inArray(
+                schema.integrationQueryRuns.id,
+                tx
+                  .select({ id: schema.huntQueries.queryRunId })
+                  .from(schema.huntQueries)
+                  .where(
+                    and(
+                      eq(
+                        schema.huntQueries.organisationId,
+                        subject.organisationId,
+                      ),
+                      eq(schema.huntQueries.huntId, huntTarget.data.huntId),
+                    ),
+                  ),
+              ),
+              eq(schema.integrationQueryRuns.status, "planned"),
+            ),
+          );
+        await tx
+          .update(schema.tasks)
+          .set({
+            status: "ready",
+            agentRunStatus: "cancelled",
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.tasks.organisationId, subject.organisationId),
+              eq(schema.tasks.agentRunId, huntTarget.data.agentRunId),
             ),
           );
       }
