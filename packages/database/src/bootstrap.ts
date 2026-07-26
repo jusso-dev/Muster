@@ -67,7 +67,15 @@ await db
     dataRegion: process.env.MUSTER_DATA_REGION?.trim() || "local",
     defaultTimezone: process.env.MUSTER_DEFAULT_TIMEZONE?.trim() || "UTC",
     retentionPolicy: { messagesDays: 365, auditDays: 2555 },
-    authenticationPolicy: { requireMfaForPrivilegedRoles: false },
+    authenticationPolicy: {
+      requireMfaForPrivilegedRoles: false,
+      roomGovernance: {
+        createOrganisationRooms: "capability",
+        createPrivateRooms: "capability",
+        inviteGuests: "room_policy",
+        inviteAgents: "room_policy",
+      },
+    },
   })
   .onConflictDoUpdate({
     target: schema.organisations.id,

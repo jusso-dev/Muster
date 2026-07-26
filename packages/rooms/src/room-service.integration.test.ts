@@ -289,7 +289,7 @@ describeIntegration("enterprise room messaging", () => {
         },
         `trace-${newId()}`,
       ),
-    ).rejects.toThrow("Room-wide mentions require room management capability");
+    ).rejects.toThrow("Room-wide mentions are disabled");
     await expect(
       service.setMessageAction(
         memberSubject,

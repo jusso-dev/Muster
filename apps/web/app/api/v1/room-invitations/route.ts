@@ -1,17 +1,12 @@
-import { TenantRepository, database } from "@muster/database";
+import { RoomGovernanceService } from "@muster/rooms";
 import { apiSubject, problemResponse, requestTraceId } from "@/lib/api-context";
 
 export async function GET(request: Request) {
   const traceId = requestTraceId(request);
   try {
     const subject = await apiSubject(request);
-    const query = new URL(request.url).searchParams.get("q")?.trim();
-    if (!query) return Response.json({ data: [], traceId });
     return Response.json({
-      data: await new TenantRepository(
-        database(),
-        subject.organisationId,
-      ).search(query, subject.actorId),
+      data: await new RoomGovernanceService().pendingInvitations(subject),
       traceId,
     });
   } catch (error) {

@@ -259,10 +259,15 @@ export const rooms = pgTable(
     roomType: roomTypeEnum("room_type").notNull(),
     visibility: text("visibility").notNull().default("organisation"),
     topic: text("topic").notNull().default(""),
+    policies: jsonb("policies").notNull().default({}),
+    directFingerprint: text("direct_fingerprint"),
     createdByActorId: uuid("created_by_actor_id")
       .notNull()
       .references(() => actors.id),
     createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
@@ -274,6 +279,9 @@ export const rooms = pgTable(
   },
   (table) => [
     uniqueIndex("rooms_org_slug_unique").on(table.organisationId, table.slug),
+    uniqueIndex("rooms_org_direct_fingerprint_unique")
+      .on(table.organisationId, table.directFingerprint)
+      .where(sql`${table.directFingerprint} is not null`),
     index("rooms_org_type_idx").on(table.organisationId, table.roomType),
   ],
 );
@@ -301,6 +309,10 @@ export const roomMemberships = pgTable(
       .notNull(),
     lastReadEventId: uuid("last_read_event_id"),
     muted: boolean("muted").notNull().default(false),
+    favourite: boolean("favourite").notNull().default(false),
+    sidebarPosition: integer("sidebar_position").notNull().default(0),
+    sidebarGroup: text("sidebar_group"),
+    accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.roomId, table.actorId] }),
@@ -311,6 +323,52 @@ export const roomMemberships = pgTable(
     check(
       "room_membership_role_check",
       sql`${table.membershipRole} in ('owner','moderator','member','guest','agent_member')`,
+    ),
+  ],
+);
+
+export const roomInvitations = pgTable(
+  "room_invitations",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    roomId: uuid("room_id")
+      .notNull()
+      .references(() => rooms.id),
+    invitedActorId: uuid("invited_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    membershipRole: text("membership_role").notNull(),
+    accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }),
+    status: text("status").notNull().default("pending"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    invitedByActorId: uuid("invited_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    respondedAt: timestamp("responded_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("room_invitations_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
+    ),
+    index("room_invitations_org_room_status_idx").on(
+      table.organisationId,
+      table.roomId,
+      table.status,
+    ),
+    check(
+      "room_invitation_role_check",
+      sql`${table.membershipRole} in ('moderator','member','guest','agent_member')`,
+    ),
+    check(
+      "room_invitation_status_check",
+      sql`${table.status} in ('pending','accepted','revoked','expired')`,
     ),
   ],
 );
@@ -1424,6 +1482,34 @@ export const integrationRecords = pgTable(
       table.organisationId,
       table.product,
       table.instanceId,
+    ),
+  ],
+);
+
+export const roomIntegrationBindings = pgTable(
+  "room_integration_bindings",
+  {
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    roomId: uuid("room_id")
+      .notNull()
+      .references(() => rooms.id),
+    integrationId: uuid("integration_id")
+      .notNull()
+      .references(() => integrationRecords.id),
+    createdByActorId: uuid("created_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.roomId, table.integrationId] }),
+    index("room_integration_bindings_org_room_idx").on(
+      table.organisationId,
+      table.roomId,
     ),
   ],
 );

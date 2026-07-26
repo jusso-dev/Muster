@@ -3,8 +3,10 @@ import {
   count,
   desc,
   eq,
+  gt,
   inArray,
   isNotNull,
+  isNull,
   lt,
   or,
   sql,
@@ -23,6 +25,10 @@ import {
   schema,
   writeOutbox,
 } from "@muster/database";
+import {
+  OrganisationRoomGovernanceSchema,
+  RoomPoliciesSchema,
+} from "./governance.ts";
 
 export const CreateRoomSchema = z.object({
   name: z.string().min(2).max(80),
@@ -32,6 +38,7 @@ export const CreateRoomSchema = z.object({
   roomType: RoomTypeSchema,
   visibility: z.enum(["organisation", "private", "restricted"]),
   topic: z.string().max(500).default(""),
+  policies: RoomPoliciesSchema.default(RoomPoliciesSchema.parse({})),
 });
 
 const allowedNodeTypes = new Set([
@@ -247,6 +254,18 @@ export const ListMessagesSchema = z.object({
     .optional(),
 });
 
+function activeRoomMembership(subject: AuthorisationSubject, roomId: string) {
+  return and(
+    eq(schema.roomMemberships.organisationId, subject.organisationId),
+    eq(schema.roomMemberships.roomId, roomId),
+    eq(schema.roomMemberships.actorId, subject.actorId),
+    or(
+      isNull(schema.roomMemberships.accessExpiresAt),
+      gt(schema.roomMemberships.accessExpiresAt, new Date()),
+    ),
+  );
+}
+
 export class RoomService {
   constructor(private readonly db = database()) {}
 
@@ -255,13 +274,7 @@ export class RoomService {
     const [membership] = await this.db
       .select({ roomId: schema.roomMemberships.roomId })
       .from(schema.roomMemberships)
-      .where(
-        and(
-          eq(schema.roomMemberships.organisationId, subject.organisationId),
-          eq(schema.roomMemberships.roomId, roomId),
-          eq(schema.roomMemberships.actorId, subject.actorId),
-        ),
-      )
+      .where(activeRoomMembership(subject, roomId))
       .limit(1);
     if (!membership) throw new Error("Room membership required");
     return membership;
@@ -280,13 +293,7 @@ export class RoomService {
         lastReadEventId: schema.roomMemberships.lastReadEventId,
       })
       .from(schema.roomMemberships)
-      .where(
-        and(
-          eq(schema.roomMemberships.organisationId, subject.organisationId),
-          eq(schema.roomMemberships.roomId, roomId),
-          eq(schema.roomMemberships.actorId, subject.actorId),
-        ),
-      )
+      .where(activeRoomMembership(subject, roomId))
       .limit(1);
     if (!membership) throw new Error("Room membership required");
 
@@ -507,6 +514,37 @@ export class RoomService {
   ) {
     requireCapability(subject, "rooms.create");
     const parsed = CreateRoomSchema.parse(input);
+    const [organisation] = await this.db
+      .select({ policy: schema.organisations.authenticationPolicy })
+      .from(schema.organisations)
+      .where(eq(schema.organisations.id, subject.organisationId))
+      .limit(1);
+    if (!organisation) throw new Error("Organisation not found");
+    const roomGovernance =
+      organisation.policy &&
+      typeof organisation.policy === "object" &&
+      !Array.isArray(organisation.policy)
+        ? (organisation.policy as Record<string, unknown>).roomGovernance
+        : undefined;
+    const organisationPolicy = OrganisationRoomGovernanceSchema.parse(
+      roomGovernance ?? {},
+    );
+    const creationPolicy =
+      parsed.visibility === "organisation"
+        ? organisationPolicy.createOrganisationRooms
+        : organisationPolicy.createPrivateRooms;
+    if (
+      creationPolicy === "administrators" &&
+      !hasCapability(subject, "administration.manage")
+    ) {
+      throw new Error("Organisation room creation policy denied");
+    }
+    if (
+      parsed.roomType === "system" &&
+      !hasCapability(subject, "rooms.manage")
+    ) {
+      throw new Error("System rooms require room management capability");
+    }
     return this.db.transaction(async (tx) => {
       const id = newId();
       const [room] = await tx
@@ -587,25 +625,37 @@ export class RoomService {
           .map((mention) => [`${mention.type}:${mention.key}`, mention]),
       ).values(),
     );
-    if (
-      mentionRecords.some((mention) => mention.type === "everyone") &&
-      !hasCapability(subject, "rooms.manage")
-    ) {
-      throw new Error("Room-wide mentions require room management capability");
-    }
     return this.db.transaction(async (tx) => {
       const [membership] = await tx
-        .select({ roomId: schema.roomMemberships.roomId })
+        .select({
+          roomId: schema.roomMemberships.roomId,
+          membershipRole: schema.roomMemberships.membershipRole,
+          policies: schema.rooms.policies,
+          archivedAt: schema.rooms.archivedAt,
+        })
         .from(schema.roomMemberships)
-        .where(
+        .innerJoin(
+          schema.rooms,
           and(
-            eq(schema.roomMemberships.organisationId, subject.organisationId),
-            eq(schema.roomMemberships.roomId, parsed.roomId),
-            eq(schema.roomMemberships.actorId, subject.actorId),
+            eq(schema.rooms.organisationId, subject.organisationId),
+            eq(schema.rooms.id, schema.roomMemberships.roomId),
           ),
         )
+        .where(activeRoomMembership(subject, parsed.roomId))
         .limit(1);
       if (!membership) throw new Error("Room membership required");
+      if (membership.archivedAt)
+        throw new Error("Archived rooms are read-only");
+      if (mentionRecords.some((mention) => mention.type === "everyone")) {
+        const policy = RoomPoliciesSchema.parse(membership.policies ?? {});
+        const canMentionBroadly =
+          hasCapability(subject, "rooms.manage") ||
+          membership.membershipRole === "owner" ||
+          membership.membershipRole === "moderator";
+        if (!policy.broadMentions || !canMentionBroadly) {
+          throw new Error("Room-wide mentions are disabled");
+        }
+      }
       if (attachments.length > 0) {
         const governedAttachments = await tx
           .select({ id: schema.evidence.id })
@@ -695,7 +745,30 @@ export class RoomService {
           tx
             .select({ slug: schema.rooms.slug })
             .from(schema.rooms)
-            .where(eq(schema.rooms.organisationId, subject.organisationId)),
+            .leftJoin(
+              schema.roomMemberships,
+              and(
+                eq(
+                  schema.roomMemberships.organisationId,
+                  schema.rooms.organisationId,
+                ),
+                eq(schema.roomMemberships.roomId, schema.rooms.id),
+                eq(schema.roomMemberships.actorId, subject.actorId),
+                or(
+                  isNull(schema.roomMemberships.accessExpiresAt),
+                  gt(schema.roomMemberships.accessExpiresAt, new Date()),
+                ),
+              ),
+            )
+            .where(
+              and(
+                eq(schema.rooms.organisationId, subject.organisationId),
+                or(
+                  eq(schema.rooms.visibility, "organisation"),
+                  eq(schema.roomMemberships.actorId, subject.actorId),
+                ),
+              ),
+            ),
         ]);
         const actorByKey = new Map<string, string>();
         for (const actor of orgActors) {
@@ -783,13 +856,7 @@ export class RoomService {
       const [membership] = await tx
         .select({ roomId: schema.roomMemberships.roomId })
         .from(schema.roomMemberships)
-        .where(
-          and(
-            eq(schema.roomMemberships.organisationId, subject.organisationId),
-            eq(schema.roomMemberships.roomId, message.roomId),
-            eq(schema.roomMemberships.actorId, subject.actorId),
-          ),
-        )
+        .where(activeRoomMembership(subject, message.roomId))
         .limit(1);
       if (!membership) throw new Error("Room membership required");
       if (
@@ -881,13 +948,7 @@ export class RoomService {
       const [membership] = await tx
         .select({ roomId: schema.roomMemberships.roomId })
         .from(schema.roomMemberships)
-        .where(
-          and(
-            eq(schema.roomMemberships.organisationId, subject.organisationId),
-            eq(schema.roomMemberships.roomId, message.roomId),
-            eq(schema.roomMemberships.actorId, subject.actorId),
-          ),
-        )
+        .where(activeRoomMembership(subject, message.roomId))
         .limit(1);
       if (!membership) throw new Error("Room membership required");
       if (
@@ -987,13 +1048,7 @@ export class RoomService {
       const [membership] = await tx
         .select({ roomId: schema.roomMemberships.roomId })
         .from(schema.roomMemberships)
-        .where(
-          and(
-            eq(schema.roomMemberships.organisationId, subject.organisationId),
-            eq(schema.roomMemberships.roomId, message.roomId),
-            eq(schema.roomMemberships.actorId, subject.actorId),
-          ),
-        )
+        .where(activeRoomMembership(subject, message.roomId))
         .limit(1);
       if (!membership) throw new Error("Room membership required");
 
@@ -1142,13 +1197,7 @@ export class RoomService {
     const [membership] = await this.db
       .update(schema.roomMemberships)
       .set({ lastReadEventId: messageId })
-      .where(
-        and(
-          eq(schema.roomMemberships.organisationId, subject.organisationId),
-          eq(schema.roomMemberships.roomId, roomId),
-          eq(schema.roomMemberships.actorId, subject.actorId),
-        ),
-      )
+      .where(activeRoomMembership(subject, roomId))
       .returning({
         roomId: schema.roomMemberships.roomId,
         lastReadEventId: schema.roomMemberships.lastReadEventId,
@@ -1167,13 +1216,7 @@ export class RoomService {
     const [membership] = await this.db
       .update(schema.roomMemberships)
       .set(parsed)
-      .where(
-        and(
-          eq(schema.roomMemberships.organisationId, subject.organisationId),
-          eq(schema.roomMemberships.roomId, roomId),
-          eq(schema.roomMemberships.actorId, subject.actorId),
-        ),
-      )
+      .where(activeRoomMembership(subject, roomId))
       .returning({
         roomId: schema.roomMemberships.roomId,
         notificationLevel: schema.roomMemberships.notificationLevel,
@@ -1196,13 +1239,7 @@ export class RoomService {
         muted: schema.roomMemberships.muted,
       })
       .from(schema.roomMemberships)
-      .where(
-        and(
-          eq(schema.roomMemberships.organisationId, subject.organisationId),
-          eq(schema.roomMemberships.roomId, roomId),
-          eq(schema.roomMemberships.actorId, subject.actorId),
-        ),
-      )
+      .where(activeRoomMembership(subject, roomId))
       .limit(1);
     if (!membership) throw new Error("Room membership required");
     return membership;
@@ -1246,13 +1283,7 @@ export class RoomService {
       const [membership] = await tx
         .select({ roomId: schema.roomMemberships.roomId })
         .from(schema.roomMemberships)
-        .where(
-          and(
-            eq(schema.roomMemberships.organisationId, subject.organisationId),
-            eq(schema.roomMemberships.roomId, message.roomId),
-            eq(schema.roomMemberships.actorId, subject.actorId),
-          ),
-        )
+        .where(activeRoomMembership(subject, message.roomId))
         .limit(1);
       if (!membership) throw new Error("Room membership required");
 
@@ -1337,3 +1368,5 @@ export class RoomService {
     });
   }
 }
+
+export * from "./governance.ts";

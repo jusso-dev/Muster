@@ -996,10 +996,598 @@ function DynamicMessageEntry({
   );
 }
 
-function RoomDetailsPanel({ slug }: { slug: string }) {
+type GovernedRoomDetails = {
+  room: {
+    id: string;
+    displayName: string;
+    description: string;
+    topic: string;
+    visibility: string;
+    roomType: string;
+    membershipRole: string | null;
+  };
+  members: Array<{
+    actorId: string;
+    displayName: string;
+    actorType: string;
+    status: string;
+    role: string;
+    joinedAt: string;
+    accessExpiresAt: string | null;
+  }>;
+  agents: GovernedRoomDetails["members"];
+  invitations: Array<{
+    id: string;
+    invitedActorId: string;
+    membershipRole: string;
+    status: string;
+    accessExpiresAt: string | null;
+  }>;
+  pinned: Array<{
+    id: string;
+    plainText: string;
+    createdAt: string;
+  }>;
+  files: Array<{
+    id: string;
+    fileName: string;
+    mimeType: string;
+    size: number;
+    classification: string;
+    scanState: string;
+    uploadedAt: string;
+  }>;
+  workflows: Array<{
+    id: string;
+    status: string;
+    startedAt: string | null;
+    completedAt: string | null;
+  }>;
+  integrations: Array<{
+    id: string;
+    product: string;
+    displayName: string;
+    status: string;
+  }>;
+  audit: Array<{
+    id: string;
+    action: string;
+    actorId: string;
+    createdAt: string;
+  }>;
+};
+
+const detailTabs = [
+  "About",
+  "Members",
+  "Agents",
+  "Pinned",
+  "Files",
+  "Workflows",
+  "Integrations",
+  "Audit",
+] as const;
+
+function GovernedDetailsPanel({ roomId }: { roomId: string }) {
+  const [details, setDetails] = useState<GovernedRoomDetails | null>(null);
+  const [tab, setTab] = useState<(typeof detailTabs)[number]>("About");
+  const [error, setError] = useState("");
+  const [directory, setDirectory] = useState<
+    Array<{
+      id: string;
+      displayName: string;
+      actorType: string;
+      status: string;
+    }>
+  >([]);
+  const [inviteActorId, setInviteActorId] = useState("");
+  const [inviteRole, setInviteRole] = useState<
+    "member" | "moderator" | "guest" | "agent_member"
+  >("member");
+  const [inviteExpiry, setInviteExpiry] = useState("");
+
+  const refresh = useCallback(async () => {
+    const response = await fetch(`/api/v1/rooms/${roomId}/details`);
+    if (!response.ok) {
+      setError("Room details unavailable");
+      return;
+    }
+    const payload = (await response.json()) as { data: GovernedRoomDetails };
+    setDetails(payload.data);
+    setError("");
+  }, [roomId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (
+      details?.room.membershipRole !== "owner" &&
+      details?.room.membershipRole !== "moderator"
+    ) {
+      return;
+    }
+    void fetch("/api/v1/directory")
+      .then(async (response) => {
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          data: Array<{
+            id: string;
+            displayName: string;
+            actorType: string;
+            status: string;
+          }>;
+        };
+        setDirectory(
+          payload.data.filter(
+            (actor) =>
+              actor.status === "active" &&
+              !details.members.some((member) => member.actorId === actor.id),
+          ),
+        );
+      })
+      .catch(() => undefined);
+  }, [details]);
+
+  async function inviteMember() {
+    if (!inviteActorId) {
+      setError("Select an actor to invite");
+      return;
+    }
+    const response = await fetch(`/api/v1/rooms/${roomId}/members`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        actorIds: [inviteActorId],
+        membershipRole: inviteRole,
+        accessExpiresAt: inviteExpiry
+          ? new Date(inviteExpiry).toISOString()
+          : null,
+        idempotencyKey: `member-invite:${browserUuid()}`,
+      }),
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as {
+        detail?: string;
+      } | null;
+      setError(payload?.detail ?? "Invitation could not be created");
+      return;
+    }
+    setInviteActorId("");
+    setInviteExpiry("");
+    await refresh();
+  }
+
+  async function removeMember(actorId: string) {
+    const response = await fetch(`/api/v1/rooms/${roomId}/members/${actorId}`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        idempotencyKey: `member-remove:${browserUuid()}`,
+      }),
+    });
+    if (!response.ok) {
+      setError("Member could not be removed");
+      return;
+    }
+    await refresh();
+  }
+
+  async function transferOwnership(actorId: string) {
+    const response = await fetch(`/api/v1/rooms/${roomId}/ownership`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        actorId,
+        idempotencyKey: `ownership-transfer:${browserUuid()}`,
+      }),
+    });
+    if (!response.ok) {
+      setError("Ownership could not be transferred");
+      return;
+    }
+    await refresh();
+  }
+
+  async function updateRoom(formData: FormData) {
+    const response = await fetch(`/api/v1/rooms/${roomId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        displayName: String(formData.get("displayName") ?? ""),
+        topic: String(formData.get("topic") ?? ""),
+        description: String(formData.get("description") ?? ""),
+        visibility: String(formData.get("visibility") ?? "organisation"),
+        idempotencyKey: `room-update:${browserUuid()}`,
+      }),
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as {
+        detail?: string;
+      } | null;
+      setError(payload?.detail ?? "Room could not be updated");
+      return;
+    }
+    await refresh();
+  }
+
+  async function exportRoom() {
+    if (!details) return;
+    const response = await fetch(`/api/v1/rooms/${roomId}/export`);
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as {
+        detail?: string;
+      } | null;
+      setError(payload?.detail ?? "Room export is unavailable");
+      return;
+    }
+    const payload = (await response.json()) as { data: unknown };
+    const blob = new Blob([JSON.stringify(payload.data, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${details.room.displayName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")}-muster-export.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  if (!details) {
+    return (
+      <div className="grid h-full place-items-center p-4 text-xs text-muted-foreground">
+        {error || "Loading room details…"}
+      </div>
+    );
+  }
+  const canManage =
+    details.room.membershipRole === "owner" ||
+    details.room.membershipRole === "moderator";
+  const records =
+    tab === "Members"
+      ? details.members.filter((member) => member.actorType !== "agent")
+      : tab === "Agents"
+        ? details.agents
+        : [];
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="border-b px-3 py-3">
+        <h2 className="truncate text-xs font-bold">
+          {details.room.displayName}
+        </h2>
+        <p className="truncate text-xs text-muted-foreground">
+          {details.room.visibility} · {details.room.roomType}
+        </p>
+      </div>
+      <div
+        role="tablist"
+        aria-label="Room details"
+        className="flex gap-1 overflow-x-auto border-b p-2"
+      >
+        {detailTabs.map((candidate) => (
+          <button
+            key={candidate}
+            type="button"
+            role="tab"
+            aria-selected={tab === candidate}
+            onClick={() => setTab(candidate)}
+            className={cn(
+              "min-h-8 shrink-0 rounded px-2 text-xs text-muted-foreground hover:bg-muted",
+              tab === candidate && "bg-muted font-semibold text-foreground",
+            )}
+          >
+            {candidate}
+          </button>
+        ))}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 text-xs">
+        {error && (
+          <p role="alert" className="mb-3 text-[var(--color-error)]">
+            {error}
+          </p>
+        )}
+        {tab === "About" && (
+          <div className="space-y-4">
+            {canManage ? (
+              <form
+                className="space-y-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void updateRoom(new FormData(event.currentTarget));
+                }}
+              >
+                <label className="block font-bold">
+                  Name
+                  <input
+                    name="displayName"
+                    defaultValue={details.room.displayName}
+                    minLength={2}
+                    maxLength={120}
+                    required
+                    className="mt-1 h-9 w-full rounded border bg-background px-2 font-normal"
+                  />
+                </label>
+                <label className="block font-bold">
+                  Topic
+                  <input
+                    name="topic"
+                    defaultValue={details.room.topic}
+                    maxLength={500}
+                    className="mt-1 h-9 w-full rounded border bg-background px-2 font-normal"
+                  />
+                </label>
+                <label className="block font-bold">
+                  Purpose
+                  <textarea
+                    name="description"
+                    defaultValue={details.room.description}
+                    maxLength={2_000}
+                    rows={3}
+                    className="mt-1 w-full rounded border bg-background p-2 font-normal"
+                  />
+                </label>
+                <label className="block font-bold">
+                  Visibility
+                  <select
+                    name="visibility"
+                    defaultValue={details.room.visibility}
+                    disabled={details.room.roomType === "direct"}
+                    className="mt-1 h-9 w-full rounded border bg-background px-2 font-normal"
+                  >
+                    <option value="organisation">Organisation</option>
+                    <option value="private">Private</option>
+                    <option value="restricted">Restricted</option>
+                  </select>
+                </label>
+                <Button size="sm" type="submit">
+                  Save room details
+                </Button>
+              </form>
+            ) : (
+              <>
+                <section>
+                  <p className="font-bold">Purpose</p>
+                  <p className="mt-1 leading-5 text-muted-foreground">
+                    {details.room.description || "No purpose recorded."}
+                  </p>
+                </section>
+                <section>
+                  <p className="font-bold">Topic</p>
+                  <p className="mt-1 leading-5 text-muted-foreground">
+                    {details.room.topic || "No topic recorded."}
+                  </p>
+                </section>
+              </>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void exportRoom()}
+            >
+              Export room manifest
+            </Button>
+            <RoomNotificationPreferences roomId={roomId} />
+          </div>
+        )}
+        {(tab === "Members" || tab === "Agents") && (
+          <div className="space-y-2">
+            {tab === "Members" && canManage && (
+              <section className="mb-3 space-y-2 rounded border bg-background p-2">
+                <p className="font-bold">Invite member or agent</p>
+                <label className="block">
+                  <span className="sr-only">Actor</span>
+                  <select
+                    value={inviteActorId}
+                    onChange={(event) => {
+                      const actor = directory.find(
+                        (candidate) => candidate.id === event.target.value,
+                      );
+                      setInviteActorId(event.target.value);
+                      if (actor?.actorType === "agent") {
+                        setInviteRole("agent_member");
+                      } else if (inviteRole === "agent_member") {
+                        setInviteRole("member");
+                      }
+                    }}
+                    className="h-9 w-full rounded border bg-background px-2"
+                  >
+                    <option value="">Select actor</option>
+                    {directory.map((actor) => (
+                      <option key={actor.id} value={actor.id}>
+                        {actor.displayName}
+                        {actor.actorType === "agent" ? " (agent)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label>
+                    <span className="sr-only">Role</span>
+                    <select
+                      value={inviteRole}
+                      onChange={(event) =>
+                        setInviteRole(event.target.value as typeof inviteRole)
+                      }
+                      className="h-9 w-full rounded border bg-background px-2"
+                    >
+                      <option value="member">Member</option>
+                      <option value="moderator">Moderator</option>
+                      <option value="guest">Guest</option>
+                      <option value="agent_member">Agent member</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span className="sr-only">Access expiry</span>
+                    <input
+                      type="datetime-local"
+                      value={inviteExpiry}
+                      onChange={(event) => setInviteExpiry(event.target.value)}
+                      className="h-9 w-full rounded border bg-background px-2"
+                    />
+                  </label>
+                </div>
+                <Button size="sm" onClick={() => void inviteMember()}>
+                  Invite
+                </Button>
+              </section>
+            )}
+            {records.map((member) => (
+              <div
+                key={member.actorId}
+                className="rounded border bg-background p-2"
+              >
+                <div className="flex items-center gap-2">
+                  <Avatar
+                    initials={member.displayName
+                      .split(/\s+/)
+                      .slice(0, 2)
+                      .map((part) => part[0] ?? "")
+                      .join("")
+                      .toUpperCase()}
+                    agent={member.actorType === "agent"}
+                    size="sm"
+                  />
+                  <span className="min-w-0 flex-1 truncate font-semibold">
+                    {member.displayName}
+                  </span>
+                  <Badge>{member.role}</Badge>
+                </div>
+                {member.accessExpiresAt && (
+                  <p className="mt-2 text-muted-foreground">
+                    Access expires{" "}
+                    {new Date(member.accessExpiresAt).toLocaleString()}
+                  </p>
+                )}
+                {canManage && member.role !== "owner" && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {member.actorType !== "agent" &&
+                      member.role !== "guest" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void transferOwnership(member.actorId)}
+                        >
+                          Make owner
+                        </Button>
+                      )}
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => void removeMember(member.actorId)}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {records.length === 0 && (
+              <p className="text-muted-foreground">No records.</p>
+            )}
+            {tab === "Members" && details.invitations.length > 0 && (
+              <section className="mt-4 border-t pt-3">
+                <p className="font-bold">Invitations</p>
+                {details.invitations.map((invitation) => (
+                  <p key={invitation.id} className="mt-2 text-muted-foreground">
+                    {invitation.membershipRole} · {invitation.status}
+                  </p>
+                ))}
+              </section>
+            )}
+          </div>
+        )}
+        {tab === "Pinned" && (
+          <RecordList
+            empty="No pinned messages."
+            records={details.pinned.map((item) => ({
+              id: item.id,
+              title: item.plainText,
+              meta: new Date(item.createdAt).toLocaleString(),
+            }))}
+          />
+        )}
+        {tab === "Files" && (
+          <RecordList
+            empty="No governed files."
+            records={details.files.map((item) => ({
+              id: item.id,
+              title: item.fileName,
+              meta: `${item.classification} · ${item.scanState} · ${item.size} bytes`,
+            }))}
+          />
+        )}
+        {tab === "Workflows" && (
+          <RecordList
+            empty="No workflow runs."
+            records={details.workflows.map((item) => ({
+              id: item.id,
+              title: item.status,
+              meta: item.startedAt
+                ? new Date(item.startedAt).toLocaleString()
+                : "Queued",
+            }))}
+          />
+        )}
+        {tab === "Integrations" && (
+          <RecordList
+            empty="No bound integrations."
+            records={details.integrations.map((item) => ({
+              id: item.id,
+              title: item.displayName,
+              meta: `${item.product} · ${item.status}`,
+            }))}
+          />
+        )}
+        {tab === "Audit" && (
+          <RecordList
+            empty="No room audit events."
+            records={details.audit.map((item) => ({
+              id: item.id,
+              title: item.action,
+              meta: new Date(item.createdAt).toLocaleString(),
+            }))}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecordList({
+  records,
+  empty,
+}: {
+  records: Array<{ id: string; title: string; meta: string }>;
+  empty: string;
+}) {
+  if (records.length === 0)
+    return <p className="text-muted-foreground">{empty}</p>;
+  return (
+    <div className="space-y-2">
+      {records.map((record) => (
+        <div key={record.id} className="rounded border bg-background p-2">
+          <p className="font-semibold">{record.title}</p>
+          <p className="mt-1 text-muted-foreground">{record.meta}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RoomDetailsPanel({
+  slug,
+  roomId,
+  governed,
+}: {
+  slug: string;
+  roomId: string;
+  governed: boolean;
+}) {
   const directRoom = demoDirectRooms.find((room) => room.slug === slug);
-  const roomId =
-    roomIdBySlug[slug] ?? roomIdBySlug["investigation-suspicious-powershell"]!;
 
   if (directRoom) {
     return (
@@ -1028,36 +1616,8 @@ function RoomDetailsPanel({ slug }: { slug: string }) {
     );
   }
 
-  if (!demoMode) {
-    const members = [demoPeople[0], ...demoAgents].flatMap((member) =>
-      member ? [member] : [],
-    );
-    return (
-      <div className="flex h-full flex-col">
-        <div className="flex h-12 items-center border-b px-3">
-          <h2 className="text-xs font-bold">Room details</h2>
-        </div>
-        <div className="p-4 text-xs">
-          <RoomNotificationPreferences roomId={roomId} />
-          <p className="font-bold">Members</p>
-          <div className="mt-3 space-y-2">
-            {members.map((member) => (
-              <div key={member.id} className="flex items-center gap-2">
-                <Avatar
-                  initials={member.initials}
-                  agent={"runtime" in member}
-                  size="sm"
-                />
-                <span>{member.name}</span>
-                {"runtime" in member && (
-                  <Badge className="agent-surface ml-auto">Agent</Badge>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+  if (!demoMode || governed) {
+    return <GovernedDetailsPanel roomId={roomId} />;
   }
 
   return (
@@ -1448,6 +2008,13 @@ export function RoomView({ slug }: { slug: string }) {
     Array<{ actorId: string; sessionId: string }>
   >([]);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const [governedRoom, setGovernedRoom] = useState<{
+    id: string;
+    slug: string;
+    displayName: string;
+    topic: string;
+    roomType: string;
+  } | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [roomQuery, setRoomQuery] = useState("");
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
@@ -1467,7 +2034,35 @@ export function RoomView({ slug }: { slug: string }) {
   );
   const presenceSessionRef = useRef(browserUuid());
   const roomId =
-    roomIdBySlug[slug] ?? roomIdBySlug["investigation-suspicious-powershell"]!;
+    governedRoom?.id ??
+    roomIdBySlug[slug] ??
+    roomIdBySlug["investigation-suspicious-powershell"]!;
+
+  useEffect(() => {
+    if (demoMode && roomIdBySlug[slug]) return;
+    const controller = new AbortController();
+    const parameters = new URLSearchParams({
+      q: slug.replaceAll("-", " "),
+      includeArchived: "true",
+    });
+    void fetch(`/api/v1/rooms?${parameters}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          data: Array<{
+            id: string;
+            slug: string;
+            displayName: string;
+            topic: string;
+            roomType: string;
+          }>;
+        };
+        const exact = payload.data.find((room) => room.slug === slug);
+        if (exact) setGovernedRoom(exact);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [slug]);
 
   const refreshMessages = useCallback(
     async (signal?: AbortSignal) => {
@@ -1809,10 +2404,14 @@ export function RoomView({ slug }: { slug: string }) {
   )?.id;
   const room = demoRooms.find((item) => item.slug === slug);
   const directRoom = demoDirectRooms.find((item) => item.slug === slug);
-  const displayName = directRoom?.name ?? room?.name ?? slug;
+  const displayName =
+    governedRoom?.displayName ?? directRoom?.name ?? room?.name ?? slug;
   const topic =
-    directRoom?.topic ?? room?.topic ?? "Security operations collaboration";
-  const isDirect = Boolean(directRoom);
+    governedRoom?.topic ??
+    directRoom?.topic ??
+    room?.topic ??
+    "Security operations collaboration";
+  const isDirect = governedRoom?.roomType === "direct" || Boolean(directRoom);
   const isIncident =
     slug.includes("incident") || slug.includes("investigation");
   return (
@@ -1827,7 +2426,11 @@ export function RoomView({ slug }: { slug: string }) {
             onClose={closeThread}
           />
         ) : (
-          <RoomDetailsPanel slug={slug} />
+          <RoomDetailsPanel
+            slug={slug}
+            roomId={roomId}
+            governed={Boolean(governedRoom)}
+          />
         )
       }
     >

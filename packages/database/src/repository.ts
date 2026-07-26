@@ -1,12 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { database } from "./index.ts";
-import {
-  alerts,
-  findings,
-  investigations,
-  messages,
-  rooms,
-} from "./schema.ts";
+import { alerts, findings, investigations, messages, rooms } from "./schema.ts";
 
 type Database = ReturnType<typeof database>;
 
@@ -18,7 +12,10 @@ export class TenantRepository {
 
   room(id: string) {
     return this.db.query.rooms.findFirst({
-      where: and(eq(rooms.organisationId, this.organisationId), eq(rooms.id, id)),
+      where: and(
+        eq(rooms.organisationId, this.organisationId),
+        eq(rooms.id, id),
+      ),
     });
   }
 
@@ -62,7 +59,7 @@ export class TenantRepository {
     });
   }
 
-  async search(query: string, limit = 20) {
+  async search(query: string, actorId: string, limit = 20) {
     const safeLimit = Math.min(Math.max(limit, 1), 100);
     const [messageRows, alertRows, investigationRows, findingRows] =
       await Promise.all([
@@ -78,6 +75,20 @@ export class TenantRepository {
           .where(
             and(
               eq(messages.organisationId, this.organisationId),
+              sql`exists (
+                select 1
+                from ${rooms} visible_room
+                join room_memberships visible_membership
+                  on visible_membership.organisation_id = visible_room.organisation_id
+                 and visible_membership.room_id = visible_room.id
+                 and visible_membership.actor_id = ${actorId}
+                 and (
+                   visible_membership.access_expires_at is null
+                   or visible_membership.access_expires_at > now()
+                 )
+                where visible_room.organisation_id = ${this.organisationId}
+                  and visible_room.id = ${messages.roomId}
+              )`,
               sql`to_tsvector('english', ${messages.plainText}) @@ websearch_to_tsquery('english', ${query})`,
             ),
           )
@@ -94,6 +105,20 @@ export class TenantRepository {
           .where(
             and(
               eq(alerts.organisationId, this.organisationId),
+              sql`exists (
+                select 1
+                from ${rooms} visible_room
+                join room_memberships visible_membership
+                  on visible_membership.organisation_id = visible_room.organisation_id
+                 and visible_membership.room_id = visible_room.id
+                 and visible_membership.actor_id = ${actorId}
+                 and (
+                   visible_membership.access_expires_at is null
+                   or visible_membership.access_expires_at > now()
+                 )
+                where visible_room.organisation_id = ${this.organisationId}
+                  and visible_room.id = ${alerts.roomId}
+              )`,
               sql`to_tsvector('english', ${alerts.title} || ' ' || ${alerts.description}) @@ websearch_to_tsquery('english', ${query})`,
             ),
           )
@@ -110,6 +135,20 @@ export class TenantRepository {
           .where(
             and(
               eq(investigations.organisationId, this.organisationId),
+              sql`exists (
+                select 1
+                from ${rooms} visible_room
+                join room_memberships visible_membership
+                  on visible_membership.organisation_id = visible_room.organisation_id
+                 and visible_membership.room_id = visible_room.id
+                 and visible_membership.actor_id = ${actorId}
+                 and (
+                   visible_membership.access_expires_at is null
+                   or visible_membership.access_expires_at > now()
+                 )
+                where visible_room.organisation_id = ${this.organisationId}
+                  and visible_room.id = ${investigations.roomId}
+              )`,
               sql`to_tsvector('english', ${investigations.title} || ' ' || ${investigations.summary}) @@ websearch_to_tsquery('english', ${query})`,
             ),
           )

@@ -33,6 +33,62 @@ import {
 } from "@/lib/demo-data";
 import { cn } from "@/lib/utils";
 
+type NavigationRoom = {
+  id: string;
+  slug: string;
+  displayName: string;
+  topic: string;
+  roomType: string;
+  favourite: boolean | null;
+  muted: boolean | null;
+  sidebarPosition: number | null;
+  sidebarGroup: string | null;
+  unreadCount?: number;
+  mentionCount?: number;
+};
+
+const initialNavigationRooms: NavigationRoom[] = [
+  ...demoRooms.map((room) => ({
+    id: roomIdFromSlug(room.slug),
+    slug: room.slug,
+    displayName: room.name,
+    topic: room.topic,
+    roomType: "operations",
+    favourite: room.favourite,
+    muted: false,
+    sidebarPosition: 0,
+    sidebarGroup: null,
+    unreadCount: room.unread,
+    mentionCount: room.mentions,
+  })),
+  ...demoDirectRooms.map((room) => ({
+    id: roomIdFromSlug(room.slug),
+    slug: room.slug,
+    displayName: room.name,
+    topic: room.topic,
+    roomType: "direct",
+    favourite: false,
+    muted: false,
+    sidebarPosition: 0,
+    sidebarGroup: null,
+    unreadCount: 0,
+    mentionCount: 0,
+  })),
+];
+
+function roomIdFromSlug(slug: string) {
+  return `demo:${slug}`;
+}
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0] ?? "")
+    .join("")
+    .toUpperCase();
+}
+
 function NavGroup({ label, children }: { label: string; children: ReactNode }) {
   const [expanded, setExpanded] = useState(true);
   return (
@@ -61,7 +117,7 @@ function ChannelLink({
   room,
   onNavigate,
 }: {
-  room: (typeof demoRooms)[number];
+  room: NavigationRoom;
   onNavigate: (() => void) | undefined;
 }) {
   const pathname = usePathname();
@@ -74,16 +130,17 @@ function ChannelLink({
       className={cn(
         "flex min-h-7 items-center gap-1.5 rounded px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground",
         active && "sidebar-active font-semibold text-foreground",
-        room.unread > 0 && !active && "font-semibold text-foreground",
+        Boolean(room.unreadCount) && !active && "font-semibold text-foreground",
       )}
     >
       <Hash className="size-3.5 shrink-0" aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate">{room.name}</span>
-      {room.mentions > 0 ? (
+      <span className="min-w-0 flex-1 truncate">{room.displayName}</span>
+      {room.muted && <span className="sr-only">Muted</span>}
+      {Boolean(room.mentionCount) ? (
         <Badge className="min-w-5 justify-center bg-[var(--color-accent)] px-1 text-primary-foreground">
-          {room.mentions}
+          {room.mentionCount}
         </Badge>
-      ) : room.unread > 0 ? (
+      ) : Boolean(room.unreadCount) ? (
         <span className="size-1.5 rounded-full bg-[var(--color-accent)]" />
       ) : null}
     </Link>
@@ -94,7 +151,7 @@ function DirectLink({
   room,
   onNavigate,
 }: {
-  room: (typeof demoDirectRooms)[number];
+  room: NavigationRoom;
   onNavigate: (() => void) | undefined;
 }) {
   const pathname = usePathname();
@@ -110,20 +167,10 @@ function DirectLink({
       )}
     >
       <span className="relative">
-        <Avatar initials={room.initials} agent={room.agent} size="sm" />
-        <span
-          className={cn(
-            "absolute -bottom-0.5 -right-0.5 size-2 rounded-full border border-[var(--color-paper-2)]",
-            room.presence === "online"
-              ? "bg-[var(--color-success)]"
-              : "bg-[var(--color-warning)]",
-          )}
-        />
+        <Avatar initials={initials(room.displayName)} size="sm" />
+        <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full border border-[var(--color-paper-2)] bg-[var(--color-success)]" />
       </span>
-      <span className="min-w-0 flex-1 truncate">{room.name}</span>
-      {room.agent && (
-        <Badge className="agent-surface px-1 text-xs">Agent</Badge>
-      )}
+      <span className="min-w-0 flex-1 truncate">{room.displayName}</span>
     </Link>
   );
 }
@@ -165,11 +212,43 @@ function MainNavigation({
   onNavigate?: () => void;
   onOpenPalette: () => void;
 }) {
-  const favourites = demoRooms.filter((room) => room.favourite);
-  const channels = demoRooms.filter((room) => !room.favourite);
+  const [rooms, setRooms] = useState(initialNavigationRooms);
+  const [roomsLoaded, setRoomsLoaded] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/v1/rooms?membership=joined", {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          data: NavigationRoom[];
+        };
+        setRooms(payload.data);
+      })
+      .catch(() => undefined)
+      .finally(() => setRoomsLoaded(true));
+    return () => controller.abort();
+  }, []);
+  const favourites = rooms.filter(
+    (room) => room.favourite && room.roomType !== "direct",
+  );
+  const channels = rooms.filter(
+    (room) => !room.favourite && room.roomType !== "direct",
+  );
+  const channelGroups = new Map<string, NavigationRoom[]>();
+  for (const room of channels) {
+    const label = room.sidebarGroup?.trim() || "Channels";
+    channelGroups.set(label, [...(channelGroups.get(label) ?? []), room]);
+  }
+  const directRooms = rooms.filter((room) => room.roomType === "direct");
 
   return (
-    <nav aria-label="Workspace" className="h-full overflow-y-auto px-2 py-2">
+    <nav
+      aria-label="Workspace"
+      aria-busy={!roomsLoaded}
+      className="h-full overflow-y-auto px-2 py-2"
+    >
       <div className="mb-3 space-y-0.5">
         <QuickLink
           href="/rooms/soc-operations"
@@ -192,6 +271,12 @@ function MainNavigation({
           onNavigate={onNavigate}
         />
         <QuickLink
+          href="/rooms"
+          label="Browse rooms"
+          icon={Hash}
+          onNavigate={onNavigate}
+        />
+        <QuickLink
           href="/search"
           label="Saved items"
           icon={Bookmark}
@@ -208,21 +293,35 @@ function MainNavigation({
         </button>
       </div>
 
-      <NavGroup label="Starred">
-        {favourites.map((room) => (
-          <ChannelLink key={room.slug} room={room} onNavigate={onNavigate} />
-        ))}
-      </NavGroup>
-      <NavGroup label="Channels">
-        {channels.map((room) => (
-          <ChannelLink key={room.slug} room={room} onNavigate={onNavigate} />
-        ))}
-      </NavGroup>
-      <NavGroup label="Direct messages">
-        {demoDirectRooms.map((room) => (
-          <DirectLink key={room.slug} room={room} onNavigate={onNavigate} />
-        ))}
-      </NavGroup>
+      {roomsLoaded && (
+        <>
+          <NavGroup label="Starred">
+            {favourites.map((room) => (
+              <ChannelLink
+                key={room.slug}
+                room={room}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </NavGroup>
+          {[...channelGroups.entries()].map(([label, groupedRooms]) => (
+            <NavGroup key={label} label={label}>
+              {groupedRooms.map((room) => (
+                <ChannelLink
+                  key={room.slug}
+                  room={room}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </NavGroup>
+          ))}
+          <NavGroup label="Direct messages">
+            {directRooms.map((room) => (
+              <DirectLink key={room.slug} room={room} onNavigate={onNavigate} />
+            ))}
+          </NavGroup>
+        </>
+      )}
     </nav>
   );
 }
