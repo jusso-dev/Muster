@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.MUSTER_BASE_URL;
+const proxyServer = process.env.MUSTER_PROXY_SERVER;
 
 if (!baseURL) {
   throw new Error("MUSTER_BASE_URL is required for homelab tests");
@@ -16,6 +17,7 @@ export default defineConfig({
   outputDir: "test-results/homelab",
   use: {
     baseURL,
+    ...(proxyServer ? { proxy: { server: proxyServer } } : {}),
     storageState: ".playwright/auth.json",
     trace: "retain-on-failure",
     screenshot: { mode: "only-on-failure", fullPage: true },
