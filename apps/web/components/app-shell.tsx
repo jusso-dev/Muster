@@ -14,13 +14,17 @@ import {
   Hash,
   House,
   ListTodo,
+  LogOut,
   Menu,
+  Moon,
   PanelRightOpen,
   Search,
   Settings,
   SquarePen,
+  Sun,
   X,
 } from "lucide-react";
+import { authClient } from "@muster/auth/client";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -337,6 +341,7 @@ export function AppShell({
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileContextOpen, setMobileContextOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
@@ -409,7 +414,7 @@ export function AppShell({
             ⌘K
           </kbd>
         </button>
-        <div className="flex items-center gap-1">
+        <div className="relative flex items-center gap-1">
           <span className="hidden items-center gap-1.5 text-xs text-[var(--color-success)] wide:flex">
             <span className="size-1.5 rounded-full bg-[var(--color-success)]" />
             Connected
@@ -449,11 +454,48 @@ export function AppShell({
             type="button"
             className="ml-1 rounded-md"
             aria-label="User menu and theme"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            title="Toggle theme"
+            aria-expanded={userMenuOpen}
+            aria-haspopup="menu"
+            onClick={() => setUserMenuOpen((current) => !current)}
           >
             <Avatar initials={demoMode ? "JB" : "MA"} />
           </button>
+          {userMenuOpen && (
+            <div
+              role="menu"
+              aria-label="User menu"
+              className="absolute right-0 top-10 z-50 w-44 rounded-md border bg-background p-1 shadow-lg"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="flex min-h-9 w-full items-center gap-2 rounded px-2 text-left text-xs hover:bg-muted"
+                onClick={() => {
+                  setTheme(theme === "dark" ? "light" : "dark");
+                  setUserMenuOpen(false);
+                }}
+              >
+                {theme === "dark" ? (
+                  <Sun className="size-4" />
+                ) : (
+                  <Moon className="size-4" />
+                )}
+                {theme === "dark" ? "Use light theme" : "Use dark theme"}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="flex min-h-9 w-full items-center gap-2 rounded px-2 text-left text-xs hover:bg-muted"
+                onClick={async () => {
+                  await authClient.signOut();
+                  window.location.assign("/login");
+                }}
+              >
+                <LogOut className="size-4" />
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
