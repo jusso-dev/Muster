@@ -454,13 +454,13 @@ test("Redis, worker, and web interruptions recover without duplicates", async ({
             "inspect",
             container,
             "--format",
-            "{{.State.Status}} {{.State.Health.Status}}",
+            "{{.State.Status}},{{.State.Health.Status}}",
           ]);
           return stdout.trim();
         },
         { timeout: 60_000 },
       )
-      .toBe("running healthy");
+      .toBe("running,healthy");
   };
 
   const room = await joinedRoom(request, "soc-operations");
