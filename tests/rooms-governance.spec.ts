@@ -64,8 +64,11 @@ test("administrator completes governed room lifecycle through the UI", async ({
   await card.getByRole("link", { name: roomName }).click();
   await expect(page).toHaveURL(/\/rooms\/synthetic-governance-/);
   await expect(page.getByRole("heading", { name: roomName })).toBeVisible();
-  await page.getByRole("button", { name: "Room details" }).click();
+  await page
+    .getByRole("button", { name: "Room details", exact: true })
+    .click();
   await expect(page.getByRole("tab", { name: "About" })).toBeVisible();
+  await expect(page.getByLabel("Visibility")).toHaveValue("private");
   await page.getByLabel("Name").fill(renamedRoom);
   await page
     .getByLabel("Topic")
@@ -96,11 +99,22 @@ test("administrator completes governed room lifecycle through the UI", async ({
     .filter({ hasText: renamedRoom });
   await renamedCard.getByRole("button", { name: "Archive" }).click();
   await expect(
-    renamedCard.getByText("Archived", { exact: true }),
+    page.getByRole("status").filter({ hasText: "archive complete" }),
   ).toBeVisible();
-  await renamedCard.getByRole("button", { name: "Restore" }).click();
+  await expect(renamedCard).not.toBeVisible();
+  await page.getByLabel("Archived").check();
+  const archivedCard = page
+    .getByRole("article")
+    .filter({ hasText: renamedRoom });
   await expect(
-    renamedCard.getByText("Archived", { exact: true }),
+    archivedCard.getByText("Archived", { exact: true }),
+  ).toBeVisible();
+  await archivedCard.getByRole("button", { name: "Restore" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "restore complete" }),
+  ).toBeVisible();
+  await expect(
+    archivedCard.getByText("Archived", { exact: true }),
   ).not.toBeVisible();
 
   await page.goto("/rooms/admin");

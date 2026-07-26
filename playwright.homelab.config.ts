@@ -8,7 +8,8 @@ if (!baseURL) {
 }
 
 export default defineConfig({
-  testDir: "./tests/homelab",
+  testDir: "./tests",
+  testMatch: ["homelab/**/*.spec.ts", "rooms-governance.spec.ts"],
   globalSetup: "./tests/global-setup.ts",
   fullyParallel: false,
   workers: 1,

@@ -19,6 +19,7 @@ import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { browserUuid } from "@/lib/browser-uuid";
 import { cn } from "@/lib/utils";
 
 type RoomRecord = {
@@ -71,7 +72,7 @@ const roomTypes = [
 ] as const;
 
 function idempotencyKey(prefix: string) {
-  return `${prefix}:${crypto.randomUUID()}`;
+  return `${prefix}:${browserUuid()}`;
 }
 
 async function problemDetail(response: Response) {
