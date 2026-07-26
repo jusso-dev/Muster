@@ -136,6 +136,12 @@ export const EvidenceReferenceSchema = z.object({
   sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
 });
 
+const AgentEvidenceReferenceSchema = z.object({
+  type: z.string().min(1).max(120),
+  reference: z.string().min(1).max(500),
+  sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).nullable(),
+});
+
 export const MsepEnvelopeSchema = z
   .object({
     specVersion: z.literal("muster.security/v1"),
@@ -211,7 +217,7 @@ const structuredFindingBase = z.object({
   title: z.string().min(1).max(240),
   summary: z.string().min(1).max(10_000),
   confidence: z.number().min(0).max(1),
-  evidenceReferences: z.array(EvidenceReferenceSchema).max(100),
+  evidenceReferences: z.array(AgentEvidenceReferenceSchema).max(100),
   recommendedActions: z.array(z.string().max(500)).max(20),
 });
 
@@ -248,7 +254,7 @@ export const CasePromotionDraftSchema = z.object({
   pap: PapSchema,
   classification: z.string(),
   observableReferences: z.array(z.string()),
-  evidenceReferences: z.array(EvidenceReferenceSchema),
+  evidenceReferences: z.array(AgentEvidenceReferenceSchema),
   suggestedPlaybook: z.string().nullable(),
 });
 export const DetectionProposalSchema = z.object({
@@ -256,7 +262,7 @@ export const DetectionProposalSchema = z.object({
   rationale: z.string(),
   sigmaYaml: z.string(),
   kql: z.string(),
-  testEvidenceReferences: z.array(EvidenceReferenceSchema),
+  testEvidenceReferences: z.array(AgentEvidenceReferenceSchema),
 });
 export const EvidenceBundleManifestSchema = z.object({
   bundleId: z.string().uuid(),
@@ -276,7 +282,7 @@ export const PostIncidentSummarySchema = z.object({
   timelineHighlights: z.array(z.string()),
   lessons: z.array(z.string()),
   followUpActions: z.array(z.string()),
-  evidenceReferences: z.array(EvidenceReferenceSchema),
+  evidenceReferences: z.array(AgentEvidenceReferenceSchema),
 });
 export const ExecutiveUpdateSchema = z.object({
   headline: z.string().max(180),

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
+  AgentStructuredOutputSchemas,
   MsepEnvelopeSchema,
   WorkflowDefinitionSchema,
   msepEventTypes,
@@ -48,5 +50,40 @@ describe("workflow contract", () => {
         steps: [],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("agent structured output contracts", () => {
+  it("generates an OpenAI strict-compatible evidence-reference schema", () => {
+    const schema = z.toJSONSchema(
+      AgentStructuredOutputSchemas.TriageRecommendation,
+      {
+        target: "draft-2020-12",
+        io: "output",
+      },
+    ) as unknown as {
+      properties: {
+        evidenceReferences: {
+          items: { required?: string[]; properties: Record<string, unknown> };
+        };
+      };
+    };
+    const evidenceItem = schema.properties.evidenceReferences.items;
+
+    expect(evidenceItem.required).toEqual(Object.keys(evidenceItem.properties));
+    expect(
+      AgentStructuredOutputSchemas.TriageRecommendation.safeParse({
+        title: "Suspicious PowerShell",
+        summary: "Synthetic recommendation",
+        confidence: 0.9,
+        evidenceReferences: [
+          { type: "tawny.telemetry", reference: "telemetry_123", sha256: null },
+        ],
+        recommendedActions: ["Review endpoint activity"],
+        disposition: "investigate",
+        severity: "high",
+        rationale: "Correlated endpoint activity",
+      }).success,
+    ).toBe(true);
   });
 });
