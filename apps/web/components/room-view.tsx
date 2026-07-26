@@ -1839,6 +1839,12 @@ function ThreadPanel({
 }) {
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportFeedback, setExportFeedback] = useState<{
+    kind: "success" | "error";
+    message: string;
+  } | null>(null);
   const replies = messages
     .filter((message) => message.threadParentId === parent.id)
     .sort(
@@ -1902,11 +1908,87 @@ function ThreadPanel({
     }
   }
 
+  async function copyThread() {
+    if (exporting) return;
+    setExporting(true);
+    setActionsOpen(false);
+    setExportFeedback(null);
+    try {
+      const response = await fetch(
+        `/api/v1/rooms/${encodeURIComponent(roomId)}/threads/${encodeURIComponent(parent.id)}/export`,
+      );
+      if (!response.ok) throw new Error("Thread export failed.");
+      const payload = (await response.json()) as {
+        data: { markdown: string; fileName: string };
+      };
+      try {
+        if (!navigator.clipboard?.writeText) {
+          throw new Error("Clipboard unavailable.");
+        }
+        await navigator.clipboard.writeText(payload.data.markdown);
+        setExportFeedback({
+          kind: "success",
+          message: "Thread copied as Markdown.",
+        });
+      } catch {
+        const url = URL.createObjectURL(
+          new Blob([payload.data.markdown], {
+            type: "text/markdown;charset=utf-8",
+          }),
+        );
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = payload.data.fileName;
+        link.click();
+        URL.revokeObjectURL(url);
+        setExportFeedback({
+          kind: "success",
+          message: "Clipboard unavailable; Markdown downloaded.",
+        });
+      }
+    } catch {
+      setExportFeedback({
+        kind: "error",
+        message: "Thread export failed. Try again.",
+      });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 items-center gap-2 border-b px-3">
         <MessageSquare className="size-4" />
         <h2 className="flex-1 font-display text-sm font-bold">Thread</h2>
+        <div className="relative">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setActionsOpen((open) => !open)}
+            aria-label="Thread actions"
+            aria-expanded={actionsOpen}
+            disabled={exporting}
+          >
+            <MoreHorizontal />
+          </Button>
+          {actionsOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 top-10 z-30 w-44 rounded-md border bg-popover p-1 shadow-lg"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-muted"
+                onClick={() => void copyThread()}
+              >
+                <Copy className="size-3.5" />
+                Copy thread
+              </button>
+            </div>
+          )}
+        </div>
         <Button
           variant="ghost"
           size="icon"
@@ -1916,6 +1998,19 @@ function ThreadPanel({
           <X />
         </Button>
       </div>
+      {exportFeedback && (
+        <div
+          role={exportFeedback.kind === "error" ? "alert" : "status"}
+          className={cn(
+            "border-b px-3 py-2 text-xs",
+            exportFeedback.kind === "error"
+              ? "text-destructive"
+              : "text-muted-foreground",
+          )}
+        >
+          {exportFeedback.message}
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto">
         <div className="border-b p-3">
           <div className="flex items-center gap-2">

@@ -150,6 +150,279 @@ test("room reactions toggle and thread replies persist", async ({
   await expect(page.getByText(replyText)).toBeVisible();
 });
 
+test("thread export copies and downloads complete governed Markdown", async ({
+  page,
+  playwright,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium");
+  const db = database();
+  const [room] = await db
+    .select()
+    .from(schema.rooms)
+    .where(eq(schema.rooms.slug, "soc-operations"))
+    .limit(1);
+  if (!room) throw new Error("Seeded SOC operations room required");
+  const [otherRoom] = await db
+    .select()
+    .from(schema.rooms)
+    .where(
+      and(
+        eq(schema.rooms.organisationId, room.organisationId),
+        eq(schema.rooms.slug, "detection-engineering"),
+      ),
+    )
+    .limit(1);
+  if (!otherRoom) throw new Error("Second seeded room required");
+  const [human] = await db
+    .select()
+    .from(schema.actors)
+    .where(
+      and(
+        eq(schema.actors.organisationId, room.organisationId),
+        eq(schema.actors.identityReference, "admin@muster.local"),
+      ),
+    )
+    .limit(1);
+  const [agent] = await db
+    .select()
+    .from(schema.actors)
+    .where(
+      and(
+        eq(schema.actors.organisationId, room.organisationId),
+        eq(schema.actors.actorType, "agent"),
+      ),
+    )
+    .limit(1);
+  const [system] = await db
+    .select()
+    .from(schema.actors)
+    .where(
+      and(
+        eq(schema.actors.organisationId, room.organisationId),
+        eq(schema.actors.actorType, "system"),
+      ),
+    )
+    .limit(1);
+  if (!human || !agent || !system) {
+    throw new Error("Seeded human, agent, and system actors required");
+  }
+
+  const suffix = newId().slice(0, 8);
+  const messageIds = [newId(), newId(), newId(), newId(), newId()];
+  const evidenceId = newId();
+  const secret = `synthetic-thread-secret-${suffix}`;
+  const deletedCanary = `deleted-thread-canary-${suffix}`;
+  const otherRoomCanary = `other-room-thread-canary-${suffix}`;
+  const rootText = `Review synthetic thread ${suffix}`;
+  const startedAt = new Date();
+  const textDocument = (text: string) => ({
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text }],
+      },
+    ],
+  });
+
+  try {
+    await db.insert(schema.evidence).values({
+      id: evidenceId,
+      organisationId: room.organisationId,
+      fileName: `synthetic-thread-${suffix}.json`,
+      mimeType: "application/json",
+      size: 128,
+      sha256: `${"c".repeat(56)}${suffix}`.slice(0, 64),
+      uploadedByActorId: human.id,
+      classification: "internal",
+      relatedRoomId: room.id,
+      source: "synthetic-browser-test",
+      storageKey: `${room.organisationId}/evidence/${evidenceId}/synthetic.json`,
+      scanState: "clean",
+      retentionState: "active",
+    });
+    await db.insert(schema.messages).values([
+      {
+        id: messageIds[0]!,
+        organisationId: room.organisationId,
+        roomId: room.id,
+        authorActorId: human.id,
+        messageType: "text",
+        document: textDocument(rootText),
+        plainText: rootText,
+        createdAt: startedAt,
+        idempotencyKey: `synthetic-thread-root:${messageIds[0]}`,
+      },
+      {
+        id: messageIds[1]!,
+        organisationId: room.organisationId,
+        roomId: room.id,
+        threadParentId: messageIds[0]!,
+        authorActorId: agent.id,
+        messageType: "text",
+        document: textDocument("Synthetic agent analysis completed."),
+        plainText: `Synthetic agent analysis completed. api_key=${secret}`,
+        createdAt: new Date(startedAt.getTime() + 1_000),
+        idempotencyKey: `synthetic-thread-agent:${messageIds[1]}`,
+      },
+      {
+        id: messageIds[2]!,
+        organisationId: room.organisationId,
+        roomId: room.id,
+        threadParentId: messageIds[0]!,
+        authorActorId: system.id,
+        messageType: "finding",
+        document: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "Synthetic finding verified." }],
+            },
+            {
+              type: "attachment",
+              attrs: {
+                id: evidenceId,
+                label: `synthetic-thread-${suffix}.json`,
+              },
+            },
+          ],
+        },
+        plainText: "Synthetic finding verified.",
+        createdAt: new Date(startedAt.getTime() + 2_000),
+        idempotencyKey: `synthetic-thread-finding:${messageIds[2]}`,
+      },
+      {
+        id: messageIds[3]!,
+        organisationId: room.organisationId,
+        roomId: room.id,
+        threadParentId: messageIds[0]!,
+        authorActorId: human.id,
+        messageType: "text",
+        document: textDocument(deletedCanary),
+        plainText: deletedCanary,
+        createdAt: new Date(startedAt.getTime() + 3_000),
+        deletedAt: new Date(startedAt.getTime() + 4_000),
+        idempotencyKey: `synthetic-thread-deleted:${messageIds[3]}`,
+      },
+      {
+        id: messageIds[4]!,
+        organisationId: room.organisationId,
+        roomId: otherRoom.id,
+        threadParentId: messageIds[0]!,
+        authorActorId: human.id,
+        messageType: "text",
+        document: textDocument(otherRoomCanary),
+        plainText: otherRoomCanary,
+        createdAt: new Date(startedAt.getTime() + 4_000),
+        idempotencyKey: `synthetic-thread-other-room:${messageIds[4]}`,
+      },
+    ]);
+
+    await page.goto(`/rooms/${room.slug}?thread=${messageIds[0]}`);
+    await expect(page.getByRole("heading", { name: "Thread" })).toBeVisible();
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async (text: string) => {
+            (
+              globalThis as typeof globalThis & {
+                __musterCopiedThread?: string;
+              }
+            ).__musterCopiedThread = text;
+          },
+        },
+      });
+    });
+    await page.getByRole("button", { name: "Thread actions" }).click();
+    await page.getByRole("menuitem", { name: "Copy thread" }).click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Thread copied as Markdown." }),
+    ).toBeVisible();
+    const markdown = await page.evaluate(
+      () =>
+        (
+          globalThis as typeof globalThis & {
+            __musterCopiedThread?: string;
+          }
+        ).__musterCopiedThread,
+    );
+    expect(markdown).toContain(`# ${room.displayName} thread`);
+    expect(markdown).toContain(rootText);
+    expect(markdown).toContain(`${human.displayName} (Human)`);
+    expect(markdown).toContain(`${agent.displayName} (Agent)`);
+    expect(markdown).toContain(`${system.displayName} (System)`);
+    expect(markdown).toContain("**Entry type:** Investigation finding");
+    expect(markdown).toContain(`/api/v1/evidence/${evidenceId}`);
+    expect(markdown).toContain("\\[REDACTED\\]");
+    expect(markdown).not.toContain(secret);
+    expect(markdown).not.toContain(deletedCanary);
+    expect(markdown).not.toContain(otherRoomCanary);
+    expect(markdown?.match(/^## Reply /gm)).toHaveLength(2);
+
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async () => {
+            throw new Error("Synthetic clipboard denial");
+          },
+        },
+      });
+    });
+    await page.getByRole("button", { name: "Thread actions" }).click();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("menuitem", { name: "Copy thread" }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe(
+      `${room.slug}-thread-${messageIds[0]!.slice(0, 8)}.md`,
+    );
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Clipboard unavailable; Markdown downloaded." }),
+    ).toBeVisible();
+
+    const audits = await db
+      .select({ id: schema.auditEvents.id })
+      .from(schema.auditEvents)
+      .where(
+        and(
+          eq(schema.auditEvents.organisationId, room.organisationId),
+          eq(schema.auditEvents.action, "room.thread.exported"),
+          eq(schema.auditEvents.targetId, messageIds[0]!),
+        ),
+      );
+    expect(audits).toHaveLength(2);
+
+    const baseURL = testInfo.project.use.baseURL?.toString();
+    if (!baseURL) throw new Error("Playwright baseURL required");
+    const anonymous = await playwright.request.newContext({
+      baseURL,
+      storageState: { cookies: [], origins: [] },
+    });
+    try {
+      expect(
+        (
+          await anonymous.get(
+            `/api/v1/rooms/${room.id}/threads/${messageIds[0]}/export`,
+          )
+        ).status(),
+      ).toBe(401);
+    } finally {
+      await anonymous.dispose();
+    }
+  } finally {
+    await db
+      .delete(schema.messages)
+      .where(inArray(schema.messages.id, messageIds));
+    await db.delete(schema.evidence).where(eq(schema.evidence.id, evidenceId));
+  }
+});
+
 test("composer drafts persist and theme control works", async ({
   page,
 }, testInfo) => {
