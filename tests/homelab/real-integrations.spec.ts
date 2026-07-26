@@ -342,12 +342,12 @@ test("real Tawny and Kelpie operations are governed, durable, and duplicate-safe
   ).toBeVisible();
 
   if (process.env.MUSTER_AUTH_REQUIRED === "true") {
-    const unauthenticated = await page.context().browser()?.newContext();
-    if (!unauthenticated) throw new Error("Browser context unavailable");
-    const denied = await unauthenticated.request.get(
-      `${testInfo.project.use.baseURL}/api/v1/integration-actions/${isolate.id}`,
+    const denied = await fetch(
+      new URL(
+        `/api/v1/integration-actions/${isolate.id}`,
+        String(testInfo.project.use.baseURL),
+      ),
     );
-    expect(denied.status()).toBe(401);
-    await unauthenticated.close();
+    expect(denied.status).toBe(401);
   }
 });
