@@ -17,6 +17,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { browserUuid } from "@/lib/browser-uuid";
 import { AppShell } from "@/components/app-shell";
 import {
   RoomComposer,
@@ -514,7 +515,7 @@ function ThreadPanel({
           plainText,
           messageType: "text",
           dataClassification: "internal",
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: browserUuid(),
         }),
       });
       if (!response.ok) return;
@@ -655,7 +656,7 @@ export function RoomView({ slug }: { slug: string }) {
       };
       setLiveEvents((current) => [
         ...current,
-        { id: crypto.randomUUID(), type: data.type ?? "update" },
+        { id: browserUuid(), type: data.type ?? "update" },
       ]);
     });
     return () => source.close();

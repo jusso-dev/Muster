@@ -16,6 +16,7 @@
     "test": "turbo test",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:homelab": "playwright test --config=playwright.homelab.config.ts",
     "contracts:generate": "pnpm --filter @muster/contracts generate",
     "db:generate": "pnpm --filter @muster/database generate",
     "db:migrate": "pnpm --filter @muster/database migrate",

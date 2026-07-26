@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { roomIdBySlug } from "@/lib/demo-data";
+import { browserUuid } from "@/lib/browser-uuid";
 
 export type RoomMessageRecord = {
   id: string;
@@ -82,7 +83,7 @@ export function RoomComposer({
           plainText: editor.getText(),
           messageType: "text",
           dataClassification: "internal",
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: browserUuid(),
         }),
       });
       if (!response.ok) {
