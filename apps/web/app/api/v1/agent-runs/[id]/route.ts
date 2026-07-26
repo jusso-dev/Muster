@@ -7,6 +7,7 @@ import {
   problemResponse,
   requestTraceId,
 } from "@/lib/api-context";
+import { settleAgentRun, type AgentRunResult } from "@/lib/task-domain";
 
 export async function GET(
   request: Request,
@@ -37,23 +38,44 @@ export async function GET(
     );
     const result = (await gateway.json()) as {
       status?: string;
+      output?: unknown;
+      outputHash?: string;
+      usage?: unknown;
+      estimatedCostCents?: number;
       error?: string;
     };
-    if (!gateway.ok) throw new Error(result.error ?? "Agent run not found");
-    if (result.status && result.status !== "running") {
-      await db
-        .update(schema.tasks)
-        .set({
-          status: result.status === "completed" ? "review" : "ready",
-          agentRunStatus: result.status,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(schema.tasks.organisationId, subject.organisationId),
-            eq(schema.tasks.agentRunId, id),
-          ),
-        );
+    if (!gateway.ok) {
+      const unavailable: AgentRunResult = {
+        status: "failed",
+        error: "Agent runtime record unavailable; retry the task.",
+      };
+      await settleAgentRun(
+        {
+          organisationId: subject.organisationId,
+          actorId: subject.actorId,
+          traceId,
+        },
+        task.id,
+        id,
+        unavailable,
+      );
+      return Response.json({ data: unavailable, traceId });
+    }
+    if (
+      result.status === "completed" ||
+      result.status === "failed" ||
+      result.status === "cancelled"
+    ) {
+      await settleAgentRun(
+        {
+          organisationId: subject.organisationId,
+          actorId: subject.actorId,
+          traceId,
+        },
+        task.id,
+        id,
+        result as AgentRunResult,
+      );
     }
     return Response.json({ data: result, traceId });
   } catch (error) {

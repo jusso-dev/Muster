@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { database, newId, schema } from "@muster/database";
+import { eq } from "drizzle-orm";
 import { login } from "./helpers";
 
 test("local administrator can sign in", async ({ page }) => {
@@ -189,7 +191,7 @@ test("agent learning is evidence-backed and approval gated", async ({
   ).toBeVisible();
 });
 
-test("task board creates and moves durable agent work", async ({
+test("task board manages durable agent work end to end", async ({
   page,
 }, testInfo) => {
   await page.goto("/tasks");
@@ -204,8 +206,23 @@ test("task board creates and moves durable agent work", async ({
   await page
     .getByPlaceholder("Context, constraints, and deliverable")
     .fill("Correlate the signal and return an evidence-linked review draft.");
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByLabel("Due").fill("2026-08-15T15:30");
+  await page.getByLabel("Priority").selectOption("high");
+  await page.getByLabel("Room").selectOption({ label: "#soc-operations" });
+  await page.getByPlaceholder("Optional case ID").fill("CASE-SYNTHETIC-17");
+  await page.getByRole("button", { name: "Create task", exact: true }).click();
   await expect(page.getByText(taskTitle)).toBeVisible();
+
+  let taskCard = page.getByRole("article").filter({ hasText: taskTitle });
+  await taskCard.getByRole("button", { name: `Edit ${taskTitle}` }).click();
+  await page
+    .getByPlaceholder("Context, constraints, and deliverable")
+    .fill("Edited synthetic outcome with evidence and a human review.");
+  await page.getByRole("button", { name: "Save task" }).click();
+  await expect(
+    taskCard.getByText("Edited synthetic outcome with evidence"),
+  ).toBeVisible();
+
   await Promise.all([
     page.waitForResponse(
       (response) =>
@@ -220,6 +237,132 @@ test("task board creates and moves durable agent work", async ({
     .getByRole("heading", { name: "Ready" })
     .locator("xpath=ancestor::section");
   await expect(readyColumn.getByText(taskTitle)).toBeVisible();
+  await expect(readyColumn.getByText("Case CASE-SYNTHETIC-17")).toBeVisible();
+
+  taskCard = page.getByRole("article").filter({ hasText: taskTitle });
+  await taskCard.getByRole("button", { name: "Delegate" }).click();
+  await expect(taskCard.getByText("Agent running")).toBeVisible();
+  await taskCard.getByRole("button", { name: "Cancel" }).click();
+  await expect(taskCard.getByText("Agent cancelled")).toBeVisible();
+  await expect(taskCard.getByRole("button", { name: "Retry" })).toBeVisible();
+
+  await taskCard.getByRole("button", { name: "Retry" }).click();
+  const reviewColumn = page
+    .getByRole("heading", { name: "Review", exact: true })
+    .locator("xpath=ancestor::section");
+  await expect(
+    reviewColumn.getByRole("heading", { name: taskTitle, exact: true }),
+  ).toBeVisible({ timeout: 15_000 });
+  taskCard = reviewColumn.getByRole("article").filter({ hasText: taskTitle });
+  await expect(taskCard.getByText("Agent completed")).toBeVisible();
+  await taskCard.getByText("Agent output and evidence").click();
+  await expect(taskCard.getByText("Synthetic task review")).toBeVisible();
+  await expect(taskCard.getByText(/inputTokens/)).toBeVisible();
+  await taskCard.getByRole("button", { name: "Mark done" }).click();
+  const doneColumn = page
+    .getByRole("heading", { name: "Done", exact: true })
+    .locator("xpath=ancestor::section");
+  await expect(
+    doneColumn.getByRole("heading", { name: taskTitle, exact: true }),
+  ).toBeVisible();
+});
+
+test("task APIs deny cross-organisation references and runs", async ({
+  page,
+}, testInfo) => {
+  const db = database();
+  const foreignOrganisationId = newId();
+  const foreignActorId = newId();
+  const foreignRoomId = newId();
+  const foreignTaskId = newId();
+  const foreignRunId = newId();
+  const suffix = `${testInfo.project.name}-${Date.now()}`;
+  let ownTaskId: string | null = null;
+
+  try {
+    await db.insert(schema.organisations).values({
+      id: foreignOrganisationId,
+      name: `Synthetic foreign organisation ${suffix}`,
+      slug: `synthetic-foreign-${suffix}`,
+    });
+    await db.insert(schema.actors).values({
+      id: foreignActorId,
+      organisationId: foreignOrganisationId,
+      actorType: "human",
+      displayName: "Synthetic foreign analyst",
+      identityReference: `foreign-${suffix}@example.invalid`,
+    });
+    await db.insert(schema.rooms).values({
+      id: foreignRoomId,
+      organisationId: foreignOrganisationId,
+      name: `foreign-room-${suffix}`,
+      slug: `foreign-room-${suffix}`,
+      displayName: "Synthetic foreign room",
+      roomType: "operations",
+      createdByActorId: foreignActorId,
+    });
+    await db.insert(schema.tasks).values({
+      id: foreignTaskId,
+      organisationId: foreignOrganisationId,
+      title: "Synthetic foreign task",
+      createdByActorId: foreignActorId,
+      roomId: foreignRoomId,
+      assignedActorId: foreignActorId,
+      agentRunId: foreignRunId,
+      agentRunStatus: "running",
+    });
+
+    for (const body of [
+      { title: "Rejected foreign actor", assignedActorId: foreignActorId },
+      { title: "Rejected foreign room", roomId: foreignRoomId },
+    ]) {
+      const response = await page.request.post("/api/v1/tasks", {
+        data: body,
+      });
+      expect(response.status()).toBe(404);
+    }
+
+    const ownTask = await page.request.post("/api/v1/tasks", {
+      data: { title: `Synthetic tenant-bound task ${suffix}` },
+    });
+    expect(ownTask.status()).toBe(201);
+    ownTaskId = ((await ownTask.json()) as { data: { id: string } }).data.id;
+
+    for (const body of [
+      { assignedActorId: foreignActorId },
+      { roomId: foreignRoomId },
+    ]) {
+      const response = await page.request.patch(`/api/v1/tasks/${ownTaskId}`, {
+        data: body,
+      });
+      expect(response.status()).toBe(404);
+    }
+    expect(
+      (
+        await page.request.patch(`/api/v1/tasks/${foreignTaskId}`, {
+          data: { title: "Cross-tenant mutation refused" },
+        })
+      ).status(),
+    ).toBe(404);
+    expect(
+      (
+        await page.request.post(`/api/v1/tasks/${foreignTaskId}/delegate`)
+      ).status(),
+    ).toBe(404);
+    expect(
+      (await page.request.get(`/api/v1/agent-runs/${foreignRunId}`)).status(),
+    ).toBe(404);
+  } finally {
+    if (ownTaskId) {
+      await db.delete(schema.tasks).where(eq(schema.tasks.id, ownTaskId));
+    }
+    await db.delete(schema.tasks).where(eq(schema.tasks.id, foreignTaskId));
+    await db.delete(schema.rooms).where(eq(schema.rooms.id, foreignRoomId));
+    await db.delete(schema.actors).where(eq(schema.actors.id, foreignActorId));
+    await db
+      .delete(schema.organisations)
+      .where(eq(schema.organisations.id, foreignOrganisationId));
+  }
 });
 
 test("workflow YAML editor, integrations, search, and approvals render", async ({

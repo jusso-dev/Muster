@@ -976,6 +976,7 @@ export const tasks = pgTable(
       .references(() => actors.id),
     roomId: uuid("room_id").references(() => rooms.id),
     investigationId: uuid("investigation_id").references(() => investigations.id),
+    relatedCaseId: text("related_case_id"),
     approvalRequired: boolean("approval_required").notNull().default(false),
     dueAt: timestamp("due_at", { withTimezone: true }),
     agentRunId: text("agent_run_id"),

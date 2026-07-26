@@ -38,7 +38,7 @@ test("fresh workspace is empty and accepts first message and task", async ({
   await page
     .getByPlaceholder("Context, constraints, and deliverable")
     .fill("Verify real work can start without demonstration activity.");
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("button", { name: "Create task", exact: true }).click();
   await expect(page.getByText(task)).toBeVisible();
   await page.reload();
   await expect(page.getByText(task)).toBeVisible();

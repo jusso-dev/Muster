@@ -13,9 +13,12 @@ import {
   Hash,
   ListTodo,
   LoaderCircle,
+  Pencil,
   Plus,
+  RotateCcw,
   Search,
   ShieldCheck,
+  Square,
   UserRound,
   X,
 } from "lucide-react";
@@ -24,11 +27,28 @@ import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { demoAgents, demoPeople } from "@/lib/demo-data";
 import { cn } from "@/lib/utils";
 
 type TaskStatus = "backlog" | "ready" | "in_progress" | "review" | "done";
 type TaskPriority = "urgent" | "high" | "normal" | "low";
+type BoardAssignee = {
+  id: string;
+  displayName: string;
+  actorType: "human" | "agent";
+};
+type BoardRoom = { id: string; slug: string; displayName: string };
+type AgentRun = {
+  id: string;
+  status: string;
+  runtime: string;
+  model: string;
+  tokenUsage: unknown;
+  estimatedCostCents: number;
+  structuredOutput: unknown;
+  outputHash: string | null;
+  error: string | null;
+  cancellationReason: string | null;
+};
 type BoardTask = {
   id: string;
   title: string;
@@ -36,16 +56,25 @@ type BoardTask = {
   status: TaskStatus;
   priority: TaskPriority;
   assignedActorId: string | null;
+  roomId: string | null;
+  relatedCaseId: string | null;
   approvalRequired: boolean;
   dueAt: string | null;
   agentRunId: string | null;
   agentRunStatus: string | null;
-  assignee: {
-    id: string;
-    displayName: string;
-    actorType: "human" | "agent" | "product" | "service" | "system";
-  } | null;
-  room: { id: string; slug: string } | null;
+  assignee: BoardAssignee | null;
+  room: Pick<BoardRoom, "id" | "slug"> | null;
+  run: AgentRun | null;
+};
+type TaskForm = {
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  assignedActorId: string;
+  roomId: string;
+  relatedCaseId: string;
+  approvalRequired: boolean;
+  dueAt: string;
 };
 
 const columns: Array<{ id: TaskStatus; label: string; hint: string }> = [
@@ -56,28 +85,15 @@ const columns: Array<{ id: TaskStatus; label: string; hint: string }> = [
   { id: "done", label: "Done", hint: "Completed and recorded" },
 ];
 
-const assignees = [
-  ...demoAgents.map((actor) => ({
-    id: actor.id,
-    name: actor.name,
-    initials: actor.initials,
-    agent: true,
-  })),
-  ...demoPeople.map((actor) => ({
-    id: actor.id,
-    name: actor.name,
-    initials: actor.initials,
-    agent: false,
-  })),
-];
-const defaultRoomId = "018f55d8-c4c7-7c3e-88ef-000000000100";
-type TaskForm = {
-  title: string;
-  description: string;
-  priority: TaskPriority;
-  assignedActorId: string;
-  roomId: string;
-  approvalRequired: boolean;
+const emptyForm: TaskForm = {
+  title: "",
+  description: "",
+  priority: "normal",
+  assignedActorId: "",
+  roomId: "",
+  relatedCaseId: "",
+  approvalRequired: false,
+  dueAt: "",
 };
 
 function initials(name: string) {
@@ -96,28 +112,53 @@ function priorityClass(priority: TaskPriority) {
   return "bg-muted text-muted-foreground";
 }
 
+function toLocalDateTime(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+async function responseDetail(response: Response, fallback: string) {
+  const payload = (await response.json().catch(() => null)) as {
+    detail?: string;
+  } | null;
+  return payload?.detail ?? fallback;
+}
+
 export function TasksView() {
   const [tasks, setTasks] = useState<BoardTask[]>([]);
+  const [assignees, setAssignees] = useState<BoardAssignee[]>([]);
+  const [rooms, setRooms] = useState<BoardRoom[]>([]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "agents" | "humans">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState<TaskForm>({
-    title: "",
-    description: "",
-    priority: "normal" as TaskPriority,
-    assignedActorId: demoAgents[0]?.id ?? "",
-    roomId: defaultRoomId,
-    approvalRequired: false,
-  });
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  const [form, setForm] = useState<TaskForm>(emptyForm);
 
   const loadTasks = useCallback(async () => {
     const response = await fetch("/api/v1/tasks", { cache: "no-store" });
     if (!response.ok) throw new Error("Could not load tasks");
-    const payload = (await response.json()) as { data: BoardTask[] };
+    const payload = (await response.json()) as {
+      data: BoardTask[];
+      meta: { assignees: BoardAssignee[]; rooms: BoardRoom[] };
+    };
     setTasks(payload.data);
+    setAssignees(payload.meta.assignees);
+    setRooms(payload.meta.rooms);
+    setForm((current) => ({
+      ...current,
+      assignedActorId:
+        current.assignedActorId ||
+        payload.meta.assignees.find((actor) => actor.actorType === "agent")
+          ?.id ||
+        "",
+      roomId: current.roomId || payload.meta.rooms[0]?.id || "",
+    }));
   }, []);
 
   useEffect(() => {
@@ -130,26 +171,38 @@ export function TasksView() {
       .finally(() => setLoading(false));
   }, [loadTasks]);
 
+  const runningTaskIds = useMemo(
+    () =>
+      tasks
+        .filter((task) => task.agentRunId && task.agentRunStatus === "running")
+        .map((task) => task.id),
+    [tasks],
+  );
+  const runningKey = runningTaskIds.join(",");
+
   useEffect(() => {
-    const running = tasks.filter(
-      (task) => task.agentRunId && task.agentRunStatus === "running",
-    );
-    if (running.length === 0) return;
-    const timer = window.setInterval(() => {
-      void Promise.all(
-        running.map((task) =>
-          fetch(`/api/v1/agent-runs/${task.agentRunId}`, { cache: "no-store" }),
-        ),
-      ).then(() => loadTasks());
-    }, 5_000);
-    return () => window.clearInterval(timer);
-  }, [loadTasks, tasks]);
+    if (!runningKey) return;
+    const streams = runningTaskIds.map((taskId) => {
+      const stream = new EventSource(`/api/v1/tasks/${taskId}/events`);
+      stream.addEventListener("settled", () => {
+        stream.close();
+        void loadTasks();
+      });
+      stream.onerror = () => stream.close();
+      return stream;
+    });
+    const fallback = window.setInterval(() => void loadTasks(), 2_000);
+    return () => {
+      streams.forEach((stream) => stream.close());
+      window.clearInterval(fallback);
+    };
+  }, [loadTasks, runningKey]);
 
   const visibleTasks = useMemo(
     () =>
       tasks.filter((task) => {
         const matchesText =
-          `${task.title} ${task.description} ${task.assignee?.displayName ?? ""}`
+          `${task.title} ${task.description} ${task.room?.slug ?? ""} ${task.assignee?.displayName ?? ""}`
             .toLowerCase()
             .includes(query.toLowerCase());
         const matchesActor =
@@ -161,7 +214,34 @@ export function TasksView() {
     [filter, query, tasks],
   );
 
+  function resetComposer() {
+    setEditingTaskId(null);
+    setComposerOpen(false);
+    setForm({
+      ...emptyForm,
+      assignedActorId:
+        assignees.find((actor) => actor.actorType === "agent")?.id ?? "",
+      roomId: rooms[0]?.id ?? "",
+    });
+  }
+
+  function editTask(task: BoardTask) {
+    setEditingTaskId(task.id);
+    setForm({
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      assignedActorId: task.assignedActorId ?? "",
+      roomId: task.roomId ?? "",
+      relatedCaseId: task.relatedCaseId ?? "",
+      approvalRequired: task.approvalRequired,
+      dueAt: toLocalDateTime(task.dueAt),
+    });
+    setComposerOpen(true);
+  }
+
   async function updateTask(id: string, change: Record<string, unknown>) {
+    const before = tasks;
     setTasks((current) =>
       current.map((task) =>
         task.id === id ? ({ ...task, ...change } as BoardTask) : task,
@@ -173,49 +253,75 @@ export function TasksView() {
       body: JSON.stringify(change),
     });
     if (!response.ok) {
-      setError("Task update failed");
+      setTasks(before);
+      setError(await responseDetail(response, "Task update failed"));
+    } else {
       await loadTasks();
     }
   }
 
-  async function createTask(event: React.FormEvent) {
+  async function submitTask(event: React.FormEvent) {
     event.preventDefault();
     setSubmitting(true);
     setError("");
     try {
-      const response = await fetch("/api/v1/tasks", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          status: "backlog",
-          investigationId: null,
-        }),
-      });
-      if (!response.ok) throw new Error("Task creation failed");
-      setForm((current) => ({ ...current, title: "", description: "" }));
-      setComposerOpen(false);
+      const response = await fetch(
+        editingTaskId ? `/api/v1/tasks/${editingTaskId}` : "/api/v1/tasks",
+        {
+          method: editingTaskId ? "PATCH" : "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            ...form,
+            assignedActorId: form.assignedActorId || null,
+            roomId: form.roomId || null,
+            relatedCaseId: form.relatedCaseId || null,
+            dueAt: form.dueAt ? new Date(form.dueAt).toISOString() : null,
+            ...(!editingTaskId
+              ? { status: "backlog", investigationId: null }
+              : {}),
+          }),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(
+          await responseDetail(
+            response,
+            editingTaskId ? "Task update failed" : "Task creation failed",
+          ),
+        );
+      }
+      resetComposer();
       await loadTasks();
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "Task creation failed",
-      );
+      setError(reason instanceof Error ? reason.message : "Task save failed");
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function delegate(task: BoardTask) {
+  async function runAction(task: BoardTask, action: "delegate" | "cancel") {
+    setPendingTaskId(task.id);
     setError("");
-    const response = await fetch(`/api/v1/tasks/${task.id}/delegate`, {
-      method: "POST",
-    });
-    if (!response.ok) {
-      const payload = (await response.json()) as { detail?: string };
-      setError(payload.detail ?? "Agent delegation failed");
-      return;
+    try {
+      const response = await fetch(`/api/v1/tasks/${task.id}/${action}`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error(
+          await responseDetail(
+            response,
+            action === "cancel"
+              ? "Agent cancellation failed"
+              : "Agent delegation failed",
+          ),
+        );
+      }
+      await loadTasks();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Task action failed");
+    } finally {
+      setPendingTaskId(null);
     }
-    await loadTasks();
   }
 
   return (
@@ -225,7 +331,12 @@ export function TasksView() {
         title="Tasks"
         description="Delegate bounded security work to people and permission-scoped agents"
         actions={
-          <Button onClick={() => setComposerOpen(true)}>
+          <Button
+            onClick={() => {
+              setEditingTaskId(null);
+              setComposerOpen(true);
+            }}
+          >
             <Plus /> New task
           </Button>
         }
@@ -273,10 +384,11 @@ export function TasksView() {
 
       {composerOpen && (
         <form
-          onSubmit={createTask}
-          className="grid gap-3 border-b bg-card p-4 tablet:grid-cols-[minmax(16rem,1.5fr)_minmax(14rem,2fr)_10rem_14rem_auto]"
+          onSubmit={submitTask}
+          aria-label={editingTaskId ? "Edit task" : "Create task"}
+          className="grid gap-3 border-b bg-card p-4 tablet:grid-cols-2 desktop:grid-cols-6"
         >
-          <label className="space-y-1">
+          <label className="space-y-1 desktop:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Task
             </span>
@@ -292,7 +404,7 @@ export function TasksView() {
               className="h-9 w-full rounded-md border bg-background px-3 text-xs outline-none"
             />
           </label>
-          <label className="space-y-1">
+          <label className="space-y-1 desktop:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Expected outcome
             </span>
@@ -331,6 +443,19 @@ export function TasksView() {
           </label>
           <label className="space-y-1">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Due
+            </span>
+            <input
+              type="datetime-local"
+              value={form.dueAt}
+              onChange={(event) =>
+                setForm({ ...form, dueAt: event.target.value })
+              }
+              className="h-9 w-full rounded-md border bg-background px-2 text-xs"
+            />
+          </label>
+          <label className="space-y-1 desktop:col-span-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Assign to
             </span>
             <select
@@ -340,34 +465,49 @@ export function TasksView() {
               }
               className="h-9 w-full rounded-md border bg-background px-2 text-xs"
             >
+              <option value="">Unassigned</option>
               {assignees.map((actor) => (
                 <option key={actor.id} value={actor.id}>
-                  {actor.agent ? "Agent: " : "Person: "}
-                  {actor.name}
+                  {actor.actorType === "agent" ? "Agent: " : "Person: "}
+                  {actor.displayName}
                 </option>
               ))}
             </select>
           </label>
-          <div className="flex items-end gap-2">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? (
-                <LoaderCircle className="animate-spin" />
-              ) : (
-                <Check />
-              )}
-              Create
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Cancel new task"
-              onClick={() => setComposerOpen(false)}
+          <label className="space-y-1 desktop:col-span-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Room
+            </span>
+            <select
+              value={form.roomId}
+              onChange={(event) =>
+                setForm({ ...form, roomId: event.target.value })
+              }
+              className="h-9 w-full rounded-md border bg-background px-2 text-xs"
             >
-              <X />
-            </Button>
-          </div>
-          <label className="flex items-center gap-2 tablet:col-span-full">
+              <option value="">No room</option>
+              {rooms.map((room) => (
+                <option key={room.id} value={room.id}>
+                  #{room.slug}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Case reference
+            </span>
+            <input
+              maxLength={160}
+              value={form.relatedCaseId}
+              onChange={(event) =>
+                setForm({ ...form, relatedCaseId: event.target.value })
+              }
+              placeholder="Optional case ID"
+              className="h-9 w-full rounded-md border bg-background px-3 text-xs outline-none"
+            />
+          </label>
+          <label className="flex items-center gap-2 desktop:col-span-2">
             <input
               type="checkbox"
               checked={form.approvalRequired}
@@ -376,9 +516,22 @@ export function TasksView() {
               }
             />
             <span className="text-xs text-muted-foreground">
-              Require human approval before any external action
+              External actions stay drafts until human approval
             </span>
           </label>
+          <div className="flex items-end gap-2 desktop:col-span-full">
+            <Button type="submit" disabled={submitting}>
+              {submitting ? (
+                <LoaderCircle className="animate-spin" />
+              ) : (
+                <Check />
+              )}
+              {editingTaskId ? "Save task" : "Create task"}
+            </Button>
+            <Button type="button" variant="ghost" onClick={resetComposer}>
+              <X /> Cancel
+            </Button>
+          </div>
         </form>
       )}
 
@@ -427,12 +580,11 @@ export function TasksView() {
                   </header>
                   <div className="min-h-28 space-y-2 p-2">
                     {columnTasks.map((task) => {
-                      const actor = task.assignee
-                        ? assignees.find(
-                            (candidate) => candidate.id === task.assignee?.id,
-                          )
-                        : null;
                       const agent = task.assignee?.actorType === "agent";
+                      const running = task.agentRunStatus === "running";
+                      const retryable =
+                        task.agentRunStatus === "failed" ||
+                        task.agentRunStatus === "cancelled";
                       return (
                         <article
                           key={task.id}
@@ -460,7 +612,7 @@ export function TasksView() {
                                 </Badge>
                                 {task.approvalRequired && (
                                   <Badge className="approval-surface text-[var(--color-warning)]">
-                                    <ShieldCheck /> Approval
+                                    <ShieldCheck /> Draft only
                                   </Badge>
                                 )}
                               </div>
@@ -475,12 +627,9 @@ export function TasksView() {
 
                           <div className="mt-3 flex items-center gap-2 border-t pt-2.5">
                             <Avatar
-                              initials={
-                                actor?.initials ??
-                                initials(
-                                  task.assignee?.displayName ?? "Unassigned",
-                                )
-                              }
+                              initials={initials(
+                                task.assignee?.displayName ?? "Unassigned",
+                              )}
                               agent={agent}
                               size="sm"
                             />
@@ -489,7 +638,11 @@ export function TasksView() {
                                 {task.assignee?.displayName ?? "Unassigned"}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                {agent ? "Agent assignee" : "Human assignee"}
+                                {agent
+                                  ? "Agent assignee"
+                                  : task.assignee
+                                    ? "Human assignee"
+                                    : "No assignee"}
                               </p>
                             </div>
                             {task.room && (
@@ -522,12 +675,14 @@ export function TasksView() {
                                 <Badge
                                   className={cn(
                                     "ml-auto",
-                                    task.agentRunStatus === "running"
+                                    running
                                       ? "agent-surface"
-                                      : "success-surface text-[var(--color-success)]",
+                                      : task.agentRunStatus === "completed"
+                                        ? "success-surface text-[var(--color-success)]"
+                                        : "error-surface text-[var(--color-error)]",
                                   )}
                                 >
-                                  {task.agentRunStatus === "running" && (
+                                  {running && (
                                     <LoaderCircle className="animate-spin" />
                                   )}
                                   Agent {task.agentRunStatus}
@@ -536,12 +691,68 @@ export function TasksView() {
                             </div>
                           )}
 
-                          <div className="mt-3 flex items-center gap-1">
+                          {task.relatedCaseId && (
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              Case {task.relatedCaseId}
+                            </p>
+                          )}
+
+                          {task.run &&
+                            (task.run.structuredOutput ||
+                              task.run.error ||
+                              task.run.cancellationReason) && (
+                              <details className="mt-3 rounded-md border bg-muted/30 p-2 text-xs">
+                                <summary className="cursor-pointer font-semibold">
+                                  Agent output and evidence
+                                </summary>
+                                {(task.run.error ||
+                                  task.run.cancellationReason) && (
+                                  <p className="mt-2 text-[var(--color-error)]">
+                                    {task.run.error ??
+                                      task.run.cancellationReason}
+                                  </p>
+                                )}
+                                {task.run.structuredOutput !== null && (
+                                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-xs">
+                                    {JSON.stringify(
+                                      task.run.structuredOutput,
+                                      null,
+                                      2,
+                                    )}
+                                  </pre>
+                                )}
+                                <dl className="mt-2 grid grid-cols-2 gap-1 text-muted-foreground">
+                                  <dt>Runtime</dt>
+                                  <dd>{task.run.runtime}</dd>
+                                  <dt>Model</dt>
+                                  <dd>{task.run.model}</dd>
+                                  <dt>Tokens</dt>
+                                  <dd>{JSON.stringify(task.run.tokenUsage)}</dd>
+                                  <dt>Estimated cost</dt>
+                                  <dd>
+                                    $
+                                    {(
+                                      task.run.estimatedCostCents / 100
+                                    ).toFixed(2)}
+                                  </dd>
+                                  {task.run.outputHash && (
+                                    <>
+                                      <dt>Output hash</dt>
+                                      <dd className="truncate">
+                                        {task.run.outputHash}
+                                      </dd>
+                                    </>
+                                  )}
+                                </dl>
+                              </details>
+                            )}
+
+                          <div className="mt-3 flex flex-wrap items-center gap-1">
                             <Button
                               size="sm"
                               variant="ghost"
                               className="size-8 min-h-8 px-0"
-                              disabled={columnIndex === 0}
+                              disabled={columnIndex === 0 || running}
                               aria-label={`Move ${task.title} left`}
                               onClick={() =>
                                 void updateTask(task.id, {
@@ -555,7 +766,9 @@ export function TasksView() {
                               size="sm"
                               variant="ghost"
                               className="size-8 min-h-8 px-0"
-                              disabled={columnIndex === columns.length - 1}
+                              disabled={
+                                columnIndex === columns.length - 1 || running
+                              }
                               aria-label={`Move ${task.title} right`}
                               onClick={() =>
                                 void updateTask(task.id, {
@@ -565,20 +778,57 @@ export function TasksView() {
                             >
                               <ArrowRight />
                             </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="size-8 min-h-8 px-0"
+                              aria-label={`Edit ${task.title}`}
+                              onClick={() => editTask(task)}
+                            >
+                              <Pencil />
+                            </Button>
+                            {agent && running && (
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="ml-auto"
+                                disabled={pendingTaskId === task.id}
+                                onClick={() => void runAction(task, "cancel")}
+                              >
+                                <Square /> Cancel
+                              </Button>
+                            )}
                             {agent &&
-                              !task.agentRunId &&
-                              task.status !== "done" && (
+                              !running &&
+                              task.status !== "done" &&
+                              (retryable || !task.agentRunId) && (
                                 <Button
                                   size="sm"
                                   className="ml-auto"
-                                  onClick={() => void delegate(task)}
+                                  disabled={pendingTaskId === task.id}
+                                  onClick={() =>
+                                    void runAction(task, "delegate")
+                                  }
                                 >
-                                  <Bot />
-                                  {task.approvalRequired
-                                    ? "Prepare draft"
-                                    : "Delegate"}
+                                  {retryable ? <RotateCcw /> : <Bot />}
+                                  {retryable
+                                    ? "Retry"
+                                    : task.approvalRequired
+                                      ? "Prepare draft"
+                                      : "Delegate"}
                                 </Button>
                               )}
+                            {task.status === "review" && (
+                              <Button
+                                size="sm"
+                                className="ml-auto"
+                                onClick={() =>
+                                  void updateTask(task.id, { status: "done" })
+                                }
+                              >
+                                <Check /> Mark done
+                              </Button>
+                            )}
                           </div>
                         </article>
                       );

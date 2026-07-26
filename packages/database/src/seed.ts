@@ -7,7 +7,7 @@ if (process.env.MUSTER_DEMO_MODE !== "true") {
 }
 
 const db = database();
-const allCapabilities = ["administration.manage", "rooms.read", "rooms.create", "rooms.manage", "messages.create", "alerts.read", "alerts.acknowledge", "alerts.promote", "investigations.read", "investigations.create", "investigations.update", "investigations.promote", "tasks.read", "tasks.create", "tasks.update", "tasks.assign", "workflows.approve", "agents.invoke", "audit.read"];
+const allCapabilities = ["administration.manage", "rooms.read", "rooms.create", "rooms.manage", "messages.create", "alerts.read", "alerts.acknowledge", "alerts.promote", "investigations.read", "investigations.create", "investigations.update", "investigations.promote", "tasks.read", "tasks.create", "tasks.update", "tasks.assign", "workflows.approve", "agents.invoke", "agents.cancel", "audit.read"];
 
 await db.insert(schema.organisations).values({
   id: demoIds.organisation,
@@ -33,12 +33,12 @@ await db.insert(schema.actors).values([
   { id: demoIds.actors.daniel, organisationId: demoIds.organisation, actorType: "human", displayName: "Daniel Brooks", identityReference: "daniel.brooks@example.invalid", capabilityAssignments: ["rooms.read","messages.create","alerts.read","investigations.read","tasks.read","tasks.create","tasks.update","tasks.assign","sentinel.rules.publish","bower.policy.propose"] },
   { id: demoIds.actors.priya, organisationId: demoIds.organisation, actorType: "human", displayName: "Priya Nair", identityReference: "priya.nair@example.invalid", capabilityAssignments: ["rooms.read","messages.create","alerts.read","investigations.read","investigations.update","tasks.read","tasks.create","tasks.update","tasks.assign","workflows.approve","tawny.response.isolate_host"] },
   { id: demoIds.actors.alex, organisationId: demoIds.organisation, actorType: "human", displayName: "Alex Morgan", identityReference: "alex.morgan@example.invalid", capabilityAssignments: ["rooms.read","alerts.read","investigations.read","tasks.read","audit.read"] },
-  { id: demoIds.actors.triage, organisationId: demoIds.organisation, actorType: "agent", displayName: "Triage Agent", identityReference: "agent:triage", capabilityAssignments: ["alerts.read","investigations.read","investigations.update"] },
-  { id: demoIds.actors.tawnyHunt, organisationId: demoIds.organisation, actorType: "agent", displayName: "Tawny Hunt Agent", identityReference: "agent:tawny-hunt", capabilityAssignments: ["tawny.telemetry.read","tawny.hunts.execute"] },
+  { id: demoIds.actors.triage, organisationId: demoIds.organisation, actorType: "agent", displayName: "Alfie", identityReference: "agent:alfie-threat-research", capabilityAssignments: ["alerts.read","investigations.read","investigations.update"] },
+  { id: demoIds.actors.tawnyHunt, organisationId: demoIds.organisation, actorType: "agent", displayName: "Jessie", identityReference: "agent:jessie-hunt", capabilityAssignments: ["tawny.telemetry.read","tawny.hunts.execute"] },
   { id: demoIds.actors.bowerHealth, organisationId: demoIds.organisation, actorType: "agent", displayName: "Bower Health Agent", identityReference: "agent:bower-health", capabilityAssignments: ["bower.fleet.read","bower.policy.read"] },
   { id: demoIds.actors.kelpieCase, organisationId: demoIds.organisation, actorType: "agent", displayName: "Kelpie Case Agent", identityReference: "agent:kelpie-case", capabilityAssignments: ["kelpie.cases.read","kelpie.cases.create"] },
   { id: demoIds.actors.sentinelQuery, organisationId: demoIds.organisation, actorType: "agent", displayName: "Sentinel Query Agent", identityReference: "agent:sentinel-query", capabilityAssignments: ["sentinel.query.execute","sentinel.rules.read"] },
-  { id: demoIds.actors.threatIntel, organisationId: demoIds.organisation, actorType: "agent", displayName: "Threat Intelligence Agent", identityReference: "agent:threat-intel", capabilityAssignments: ["alerts.read"] },
+  { id: demoIds.actors.threatIntel, organisationId: demoIds.organisation, actorType: "agent", displayName: "Parker", identityReference: "agent:parker-executive", capabilityAssignments: ["alerts.read"] },
   { id: demoIds.actors.system, organisationId: demoIds.organisation, actorType: "system", displayName: "Muster", identityReference: "system:muster", capabilityAssignments: [] },
 ]).onConflictDoUpdate({
   target: schema.actors.id,
@@ -46,6 +46,50 @@ await db.insert(schema.actors).values([
     displayName: sql`excluded.display_name`,
     identityReference: sql`excluded.identity_reference`,
     capabilityAssignments: sql`excluded.capability_assignments`,
+  },
+});
+
+await db.insert(schema.agentDefinitions).values([
+  {
+    id: demoIds.actors.triage, organisationId: demoIds.organisation, name: "Alfie",
+    description: "Synthetic evidence-backed threat research agent",
+    runtime: "codex-subscription", model: process.env.MUSTER_CODEX_MODEL?.trim() || "configured",
+    ownerActorId: demoIds.actors.jordan, systemPromptVersion: "alfie-v1",
+    allowedTools: ["alerts.read", "investigations.read"],
+    allowedRooms: [demoIds.rooms.soc, demoIds.rooms.triageDirect],
+    capabilityRequirements: ["alerts.read", "investigations.read"],
+    approvalRequirements: { externalWrites: "human" },
+  },
+  {
+    id: demoIds.actors.tawnyHunt, organisationId: demoIds.organisation, name: "Jessie",
+    description: "Synthetic bounded threat hunt agent",
+    runtime: "codex-subscription", model: process.env.MUSTER_CODEX_MODEL?.trim() || "configured",
+    ownerActorId: demoIds.actors.jordan, systemPromptVersion: "jessie-v1",
+    allowedTools: ["tawny.telemetry.read", "tawny.hunts.execute"],
+    allowedRooms: [demoIds.rooms.soc, demoIds.rooms.tawnyDirect],
+    capabilityRequirements: ["tawny.telemetry.read", "tawny.hunts.execute"],
+    approvalRequirements: { externalWrites: "human" },
+  },
+  {
+    id: demoIds.actors.threatIntel, organisationId: demoIds.organisation, name: "Parker",
+    description: "Synthetic operational reporting agent",
+    runtime: "codex-subscription", model: process.env.MUSTER_CODEX_MODEL?.trim() || "configured",
+    ownerActorId: demoIds.actors.jordan, systemPromptVersion: "parker-v1",
+    allowedTools: ["alerts.read", "investigations.read", "audit.read"],
+    allowedRooms: [demoIds.rooms.soc],
+    capabilityRequirements: ["alerts.read", "investigations.read", "audit.read"],
+    approvalRequirements: { externalWrites: "human" },
+  },
+]).onConflictDoUpdate({
+  target: [schema.agentDefinitions.organisationId, schema.agentDefinitions.name],
+  set: {
+    description: sql`excluded.description`,
+    model: sql`excluded.model`,
+    allowedTools: sql`excluded.allowed_tools`,
+    allowedRooms: sql`excluded.allowed_rooms`,
+    capabilityRequirements: sql`excluded.capability_requirements`,
+    approvalRequirements: sql`excluded.approval_requirements`,
+    updatedAt: sql`now()`,
   },
 });
 

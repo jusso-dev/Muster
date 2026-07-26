@@ -1,14 +1,8 @@
-import { and, eq } from "drizzle-orm";
 import { requireCapability } from "@muster/authz";
 import { TaskPrioritySchema, TaskStatusSchema } from "@muster/contracts";
-import { database, schema } from "@muster/database";
 import { z } from "zod";
-import {
-  ApiProblem,
-  apiSubject,
-  problemResponse,
-  requestTraceId,
-} from "@/lib/api-context";
+import { apiSubject, problemResponse, requestTraceId } from "@/lib/api-context";
+import { updateTask, type TaskChanges } from "@/lib/task-domain";
 
 const UpdateTaskSchema = z
   .object({
@@ -17,6 +11,9 @@ const UpdateTaskSchema = z
     status: TaskStatusSchema.optional(),
     priority: TaskPrioritySchema.optional(),
     assignedActorId: z.string().uuid().nullable().optional(),
+    roomId: z.string().uuid().nullable().optional(),
+    investigationId: z.string().uuid().nullable().optional(),
+    relatedCaseId: z.string().trim().max(160).nullable().optional(),
     approvalRequired: z.boolean().optional(),
     dueAt: z.iso.datetime({ offset: true }).nullable().optional(),
   })
@@ -32,45 +29,28 @@ export async function PATCH(
     requireCapability(subject, "tasks.update");
     const { id } = await params;
     const input = UpdateTaskSchema.parse(await request.json());
-    const db = database();
-    if (input.assignedActorId) {
-      const [actor] = await db
-        .select({ id: schema.actors.id })
-        .from(schema.actors)
-        .where(
-          and(
-            eq(schema.actors.id, input.assignedActorId),
-            eq(schema.actors.organisationId, subject.organisationId),
-          ),
-        )
-        .limit(1);
-      if (!actor) {
-        throw new ApiProblem(404, "Not found", "Task assignee not found.");
-      }
-    }
-    const { dueAt, ...changes } = input;
-    const [updated] = await db
-      .update(schema.tasks)
-      .set({
+    if (input.assignedActorId !== undefined)
+      requireCapability(subject, "tasks.assign");
+    const { dueAt, ...unfilteredChanges } = input;
+    const changes = Object.fromEntries(
+      Object.entries(unfilteredChanges).filter(
+        ([, value]) => value !== undefined,
+      ),
+    ) as TaskChanges;
+    const updated = await updateTask(
+      {
+        organisationId: subject.organisationId,
+        actorId: subject.actorId,
+        traceId,
+      },
+      id,
+      {
         ...changes,
         ...(dueAt !== undefined
           ? { dueAt: dueAt ? new Date(dueAt) : null }
           : {}),
-        ...(input.status === "done"
-          ? { completedAt: new Date() }
-          : input.status
-            ? { completedAt: null }
-            : {}),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(schema.tasks.id, id),
-          eq(schema.tasks.organisationId, subject.organisationId),
-        ),
-      )
-      .returning({ id: schema.tasks.id });
-    if (!updated) throw new ApiProblem(404, "Not found", "Task not found.");
+      },
+    );
     return Response.json({ data: updated, traceId });
   } catch (error) {
     return problemResponse(error, traceId);
