@@ -309,23 +309,25 @@ test("two deployed identities complete critical collaboration work", async ({
     await expect(first.getByText(retryText).last()).toBeVisible();
 
     const refreshText = `Synthetic refresh recovery ${suffix}`;
-    let refreshBody: ReturnType<typeof messageBody> | undefined;
     await first.route("**/api/v1/rooms/*/messages", async (route) => {
       if (route.request().method() !== "POST") {
         await route.continue();
         return;
       }
-      refreshBody = route.request().postDataJSON() as ReturnType<
-        typeof messageBody
-      >;
       await route.abort("failed");
     });
+    const refreshRequest = first.waitForRequest(
+      (request) =>
+        request.method() === "POST" && request.url().endsWith("/messages"),
+    );
     await first.locator(".tiptap").fill(refreshText);
-    await first.keyboard.press("Enter");
-    await expect.poll(() => refreshBody?.idempotencyKey).toBeTruthy();
+    await first.getByRole("button", { name: "Send message" }).click();
+    const refreshBody = (await refreshRequest).postDataJSON() as ReturnType<
+      typeof messageBody
+    >;
+    expect(refreshBody.idempotencyKey).toBeTruthy();
     await first.reload();
     await first.unroute("**/api/v1/rooms/*/messages");
-    if (!refreshBody) throw new Error("Refresh recovery request was not seen.");
     const [refreshRetry, refreshDuplicate] = await Promise.all([
       first.request.post(`/api/v1/rooms/${room.id}/messages`, {
         data: refreshBody,
