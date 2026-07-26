@@ -283,10 +283,7 @@ test("agent readiness distinguishes ready, attention, unknown, and unauthorised 
 }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium");
   const db = database();
-  const definitions = await db
-    .select()
-    .from(schema.agentDefinitions)
-    .limit(3);
+  const definitions = await db.select().from(schema.agentDefinitions).limit(3);
   if (definitions.length < 3) {
     throw new Error("Three synthetic agent definitions required");
   }
@@ -345,8 +342,9 @@ test("agent readiness distinguishes ready, attention, unknown, and unauthorised 
       const card = page
         .getByRole("link")
         .filter({ has: page.getByRole("heading", { name: definition.name }) });
-      await expect(card.getByText(expectedStates[index]!, { exact: true }))
-        .toBeVisible();
+      await expect(
+        card.getByText(expectedStates[index]!, { exact: true }),
+      ).toBeVisible();
       await expect(card).toContainText(definition.description);
     }
 
@@ -402,9 +400,7 @@ test("agent readiness distinguishes ready, attention, unknown, and unauthorised 
       expect((await anonymous.get("/api/v1/agents")).status()).toBe(401);
       expect(
         (
-          await anonymous.get(
-            `/api/v1/agents/${definitions[0]!.id}/readiness`,
-          )
+          await anonymous.get(`/api/v1/agents/${definitions[0]!.id}/readiness`)
         ).status(),
       ).toBe(401);
     } finally {
@@ -589,8 +585,9 @@ test("room shows scoped live multi-agent activity and run timeline", async ({
     await page.goto(`/rooms/${room.slug}`);
     const activity = page.getByTestId("room-agent-activity");
     await expect(activity).toContainText("2 agents working");
-    await expect(activity.getByRole("button", { name: "View all" }))
-      .toBeVisible();
+    await expect(
+      activity.getByRole("button", { name: "View all" }),
+    ).toBeVisible();
     await expect(activity).toContainText("[REDACTED]");
     await expect(activity).not.toContainText(syntheticSecret);
 
@@ -617,8 +614,9 @@ test("room shows scoped live multi-agent activity and run timeline", async ({
     await expect(
       panel.getByText("Investigating synthetic room evidence"),
     ).toBeVisible();
-    await expect(panel.getByText("Agent run claimed for execution"))
-      .toBeVisible();
+    await expect(
+      panel.getByText("Agent run claimed for execution"),
+    ).toBeVisible();
     await expect(panel).not.toContainText(syntheticSecret);
 
     await page.keyboard.press("Escape");
@@ -658,9 +656,7 @@ test("room shows scoped live multi-agent activity and run timeline", async ({
     try {
       expect(
         (
-          await anonymous.get(
-            `/api/v1/rooms/${room.id}/agent-activity`,
-          )
+          await anonymous.get(`/api/v1/rooms/${room.id}/agent-activity`)
         ).status(),
       ).toBe(401);
     } finally {
@@ -674,6 +670,285 @@ test("room shows scoped live multi-agent activity and run timeline", async ({
     await db
       .delete(schema.agentRuns)
       .where(inArray(schema.agentRuns.id, runIds));
+  }
+});
+
+test("completed agent handoffs stay truthful, scoped, and inspectable", async ({
+  page,
+  playwright,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium");
+  const db = database();
+  const [room] = await db
+    .select()
+    .from(schema.rooms)
+    .where(eq(schema.rooms.slug, "soc-operations"))
+    .limit(1);
+  if (!room) throw new Error("Seeded SOC operations room required");
+  const [agent] = await db
+    .select()
+    .from(schema.agentDefinitions)
+    .where(eq(schema.agentDefinitions.organisationId, room.organisationId))
+    .limit(1);
+  if (!agent) throw new Error("Synthetic agent definition required");
+
+  const suffix = newId().slice(0, 8);
+  const runIds = [newId(), newId(), newId()];
+  const taskIds = [newId(), newId(), newId()];
+  const eventIds = [newId(), newId(), newId()];
+  const evidenceId = newId();
+  const now = new Date();
+  const titles = {
+    completed: `Synthetic completed handoff ${suffix}`,
+    blocked: `Synthetic blocked handoff ${suffix}`,
+    failed: `Synthetic failed handoff ${suffix}`,
+  };
+
+  try {
+    await db.insert(schema.evidence).values({
+      id: evidenceId,
+      organisationId: room.organisationId,
+      fileName: `synthetic-handoff-${suffix}.json`,
+      mimeType: "application/json",
+      size: 128,
+      sha256: `${"a".repeat(56)}${suffix}`.slice(0, 64),
+      uploadedByActorId: agent.ownerActorId,
+      classification: "internal",
+      relatedRoomId: room.id,
+      source: "synthetic-browser-test",
+      storageKey: `${room.organisationId}/evidence/${evidenceId}/synthetic.json`,
+      scanState: "clean",
+      retentionState: "active",
+    });
+    await db.insert(schema.agentRuns).values([
+      {
+        id: runIds[0]!,
+        agentId: agent.id,
+        organisationId: room.organisationId,
+        roomId: room.id,
+        requestedByActorId: agent.ownerActorId,
+        trigger: "task",
+        status: "completed",
+        request: { humanRequest: "Confirm the synthetic endpoint is safe." },
+        startedAt: new Date(now.getTime() - 60_000),
+        completedAt: now,
+        inputHash: `synthetic-handoff-input-${runIds[0]}`,
+        outputHash: "b".repeat(64),
+        promptVersion: "synthetic-handoff-v1",
+        runtime: "mock",
+        model: "synthetic-handoff-model",
+        structuredOutput: {
+          summary: "Synthetic endpoint activity was benign.",
+          evidenceReferences: [
+            {
+              type: "muster.evidence",
+              reference: evidenceId,
+              sha256: null,
+            },
+          ],
+        },
+        idempotencyKey: `synthetic-handoff-run:${runIds[0]}`,
+      },
+      {
+        id: runIds[1]!,
+        agentId: agent.id,
+        organisationId: room.organisationId,
+        roomId: room.id,
+        requestedByActorId: agent.ownerActorId,
+        trigger: "task",
+        status: "failed",
+        request: { humanRequest: "Publish the synthetic response action." },
+        startedAt: new Date(now.getTime() - 50_000),
+        completedAt: now,
+        inputHash: `synthetic-handoff-input-${runIds[1]}`,
+        promptVersion: "synthetic-handoff-v1",
+        runtime: "mock",
+        model: "synthetic-handoff-model",
+        failureCode: "blocked_approval",
+        error: "Synthetic approval is required before publication.",
+        idempotencyKey: `synthetic-handoff-run:${runIds[1]}`,
+      },
+      {
+        id: runIds[2]!,
+        agentId: agent.id,
+        organisationId: room.organisationId,
+        roomId: room.id,
+        requestedByActorId: agent.ownerActorId,
+        trigger: "task",
+        status: "failed",
+        request: { humanRequest: "Inspect the synthetic unavailable source." },
+        startedAt: new Date(now.getTime() - 40_000),
+        completedAt: now,
+        inputHash: `synthetic-handoff-input-${runIds[2]}`,
+        promptVersion: "synthetic-handoff-v1",
+        runtime: "mock",
+        model: "synthetic-handoff-model",
+        failureCode: "synthetic_failure",
+        error: "Synthetic source was unavailable.",
+        idempotencyKey: `synthetic-handoff-run:${runIds[2]}`,
+      },
+    ]);
+    await db.insert(schema.tasks).values([
+      {
+        id: taskIds[0]!,
+        organisationId: room.organisationId,
+        title: titles.completed,
+        description: "Confirm the synthetic endpoint is safe.",
+        status: "review",
+        assignedActorId: agent.id,
+        createdByActorId: agent.ownerActorId,
+        roomId: room.id,
+        idempotencyKey: `synthetic-handoff-task:${taskIds[0]}`,
+        agentRunId: runIds[0]!,
+        agentRunStatus: "completed",
+      },
+      {
+        id: taskIds[1]!,
+        organisationId: room.organisationId,
+        title: titles.blocked,
+        description: "Publish the synthetic response action.",
+        status: "ready",
+        assignedActorId: agent.id,
+        createdByActorId: agent.ownerActorId,
+        roomId: room.id,
+        idempotencyKey: `synthetic-handoff-task:${taskIds[1]}`,
+        agentRunId: runIds[1]!,
+        agentRunStatus: "failed",
+      },
+      {
+        id: taskIds[2]!,
+        organisationId: room.organisationId,
+        title: titles.failed,
+        description: "Inspect the synthetic unavailable source.",
+        status: "ready",
+        assignedActorId: agent.id,
+        createdByActorId: agent.ownerActorId,
+        roomId: room.id,
+        idempotencyKey: `synthetic-handoff-task:${taskIds[2]}`,
+        agentRunId: runIds[2]!,
+        agentRunStatus: "failed",
+      },
+    ]);
+    await db.insert(schema.agentRunEvents).values([
+      {
+        id: eventIds[0]!,
+        organisationId: room.organisationId,
+        runId: runIds[0]!,
+        eventType: "verification_passed",
+        message: "Synthetic retained evidence matched the expected digest.",
+      },
+      {
+        id: eventIds[1]!,
+        organisationId: room.organisationId,
+        runId: runIds[1]!,
+        eventType: "blocked",
+        message: "Synthetic approval gate blocked execution.",
+      },
+      {
+        id: eventIds[2]!,
+        organisationId: room.organisationId,
+        runId: runIds[2]!,
+        eventType: "failed",
+        message: "Synthetic source retrieval failed.",
+      },
+    ]);
+
+    await page.goto("/tasks");
+    const completedTask = page
+      .getByRole("article")
+      .filter({ hasText: titles.completed })
+      .first();
+    const blockedTask = page
+      .getByRole("article")
+      .filter({ hasText: titles.blocked })
+      .first();
+    const failedTask = page
+      .getByRole("article")
+      .filter({ hasText: titles.failed })
+      .first();
+    await expect(
+      completedTask.getByLabel("Agent handoff: Completed"),
+    ).toBeVisible();
+    await expect(
+      completedTask.getByText("Synthetic endpoint activity was benign."),
+    ).toBeVisible();
+    await expect(
+      completedTask.getByText(
+        /Persisted verification: Synthetic retained evidence/,
+      ),
+    ).toBeVisible();
+    await expect(
+      completedTask.getByRole("link", {
+        name: `synthetic-handoff-${suffix}.json`,
+      }),
+    ).toHaveAttribute("href", `/api/v1/evidence/${evidenceId}`);
+    await expect(
+      blockedTask.getByLabel("Agent handoff: Blocked"),
+    ).toBeVisible();
+    await expect(
+      blockedTask.getByText(
+        "Synthetic approval is required before publication.",
+      ),
+    ).toBeVisible();
+    await expect(failedTask.getByLabel("Agent handoff: Failed")).toBeVisible();
+    await expect(
+      failedTask.getByText("Synthetic source was unavailable."),
+    ).toBeVisible();
+
+    await completedTask
+      .getByRole("button", { name: "View full timeline" })
+      .click();
+    const timeline = page.getByRole("dialog", {
+      name: "Full agent run timeline",
+    });
+    await expect(timeline).toBeVisible();
+    await expect(
+      timeline.getByText(
+        "Synthetic retained evidence matched the expected digest.",
+      ),
+    ).toBeVisible();
+    await timeline
+      .getByRole("button", { name: "Close full agent run timeline" })
+      .click();
+
+    await page.goto("/rooms/soc-operations");
+    const roomHandoffs = page.getByTestId("room-agent-handoffs");
+    await expect(roomHandoffs).toContainText(
+      "Synthetic endpoint activity was benign.",
+    );
+    await expect(roomHandoffs).toContainText(
+      "Synthetic approval is required before publication.",
+    );
+    await expect(roomHandoffs).toContainText(
+      "Synthetic source was unavailable.",
+    );
+
+    const baseURL = testInfo.project.use.baseURL?.toString();
+    if (!baseURL) throw new Error("Playwright baseURL required");
+    const anonymous = await playwright.request.newContext({
+      baseURL,
+      storageState: { cookies: [], origins: [] },
+    });
+    try {
+      for (const path of [
+        `/api/v1/rooms/${room.id}/agent-handoffs`,
+        `/api/v1/agent-runs/${runIds[0]}/timeline`,
+        `/api/v1/evidence/${evidenceId}`,
+      ]) {
+        expect((await anonymous.get(path)).status(), path).toBe(401);
+      }
+    } finally {
+      await anonymous.dispose();
+    }
+  } finally {
+    await db.delete(schema.tasks).where(inArray(schema.tasks.id, taskIds));
+    await db
+      .delete(schema.agentRunEvents)
+      .where(inArray(schema.agentRunEvents.id, eventIds));
+    await db
+      .delete(schema.agentRuns)
+      .where(inArray(schema.agentRuns.id, runIds));
+    await db.delete(schema.evidence).where(eq(schema.evidence.id, evidenceId));
   }
 });
 
@@ -744,9 +1019,13 @@ test("task board manages durable agent work end to end", async ({
   ).toBeVisible({ timeout: 15_000 });
   taskCard = reviewColumn.getByRole("article").filter({ hasText: taskTitle });
   await expect(taskCard.getByText("Agent completed")).toBeVisible();
-  await taskCard.getByText("Agent output and evidence").click();
-  await expect(taskCard.getByText("Synthetic task review")).toBeVisible();
-  await expect(taskCard.getByText(/inputTokens/)).toBeVisible();
+  await expect(taskCard.getByLabel("Agent handoff: Completed")).toBeVisible();
+  await expect(
+    taskCard.getByText(/Synthetic analysis completed for:/),
+  ).toBeVisible();
+  await expect(
+    taskCard.getByText("No persisted verification evidence was recorded."),
+  ).toBeVisible();
   await taskCard.getByRole("button", { name: "Mark done" }).click();
   const doneColumn = page
     .getByRole("heading", { name: "Done", exact: true })
@@ -865,10 +1144,7 @@ test("agent observer APIs redact secrets for authorised and unauthorised callers
   const taskId = newId();
   const eventId = newId();
   const canary = `synthetic-observer-secret-${newId()}`;
-  const [definition] = await db
-    .select()
-    .from(schema.agentDefinitions)
-    .limit(1);
+  const [definition] = await db.select().from(schema.agentDefinitions).limit(1);
   if (!definition) throw new Error("Seeded agent definition required");
 
   try {

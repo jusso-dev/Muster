@@ -23,11 +23,13 @@ import {
   X,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { AgentHandoffCard } from "@/components/agent-handoff-card";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { browserUuid } from "@/lib/browser-uuid";
+import type { AgentHandoff } from "@/lib/agent-handoff-domain";
 import { cn } from "@/lib/utils";
 
 type TaskStatus = "backlog" | "ready" | "in_progress" | "review" | "done";
@@ -54,6 +56,7 @@ type AgentRun = {
   outputHash: string | null;
   error: string | null;
   cancellationReason: string | null;
+  handoff: AgentHandoff | null;
 };
 type BoardTask = {
   id: string;
@@ -118,9 +121,7 @@ function priorityClass(priority: TaskPriority) {
   return "bg-muted text-muted-foreground";
 }
 
-function agentReadinessLabel(
-  state: "ready" | "needs_attention" | "unknown",
-) {
+function agentReadinessLabel(state: "ready" | "needs_attention" | "unknown") {
   if (state === "ready") return "Ready";
   if (state === "needs_attention") return "Needs attention";
   return "Unknown";
@@ -521,18 +522,18 @@ export function TasksView() {
                 </option>
               ))}
             </select>
-            {selectedAssignee?.actorType === "agent"
-              && selectedAssignee.readiness && (
-              <p className="text-xs leading-5 text-muted-foreground">
-                <strong>
-                  {agentReadinessLabel(selectedAssignee.readiness.state)}
-                </strong>
-                {" · "}
-                {selectedAssignee.description}
-                {" · "}
-                {selectedAssignee.readiness.reason}
-              </p>
-            )}
+            {selectedAssignee?.actorType === "agent" &&
+              selectedAssignee.readiness && (
+                <p className="text-xs leading-5 text-muted-foreground">
+                  <strong>
+                    {agentReadinessLabel(selectedAssignee.readiness.state)}
+                  </strong>
+                  {" · "}
+                  {selectedAssignee.description}
+                  {" · "}
+                  {selectedAssignee.readiness.reason}
+                </p>
+              )}
           </label>
           <div className="space-y-1 desktop:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -762,7 +763,10 @@ export function TasksView() {
                             </p>
                           )}
 
-                          {task.run &&
+                          {task.run?.handoff ? (
+                            <AgentHandoffCard handoff={task.run.handoff} />
+                          ) : (
+                            task.run &&
                             (task.run.structuredOutput ||
                               task.run.error ||
                               task.run.cancellationReason) && (
@@ -810,7 +814,8 @@ export function TasksView() {
                                   )}
                                 </dl>
                               </details>
-                            )}
+                            )
+                          )}
 
                           <div className="mt-3 flex flex-wrap items-center gap-1">
                             <Button
@@ -871,13 +876,12 @@ export function TasksView() {
                                   size="sm"
                                   className="ml-auto"
                                   disabled={
-                                    pendingTaskId === task.id
-                                    || task.assignee?.readiness?.state
-                                      !== "ready"
+                                    pendingTaskId === task.id ||
+                                    task.assignee?.readiness?.state !== "ready"
                                   }
                                   title={
-                                    task.assignee?.readiness?.reason
-                                    ?? "Agent readiness evidence is unavailable."
+                                    task.assignee?.readiness?.reason ??
+                                    "Agent readiness evidence is unavailable."
                                   }
                                   onClick={() =>
                                     void runAction(task, "delegate")

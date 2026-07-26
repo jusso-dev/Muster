@@ -93,10 +93,9 @@ export function RoomAgentActivity({
     if (!roomResolved) return;
     const controller = new AbortController();
     const refresh = async () => {
-      const response = await fetch(
-        `/api/v1/rooms/${roomId}/agent-activity`,
-        { signal: controller.signal },
-      );
+      const response = await fetch(`/api/v1/rooms/${roomId}/agent-activity`, {
+        signal: controller.signal,
+      });
       if (!response.ok) return;
       const payload = (await response.json()) as { data: ActivityData };
       setData(payload.data);
@@ -131,7 +130,7 @@ export function RoomAgentActivity({
     setRunError(null);
     setRunLoading(true);
     try {
-      const response = await fetch(`/api/v1/agent-runs/${runId}`);
+      const response = await fetch(`/api/v1/agent-runs/${runId}/timeline`);
       if (!response.ok) throw new Error("Run timeline unavailable.");
       const payload = (await response.json()) as { data: RunDetail };
       setRunDetail(payload.data);
@@ -149,8 +148,8 @@ export function RoomAgentActivity({
       <div className="mx-4 mt-3 flex items-center gap-2 rounded border border-[var(--color-accent)] bg-[var(--color-accent-soft)] p-2 text-xs">
         <Bot className="size-4 text-[var(--color-agent)]" />
         <span className="flex-1">
-          <strong>Detection Engineering Agent</strong> is drafting Sigma and
-          KQL proposals…
+          <strong>Detection Engineering Agent</strong> is drafting Sigma and KQL
+          proposals…
         </span>
         <Badge className="agent-surface">Running · 01:18</Badge>
       </div>

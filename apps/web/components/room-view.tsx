@@ -39,6 +39,7 @@ import {
   type RoomMessageRecord,
 } from "@/components/room-composer";
 import { RoomAgentActivity } from "@/components/room-agent-activity";
+import { RoomAgentHandoffs } from "@/components/room-agent-handoffs";
 import { SeverityBadge } from "@/components/severity";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -2698,6 +2699,7 @@ export function RoomView({ slug }: { slug: string }) {
                 </p>
               </div>
             )}
+          <RoomAgentHandoffs roomId={roomId} roomResolved={roomResolved} />
           <RoomAgentActivity
             roomId={roomId}
             roomResolved={roomResolved}
