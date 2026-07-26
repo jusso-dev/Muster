@@ -147,6 +147,7 @@ test("deployed user can sign out and back in", async ({ page }, testInfo) => {
     .getByRole("menuitem", { name: "Sign out" })
     .click();
   await expect(page).toHaveURL(/\/login$/);
+  expect((await page.request.get("/api/v1/rooms")).status()).toBe(401);
   await page
     .getByLabel("Email address")
     .fill(requiredEnvironment("MUSTER_LOCAL_ADMIN_EMAIL"));
