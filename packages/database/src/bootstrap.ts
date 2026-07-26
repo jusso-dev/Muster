@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { closeDatabase, database, schema } from "./index.ts";
-import { demoIds } from "./seed-data.ts";
+import { starterIds } from "./seed-data.ts";
 
 const db = database();
 const organisationName =
@@ -61,7 +61,7 @@ const administratorCapabilities = [
 await db
   .insert(schema.organisations)
   .values({
-    id: demoIds.organisation,
+    id: starterIds.organisation,
     name: organisationName,
     slug: organisationSlug,
     dataRegion: process.env.MUSTER_DATA_REGION?.trim() || "local",
@@ -83,16 +83,16 @@ await db
   .insert(schema.actors)
   .values([
     {
-      id: demoIds.actors.jordan,
-      organisationId: demoIds.organisation,
+      id: starterIds.actors.jordan,
+      organisationId: starterIds.organisation,
       actorType: "human",
       displayName: "Muster Administrator",
       identityReference: administratorEmail,
       capabilityAssignments: administratorCapabilities,
     },
     {
-      id: demoIds.actors.triage,
-      organisationId: demoIds.organisation,
+      id: starterIds.actors.triage,
+      organisationId: starterIds.organisation,
       actorType: "agent",
       displayName: "Alfie",
       identityReference: "agent:alfie-threat-research",
@@ -104,8 +104,8 @@ await db
       ],
     },
     {
-      id: demoIds.actors.tawnyHunt,
-      organisationId: demoIds.organisation,
+      id: starterIds.actors.tawnyHunt,
+      organisationId: starterIds.organisation,
       actorType: "agent",
       displayName: "Jessie",
       identityReference: "agent:jessie-hunt",
@@ -121,8 +121,8 @@ await db
       ],
     },
     {
-      id: demoIds.actors.threatIntel,
-      organisationId: demoIds.organisation,
+      id: starterIds.actors.threatIntel,
+      organisationId: starterIds.organisation,
       actorType: "agent",
       displayName: "Parker",
       identityReference: "agent:parker-executive",
@@ -134,8 +134,8 @@ await db
       ],
     },
     {
-      id: demoIds.actors.system,
-      organisationId: demoIds.organisation,
+      id: starterIds.actors.system,
+      organisationId: starterIds.organisation,
       actorType: "system",
       displayName: "Muster",
       identityReference: "system:muster",
@@ -152,22 +152,120 @@ await db
   });
 
 await db
+  .insert(schema.agentDefinitions)
+  .values([
+    {
+      id: starterIds.actors.triage,
+      organisationId: starterIds.organisation,
+      name: "Alfie",
+      description:
+        "Researches approved public and vendor sources and produces evidence-backed security briefs.",
+      runtime: "codex-subscription",
+      model: process.env.MUSTER_CODEX_MODEL?.trim() || "configured",
+      ownerActorId: starterIds.actors.jordan,
+      systemPromptVersion: "alfie-v1",
+      allowedTools: ["alerts.read", "kelpie.cases.read", "sentinel.rules.read"],
+      allowedRooms: [starterIds.rooms.soc, starterIds.rooms.triageDirect],
+      capabilityRequirements: [
+        "alerts.read",
+        "kelpie.cases.read",
+        "sentinel.rules.read",
+      ],
+      maximumRuntimeSeconds: 900,
+      maximumTokenBudget: 30_000,
+      maximumCostCents: 500,
+      approvalRequirements: { externalWrites: "human" },
+    },
+    {
+      id: starterIds.actors.tawnyHunt,
+      organisationId: starterIds.organisation,
+      name: "Jessie",
+      description:
+        "Runs bounded threat hunts, maps observables to ATT&CK, and prepares governed case enrichment.",
+      runtime: "codex-subscription",
+      model: process.env.MUSTER_CODEX_MODEL?.trim() || "configured",
+      ownerActorId: starterIds.actors.jordan,
+      systemPromptVersion: "jessie-v1",
+      allowedTools: [
+        "tawny.telemetry.read",
+        "tawny.hunts.execute",
+        "sentinel.query.execute",
+        "kelpie.cases.read",
+      ],
+      allowedRooms: [starterIds.rooms.soc, starterIds.rooms.tawnyDirect],
+      capabilityRequirements: [
+        "tawny.telemetry.read",
+        "tawny.hunts.execute",
+        "sentinel.query.execute",
+        "kelpie.cases.read",
+      ],
+      maximumRuntimeSeconds: 1_800,
+      maximumTokenBudget: 40_000,
+      maximumCostCents: 750,
+      approvalRequirements: { externalWrites: "human" },
+    },
+    {
+      id: starterIds.actors.threatIntel,
+      organisationId: starterIds.organisation,
+      name: "Parker",
+      description:
+        "Builds reproducible operational reports and executive briefings from authoritative records.",
+      runtime: "codex-subscription",
+      model: process.env.MUSTER_CODEX_MODEL?.trim() || "configured",
+      ownerActorId: starterIds.actors.jordan,
+      systemPromptVersion: "parker-v1",
+      allowedTools: [
+        "alerts.read",
+        "investigations.read",
+        "kelpie.cases.read",
+        "audit.read",
+      ],
+      allowedRooms: [starterIds.rooms.soc, starterIds.rooms.parkerDirect],
+      capabilityRequirements: [
+        "alerts.read",
+        "investigations.read",
+        "kelpie.cases.read",
+        "audit.read",
+      ],
+      maximumRuntimeSeconds: 1_200,
+      maximumTokenBudget: 35_000,
+      maximumCostCents: 600,
+      approvalRequirements: { externalWrites: "human" },
+    },
+  ])
+  .onConflictDoUpdate({
+    target: [
+      schema.agentDefinitions.organisationId,
+      schema.agentDefinitions.name,
+    ],
+    set: {
+      description: sql`excluded.description`,
+      model: sql`excluded.model`,
+      allowedTools: sql`excluded.allowed_tools`,
+      allowedRooms: sql`excluded.allowed_rooms`,
+      capabilityRequirements: sql`excluded.capability_requirements`,
+      approvalRequirements: sql`excluded.approval_requirements`,
+      updatedAt: sql`now()`,
+    },
+  });
+
+await db
   .insert(schema.rooms)
   .values([
     {
-      id: demoIds.rooms.soc,
-      organisationId: demoIds.organisation,
+      id: starterIds.rooms.soc,
+      organisationId: starterIds.organisation,
       name: "soc-operations",
       slug: "soc-operations",
       displayName: "SOC operations",
       description: "Security operations coordination",
       topic: "Security operations coordination",
       roomType: "operations",
-      createdByActorId: demoIds.actors.jordan,
+      createdByActorId: starterIds.actors.jordan,
     },
     {
-      id: demoIds.rooms.triageDirect,
-      organisationId: demoIds.organisation,
+      id: starterIds.rooms.triageDirect,
+      organisationId: starterIds.organisation,
       name: "dm-alfie",
       slug: "dm-alfie",
       displayName: "Alfie",
@@ -175,11 +273,11 @@ await db
       topic: "Threat and technology research",
       roomType: "direct",
       visibility: "private",
-      createdByActorId: demoIds.actors.jordan,
+      createdByActorId: starterIds.actors.jordan,
     },
     {
-      id: demoIds.rooms.tawnyDirect,
-      organisationId: demoIds.organisation,
+      id: starterIds.rooms.tawnyDirect,
+      organisationId: starterIds.organisation,
       name: "dm-jessie",
       slug: "dm-jessie",
       displayName: "Jessie",
@@ -187,11 +285,11 @@ await db
       topic: "Threat hunting, enrichment, and analyst guidance",
       roomType: "direct",
       visibility: "private",
-      createdByActorId: demoIds.actors.jordan,
+      createdByActorId: starterIds.actors.jordan,
     },
     {
-      id: demoIds.rooms.parkerDirect,
-      organisationId: demoIds.organisation,
+      id: starterIds.rooms.parkerDirect,
+      organisationId: starterIds.organisation,
       name: "dm-parker",
       slug: "dm-parker",
       displayName: "Parker",
@@ -199,7 +297,7 @@ await db
       topic: "Operational reports and executive briefings",
       roomType: "direct",
       visibility: "private",
-      createdByActorId: demoIds.actors.jordan,
+      createdByActorId: starterIds.actors.jordan,
     },
   ])
   .onConflictDoUpdate({
@@ -215,63 +313,63 @@ await db
   .insert(schema.roomMemberships)
   .values([
     {
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.soc,
-      actorId: demoIds.actors.jordan,
+      organisationId: starterIds.organisation,
+      roomId: starterIds.rooms.soc,
+      actorId: starterIds.actors.jordan,
       membershipRole: "owner",
     },
     {
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.soc,
-      actorId: demoIds.actors.triage,
+      organisationId: starterIds.organisation,
+      roomId: starterIds.rooms.soc,
+      actorId: starterIds.actors.triage,
       membershipRole: "agent_member",
     },
     {
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.soc,
-      actorId: demoIds.actors.tawnyHunt,
+      organisationId: starterIds.organisation,
+      roomId: starterIds.rooms.soc,
+      actorId: starterIds.actors.tawnyHunt,
       membershipRole: "agent_member",
     },
     {
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.soc,
-      actorId: demoIds.actors.threatIntel,
+      organisationId: starterIds.organisation,
+      roomId: starterIds.rooms.soc,
+      actorId: starterIds.actors.threatIntel,
       membershipRole: "agent_member",
     },
     {
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.triageDirect,
-      actorId: demoIds.actors.jordan,
+      organisationId: starterIds.organisation,
+      roomId: starterIds.rooms.triageDirect,
+      actorId: starterIds.actors.jordan,
       membershipRole: "owner",
     },
     {
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.triageDirect,
-      actorId: demoIds.actors.triage,
+      organisationId: starterIds.organisation,
+      roomId: starterIds.rooms.triageDirect,
+      actorId: starterIds.actors.triage,
       membershipRole: "agent_member",
     },
     {
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.tawnyDirect,
-      actorId: demoIds.actors.jordan,
+      organisationId: starterIds.organisation,
+      roomId: starterIds.rooms.tawnyDirect,
+      actorId: starterIds.actors.jordan,
       membershipRole: "owner",
     },
     {
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.tawnyDirect,
-      actorId: demoIds.actors.tawnyHunt,
+      organisationId: starterIds.organisation,
+      roomId: starterIds.rooms.tawnyDirect,
+      actorId: starterIds.actors.tawnyHunt,
       membershipRole: "agent_member",
     },
     {
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.parkerDirect,
-      actorId: demoIds.actors.jordan,
+      organisationId: starterIds.organisation,
+      roomId: starterIds.rooms.parkerDirect,
+      actorId: starterIds.actors.jordan,
       membershipRole: "owner",
     },
     {
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.parkerDirect,
-      actorId: demoIds.actors.threatIntel,
+      organisationId: starterIds.organisation,
+      roomId: starterIds.rooms.parkerDirect,
+      actorId: starterIds.actors.threatIntel,
       membershipRole: "agent_member",
     },
   ])

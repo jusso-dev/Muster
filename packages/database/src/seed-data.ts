@@ -1,4 +1,4 @@
-export const demoIds = {
+export const starterIds = {
   organisation: "018f55d8-c4c7-7c3e-88ef-000000000001",
   actors: {
     jordan: "018f55d8-c4c7-7c3e-88ef-000000000010",
@@ -49,3 +49,5 @@ export const demoIds = {
     priyaParent: "018f55d8-c4c7-7c3e-88ef-000000000705",
   },
 } as const;
+
+export const demoIds = starterIds;

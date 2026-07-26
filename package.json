@@ -20,6 +20,7 @@
     "db:generate": "pnpm --filter @muster/database generate",
     "db:migrate": "pnpm --filter @muster/database migrate",
     "db:bootstrap": "pnpm --filter @muster/database bootstrap",
+    "db:verify-clean": "pnpm --filter @muster/database verify-clean",
     "db:seed": "pnpm --filter @muster/database seed",
     "screenshots": "playwright test tests/screenshots.spec.ts",
     "format": "prettier --write .",

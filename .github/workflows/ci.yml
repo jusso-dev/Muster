@@ -49,7 +49,8 @@ jobs:
       - name: Build database dependencies
         run: pnpm exec turbo build --filter=@muster/database
       - run: pnpm db:migrate
-      - run: pnpm db:seed
+      - run: pnpm db:bootstrap
+      - run: pnpm db:verify-clean
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test:unit
@@ -60,6 +61,8 @@ jobs:
           git diff --exit-code -- packages/database/migrations
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright test --config=playwright.clean.config.ts
+      - run: MUSTER_DEMO_MODE=true pnpm db:seed
       - run: pnpm exec playwright test tests/muster.spec.ts --project=chromium
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()

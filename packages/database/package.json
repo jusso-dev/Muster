@@ -28,6 +28,7 @@
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
     "bootstrap": "tsx src/bootstrap.ts",
+    "verify-clean": "tsx src/verify-clean-install.ts",
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
