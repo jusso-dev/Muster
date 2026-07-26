@@ -7,6 +7,7 @@ import { apiSubject, problemResponse, requestTraceId } from "@/lib/api-context";
 import { createTask } from "@/lib/task-domain";
 
 const CreateTaskSchema = z.object({
+  idempotencyKey: z.string().trim().min(8).max(200).optional(),
   title: z.string().trim().min(1).max(240),
   description: z.string().trim().max(4_000).default(""),
   status: TaskStatusSchema.default("backlog"),
@@ -158,6 +159,10 @@ export async function POST(request: Request) {
     requireCapability(subject, "tasks.create");
     const input = CreateTaskSchema.parse(await request.json());
     if (input.assignedActorId) requireCapability(subject, "tasks.assign");
+    const idempotencyKey =
+      input.idempotencyKey ??
+      request.headers.get("idempotency-key")?.trim() ??
+      `task-create:${traceId}`;
     const result = await createTask(
       {
         organisationId: subject.organisationId,
@@ -166,10 +171,14 @@ export async function POST(request: Request) {
       },
       {
         ...input,
+        idempotencyKey,
         dueAt: input.dueAt ? new Date(input.dueAt) : null,
       },
     );
-    return Response.json({ data: result, traceId }, { status: 201 });
+    return Response.json(
+      { data: { id: result.id }, duplicate: !result.created, traceId },
+      { status: result.created ? 201 : 200 },
+    );
   } catch (error) {
     return problemResponse(error, traceId);
   }

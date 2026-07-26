@@ -727,6 +727,7 @@ await db
       createdByActorId: demoIds.actors.jordan,
       roomId: demoIds.rooms.investigation,
       investigationId: demoIds.investigation,
+      idempotencyKey: "seed:task:threat-hunt",
       dueAt: new Date("2026-07-26T09:30:00Z"),
     },
     {
@@ -741,6 +742,7 @@ await db
       createdByActorId: demoIds.actors.jordan,
       roomId: demoIds.rooms.incident,
       investigationId: demoIds.investigation,
+      idempotencyKey: "seed:task:incident-email",
       approvalRequired: true,
     },
     {
@@ -755,6 +757,7 @@ await db
       createdByActorId: demoIds.actors.maya,
       roomId: demoIds.rooms.incident,
       investigationId: demoIds.investigation,
+      idempotencyKey: "seed:task:executive-update",
       agentRunStatus: "running",
     },
     {
@@ -769,6 +772,7 @@ await db
       createdByActorId: demoIds.actors.jordan,
       roomId: demoIds.rooms.soc,
       investigationId: demoIds.investigation,
+      idempotencyKey: "seed:task:monthly-landscape",
       agentRunStatus: "completed",
     },
   ])

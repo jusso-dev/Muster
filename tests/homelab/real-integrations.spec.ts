@@ -112,6 +112,7 @@ test("real Tawny and Kelpie operations are governed, durable, and duplicate-safe
     data: {
       title: `Synthetic real connector verification ${suffix}`,
       description: "Tawny hunt and Kelpie case lifecycle evidence.",
+      idempotencyKey: `real-integrations-task-${suffix}`,
       status: "in_progress",
       priority: "high",
       roomId: room.id,

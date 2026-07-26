@@ -393,6 +393,7 @@ test("task APIs deny cross-organisation references and runs", async ({
       id: foreignTaskId,
       organisationId: foreignOrganisationId,
       title: "Synthetic foreign task",
+      idempotencyKey: `foreign-task:${suffix}`,
       createdByActorId: foreignActorId,
       roomId: foreignRoomId,
       assignedActorId: foreignActorId,

@@ -27,6 +27,7 @@ import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { browserUuid } from "@/lib/browser-uuid";
 import { cn } from "@/lib/utils";
 
 type TaskStatus = "backlog" | "ready" | "in_progress" | "review" | "done";
@@ -137,6 +138,7 @@ export function TasksView() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [creationIdempotencyKey, setCreationIdempotencyKey] = useState("");
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [form, setForm] = useState<TaskForm>(emptyForm);
 
@@ -221,6 +223,7 @@ export function TasksView() {
 
   function resetComposer() {
     setEditingTaskId(null);
+    setCreationIdempotencyKey("");
     setComposerOpen(false);
     setForm({
       ...emptyForm,
@@ -282,7 +285,12 @@ export function TasksView() {
             relatedCaseId: form.relatedCaseId || null,
             dueAt: form.dueAt ? new Date(form.dueAt).toISOString() : null,
             ...(!editingTaskId
-              ? { status: "backlog", investigationId: null }
+              ? {
+                  status: "backlog",
+                  investigationId: null,
+                  idempotencyKey:
+                    creationIdempotencyKey || `task-create:${browserUuid()}`,
+                }
               : {}),
           }),
         },
@@ -346,6 +354,7 @@ export function TasksView() {
           <Button
             onClick={() => {
               setEditingTaskId(null);
+              setCreationIdempotencyKey(`task-create:${browserUuid()}`);
               setComposerOpen(true);
             }}
           >

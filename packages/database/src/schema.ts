@@ -1438,6 +1438,7 @@ export const tasks = pgTable(
       () => investigations.id,
     ),
     relatedCaseId: text("related_case_id"),
+    idempotencyKey: text("idempotency_key").notNull(),
     approvalRequired: boolean("approval_required").notNull().default(false),
     dueAt: timestamp("due_at", { withTimezone: true }),
     agentRunId: text("agent_run_id"),
@@ -1455,6 +1456,10 @@ export const tasks = pgTable(
       table.organisationId,
       table.assignedActorId,
       table.status,
+    ),
+    uniqueIndex("tasks_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
     ),
   ],
 );

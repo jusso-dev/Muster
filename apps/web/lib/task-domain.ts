@@ -18,6 +18,7 @@ export type TaskMutationContext = {
 };
 
 export type TaskInput = {
+  idempotencyKey: string;
   title: string;
   description: string;
   status: TaskStatus;
@@ -30,7 +31,7 @@ export type TaskInput = {
   dueAt: Date | null;
 };
 
-export type TaskChanges = Partial<TaskInput>;
+export type TaskChanges = Partial<Omit<TaskInput, "idempotencyKey">>;
 
 type Database = ReturnType<typeof database>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -122,15 +123,49 @@ export async function createTask(
   context: TaskMutationContext,
   input: TaskInput,
 ) {
-  const id = newId();
-  await database().transaction(async (tx) => {
+  return database().transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ id: schema.tasks.id })
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.organisationId, context.organisationId),
+          eq(schema.tasks.idempotencyKey, input.idempotencyKey),
+        ),
+      )
+      .limit(1);
+    if (existing) return { id: existing.id, created: false };
+
+    const id = newId();
     await assertReferences(tx, context.organisationId, input);
-    await tx.insert(schema.tasks).values({
-      id,
-      organisationId: context.organisationId,
-      createdByActorId: context.actorId,
-      ...input,
-    });
+    const [created] = await tx
+      .insert(schema.tasks)
+      .values({
+        id,
+        organisationId: context.organisationId,
+        createdByActorId: context.actorId,
+        ...input,
+      })
+      .onConflictDoNothing({
+        target: [schema.tasks.organisationId, schema.tasks.idempotencyKey],
+      })
+      .returning({ id: schema.tasks.id });
+    if (!created) {
+      const [concurrent] = await tx
+        .select({ id: schema.tasks.id })
+        .from(schema.tasks)
+        .where(
+          and(
+            eq(schema.tasks.organisationId, context.organisationId),
+            eq(schema.tasks.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .limit(1);
+      if (!concurrent) {
+        throw new Error("Task idempotency conflict could not be resolved.");
+      }
+      return { id: concurrent.id, created: false };
+    }
     await recordMutation(tx, context, id, "task.created", {
       status: input.status,
       priority: input.priority,
@@ -144,8 +179,8 @@ export async function createTask(
         assignedActorId: input.assignedActorId,
       });
     }
+    return { id, created: true };
   });
-  return { id };
 }
 
 export async function updateTask(
