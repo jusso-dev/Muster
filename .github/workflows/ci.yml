@@ -46,6 +46,8 @@ jobs:
           node-version: "24"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build database dependencies
+        run: pnpm exec turbo build --filter=@muster/database
       - run: pnpm db:migrate
       - run: pnpm db:seed
       - run: pnpm lint
