@@ -110,6 +110,9 @@ importers:
       '@muster/evidence':
         specifier: workspace:*
         version: link:../../packages/evidence
+      '@muster/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
       '@muster/investigations':
         specifier: workspace:*
         version: link:../../packages/investigations
@@ -204,6 +207,9 @@ importers:
       '@muster/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@muster/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
       bullmq:
         specifier: 5.81.2
         version: 5.81.2
@@ -443,6 +449,9 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
     devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

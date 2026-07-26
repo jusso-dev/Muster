@@ -3,12 +3,24 @@ import { Queue, Worker, type JobsOptions, type Processor } from "bullmq";
 import { queueNames, type QueueName } from "@muster/contracts";
 import { jsonLog, queuePolicies } from "@muster/config";
 import {
+  appendAuditEvent,
   claimOutboxBatch,
   closeDatabase,
   database,
   markOutboxDispatched,
   markOutboxFailed,
+  schema,
 } from "@muster/database";
+import {
+  ConnectorConfigurationSchema,
+  GovernedConnectorError,
+  QueryTemplateSchema,
+  decryptConnectorAuth,
+  decryptConnectorPayload,
+  executeGovernedQuery,
+  redactUntrusted,
+} from "@muster/integrations";
+import { and, eq } from "drizzle-orm";
 
 const redisUrl = new URL(process.env.REDIS_URL ?? "redis://localhost:6379");
 const connection = {
@@ -49,6 +61,16 @@ const authoritativeProcessor: Processor = async (job) => {
   });
   if (!job.data.organisationId || !job.data.traceId)
     throw new Error("Missing execution metadata");
+  if (
+    job.queueName === "muster-integrations" &&
+    job.name === "connector.query.queued"
+  ) {
+    await processConnectorQuery(
+      job.data.organisationId,
+      job.data.aggregateId,
+      job.data.traceId,
+    );
+  }
   if (job.queueName === "muster-agents") {
     const response = await fetch(
       `${process.env.AGENT_GATEWAY_URL ?? "http://agent-gateway:3002"}/v1/runs/dispatch`,
@@ -66,6 +88,224 @@ const authoritativeProcessor: Processor = async (job) => {
     authoritativeStateLoaded: true,
   };
 };
+
+async function processConnectorQuery(
+  organisationId: string,
+  runId: string,
+  traceId: string,
+) {
+  const db = database();
+  const [row] = await db
+    .select({
+      run: schema.integrationQueryRuns,
+      integration: schema.integrationRecords,
+      template: schema.integrationQueryTemplates,
+      credential: schema.integrationConnectorCredentials,
+      actor: schema.actors,
+    })
+    .from(schema.integrationQueryRuns)
+    .innerJoin(
+      schema.integrationRecords,
+      and(
+        eq(schema.integrationRecords.organisationId, organisationId),
+        eq(
+          schema.integrationRecords.id,
+          schema.integrationQueryRuns.integrationId,
+        ),
+      ),
+    )
+    .innerJoin(
+      schema.integrationQueryTemplates,
+      and(
+        eq(schema.integrationQueryTemplates.organisationId, organisationId),
+        eq(
+          schema.integrationQueryTemplates.id,
+          schema.integrationQueryRuns.templateId,
+        ),
+      ),
+    )
+    .innerJoin(
+      schema.integrationConnectorCredentials,
+      and(
+        eq(
+          schema.integrationConnectorCredentials.organisationId,
+          organisationId,
+        ),
+        eq(
+          schema.integrationConnectorCredentials.integrationId,
+          schema.integrationQueryRuns.integrationId,
+        ),
+      ),
+    )
+    .innerJoin(
+      schema.actors,
+      and(
+        eq(schema.actors.organisationId, organisationId),
+        eq(schema.actors.id, schema.integrationQueryRuns.requestedByActorId),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.integrationQueryRuns.organisationId, organisationId),
+        eq(schema.integrationQueryRuns.id, runId),
+      ),
+    )
+    .limit(1);
+  if (!row) throw new Error("Authoritative connector query state not found");
+  if (row.run.status === "succeeded") return;
+  const definition = QueryTemplateSchema.parse(row.template.definition);
+  const capabilities = Array.isArray(row.actor.capabilityAssignments)
+    ? row.actor.capabilityAssignments
+    : [];
+  if (!capabilities.includes(definition.requiredCapability))
+    throw new Error("Connector capability was revoked before execution");
+  const key = process.env.CONNECTOR_ENCRYPTION_KEY;
+  if (!key) throw new Error("Connector encryption is not configured");
+  const auth = decryptConnectorAuth(row.credential.encryptedCredential, key);
+  const { authType: _storedAuthType, ...storedConfiguration } = row.integration
+    .configuration as Record<string, unknown>;
+  const configuration = ConnectorConfigurationSchema.parse({
+    ...storedConfiguration,
+    auth,
+  });
+  await db
+    .update(schema.integrationQueryRuns)
+    .set({ status: "running", startedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(schema.integrationQueryRuns.organisationId, organisationId),
+        eq(schema.integrationQueryRuns.id, runId),
+      ),
+    );
+  try {
+    const storedInput = row.run.input as { envelope?: unknown };
+    if (typeof storedInput.envelope !== "string")
+      throw new GovernedConnectorError(
+        "invalid_input",
+        "Connector input envelope is missing",
+      );
+    const result = await executeGovernedQuery({
+      configuration,
+      auth,
+      template: definition,
+      values: decryptConnectorPayload(storedInput.envelope, key) as Record<
+        string,
+        unknown
+      >,
+    });
+    await db.transaction(async (tx) => {
+      await tx
+        .update(schema.integrationQueryRuns)
+        .set({
+          status: "succeeded",
+          result: redactUntrusted(result.data),
+          responseMetadata: result.metadata,
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.integrationQueryRuns.organisationId, organisationId),
+            eq(schema.integrationQueryRuns.id, runId),
+          ),
+        );
+      await tx
+        .update(schema.integrationRecords)
+        .set({
+          status: "healthy",
+          health: {
+            status: "healthy",
+            checkedAt: new Date().toISOString(),
+            lastQueryRunId: runId,
+          },
+          lastSyncAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.integrationRecords.organisationId, organisationId),
+            eq(schema.integrationRecords.id, row.integration.id),
+          ),
+        );
+      await appendAuditEvent(tx, {
+        organisationId,
+        actorId: row.actor.id,
+        actorType: row.actor.actorType,
+        action: "connector.query.succeeded",
+        targetType: "integration_query",
+        targetId: runId,
+        metadata: {
+          integrationId: row.integration.id,
+          templateKey: definition.key,
+          templateVersion: definition.version,
+          ...result.metadata,
+        },
+        traceId,
+      });
+    });
+  } catch (error) {
+    const failure =
+      error instanceof GovernedConnectorError
+        ? error
+        : new GovernedConnectorError(
+            "source_unavailable",
+            "Connector query failed safely",
+          );
+    await db.transaction(async (tx) => {
+      await tx
+        .update(schema.integrationQueryRuns)
+        .set({
+          status: "failed",
+          errorCode: failure.code,
+          errorMessage: failure.message,
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.integrationQueryRuns.organisationId, organisationId),
+            eq(schema.integrationQueryRuns.id, runId),
+          ),
+        );
+      await tx
+        .update(schema.integrationRecords)
+        .set({
+          status: "degraded",
+          health: {
+            status: "degraded",
+            checkedAt: new Date().toISOString(),
+            errorCode: failure.code,
+          },
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.integrationRecords.organisationId, organisationId),
+            eq(schema.integrationRecords.id, row.integration.id),
+          ),
+        );
+      await appendAuditEvent(tx, {
+        organisationId,
+        actorId: row.actor.id,
+        actorType: row.actor.actorType,
+        action: "connector.query.failed",
+        targetType: "integration_query",
+        targetId: runId,
+        metadata: {
+          integrationId: row.integration.id,
+          templateKey: definition.key,
+          errorCode: failure.code,
+        },
+        traceId,
+      });
+    });
+    if (
+      failure.code === "rate_limited" ||
+      failure.code === "source_unavailable"
+    )
+      throw failure;
+  }
+}
 
 for (const name of queueNames.filter((queue) => queue !== "muster-outbox")) {
   const policy = queuePolicies[name];

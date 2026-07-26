@@ -18,6 +18,7 @@ x-muster-environment: &muster-environment
   OBJECT_STORAGE_BUCKET: muster-evidence
   OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY}
   OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY}
+  CONNECTOR_ENCRYPTION_KEY: ${CONNECTOR_ENCRYPTION_KEY}
   SMTP_HOST: mailpit
   SMTP_PORT: 1025
   KELPIE_BASE_URL: http://mock-kelpie:4011
@@ -199,6 +200,16 @@ services:
       MOCK_PRODUCT: Bower
     volumes:
       - ../../integrations/bower/mock.mjs:/mock/mock.mjs:ro
+
+  mock-connector:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    working_dir: /mock
+    command: ["node", "mock.mjs"]
+    environment:
+      PORT: 4020
+    volumes:
+      - ../../integrations/generic/mock.mjs:/mock/mock.mjs:ro
 
 volumes:
   postgres-data:

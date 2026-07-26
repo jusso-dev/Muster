@@ -1570,6 +1570,104 @@ export const integrationDeliveries = pgTable(
   ],
 );
 
+export const integrationConnectorCredentials = pgTable(
+  "integration_connector_credentials",
+  {
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    integrationId: uuid("integration_id")
+      .primaryKey()
+      .references(() => integrationRecords.id),
+    encryptedCredential: text("encrypted_credential").notNull(),
+    envelopeVersion: text("envelope_version").notNull().default("v1"),
+    rotationVersion: integer("rotation_version").notNull().default(1),
+    rotatedByActorId: uuid("rotated_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    rotatedAt: timestamp("rotated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("integration_credentials_org_idx").on(
+      table.organisationId,
+      table.integrationId,
+    ),
+  ],
+);
+
+export const integrationQueryTemplates = pgTable(
+  "integration_query_templates",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    integrationId: uuid("integration_id")
+      .notNull()
+      .references(() => integrationRecords.id),
+    templateKey: text("template_key").notNull(),
+    version: integer("version").notNull(),
+    definition: jsonb("definition").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdByActorId: uuid("created_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("integration_templates_org_key_version_unique").on(
+      table.organisationId,
+      table.integrationId,
+      table.templateKey,
+      table.version,
+    ),
+  ],
+);
+
+export const integrationQueryRuns = pgTable(
+  "integration_query_runs",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    integrationId: uuid("integration_id")
+      .notNull()
+      .references(() => integrationRecords.id),
+    templateId: uuid("template_id")
+      .notNull()
+      .references(() => integrationQueryTemplates.id),
+    requestedByActorId: uuid("requested_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    idempotencyKey: text("idempotency_key").notNull(),
+    traceId: text("trace_id").notNull(),
+    status: text("status").notNull().default("queued"),
+    input: jsonb("input").notNull().default({}),
+    result: jsonb("result"),
+    requestMetadata: jsonb("request_metadata").notNull().default({}),
+    responseMetadata: jsonb("response_metadata").notNull().default({}),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("integration_query_runs_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
+    ),
+    index("integration_query_runs_org_status_idx").on(
+      table.organisationId,
+      table.status,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const idempotencyRecords = pgTable(
   "idempotency_records",
   {

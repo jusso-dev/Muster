@@ -1,7 +1,8 @@
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import Link from "next/link";
 import { demoOrganisation, demoMode } from "@/lib/demo-data";
 
 const sections = [
@@ -30,9 +31,12 @@ export function SettingsView() {
         title="Settings"
         description={demoOrganisation.name}
         actions={
-          <Button disabled title="Settings persistence is not available yet">
-            Save changes
-          </Button>
+          <Link
+            href="/integrations/connectors"
+            className={buttonVariants({ variant: "default" })}
+          >
+            Governed connectors
+          </Link>
         }
       />
       <div className="grid min-h-0 flex-1 tablet:grid-cols-[13rem_minmax(0,1fr)]">

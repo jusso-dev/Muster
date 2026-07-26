@@ -13,6 +13,7 @@ if [[ ! -f "$env_file" ]]; then
   postgres_password="$(openssl rand -hex 24)"
   auth_secret="$(openssl rand -hex 32)"
   storage_secret="$(openssl rand -hex 24)"
+  connector_encryption_key="$(openssl rand -hex 32)"
   admin_password="Muster!$(openssl rand -hex 12)"
 
   sed -i.bak \
@@ -22,6 +23,7 @@ if [[ ! -f "$env_file" ]]; then
     -e "s|generate-postgres-password|${postgres_password}|" \
     -e "s|generate-better-auth-secret|${auth_secret}|" \
     -e "s|generate-object-storage-secret|${storage_secret}|" \
+    -e "s|generate-connector-encryption-key|${connector_encryption_key}|" \
     "$env_file"
   rm "$env_file.bak"
   {

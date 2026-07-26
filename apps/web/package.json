@@ -22,6 +22,7 @@
     "@muster/event-protocol": "workspace:*",
     "@muster/evidence": "workspace:*",
     "@muster/investigations": "workspace:*",
+    "@muster/integrations": "workspace:*",
     "@muster/rooms": "workspace:*",
     "@tailwindcss/postcss": "4.3.3",
     "@tanstack/react-query": "5.101.4",

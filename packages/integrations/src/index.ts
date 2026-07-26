@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export * from "./governed.ts";
+
 export interface ConnectorOptions {
   baseUrl: string;
   token: string;
