@@ -33,7 +33,7 @@ export async function GET(
     );
     return new Response(Buffer.from(asset.body), {
       headers: {
-        "cache-control": "private, max-age=31536000, immutable",
+        "cache-control": "private, no-cache",
         "content-type": asset.mimeType,
         "content-length": String(asset.body.byteLength),
         "x-content-type-options": "nosniff",

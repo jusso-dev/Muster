@@ -1796,6 +1796,7 @@ test("approved visual reactions send in two interactions and fail closed", async
     );
     expect(assetResponse.status()).toBe(200);
     expect(assetResponse.headers()["content-type"]).toContain("image/gif");
+    expect(assetResponse.headers()["cache-control"]).toBe("private, no-cache");
     expect(assetResponse.headers().etag).toBe(`"sha256-${digest}"`);
 
     await page.goto(`/rooms/${room.slug}`);
