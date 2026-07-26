@@ -17,9 +17,12 @@ export class ApiProblem extends Error {
   }
 }
 
-export async function apiSubject(request: Request): Promise<AuthorisationSubject> {
+export async function apiSubject(
+  request: Request,
+): Promise<AuthorisationSubject> {
   const session = await auth.api.getSession({ headers: request.headers });
-  if (!session) throw new ApiProblem(401, "Unauthorised", "Authentication is required.");
+  if (!session)
+    throw new ApiProblem(401, "Unauthorised", "Authentication is required.");
   const [actor] = await database()
     .select({
       id: schema.actors.id,
@@ -34,11 +37,17 @@ export async function apiSubject(request: Request): Promise<AuthorisationSubject
       ),
     )
     .limit(1);
-  if (!actor) throw new ApiProblem(403, "Forbidden", "No organisation actor is linked to this account.");
+  if (!actor)
+    throw new ApiProblem(
+      403,
+      "Forbidden",
+      "No organisation actor is linked to this account.",
+    );
   const assigned = Array.isArray(actor.capabilityAssignments)
     ? actor.capabilityAssignments.filter(
         (value): value is Capability =>
-          typeof value === "string" && capabilities.includes(value as Capability),
+          typeof value === "string" &&
+          capabilities.includes(value as Capability),
       )
     : [];
   return {
@@ -54,9 +63,15 @@ export function problemResponse(error: unknown, traceId: string) {
       ? error
       : error instanceof Error && error.name === "ForbiddenError"
         ? new ApiProblem(403, "Forbidden", error.message)
-        : error instanceof Error
-          ? new ApiProblem(400, "Request failed", error.message)
-          : new ApiProblem(500, "Internal error", "The request could not be completed.");
+        : error instanceof Error && error.message === "Room membership required"
+          ? new ApiProblem(404, "Not found", "Room not found.")
+          : error instanceof Error
+            ? new ApiProblem(400, "Request failed", error.message)
+            : new ApiProblem(
+                500,
+                "Internal error",
+                "The request could not be completed.",
+              );
   return Response.json(
     {
       type: `https://muster.security/problems/${problem.title.toLowerCase().replaceAll(" ", "-")}`,
@@ -65,7 +80,10 @@ export function problemResponse(error: unknown, traceId: string) {
       detail: problem.detail,
       traceId,
     },
-    { status: problem.status, headers: { "content-type": "application/problem+json" } },
+    {
+      status: problem.status,
+      headers: { "content-type": "application/problem+json" },
+    },
   );
 }
 
