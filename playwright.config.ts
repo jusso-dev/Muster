@@ -16,6 +16,20 @@ export default defineConfig({
   },
   webServer: [
     {
+      name: "Synthetic Kelpie",
+      command: "PORT=4011 node integrations/kelpie/mock.mjs",
+      url: "http://127.0.0.1:4011/health",
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+    {
+      name: "Synthetic Tawny",
+      command: "PORT=4012 node integrations/tawny/mock.mjs",
+      url: "http://127.0.0.1:4012/health",
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+    {
       name: "Synthetic connector",
       command: "PORT=4123 node integrations/generic/mock.mjs",
       url: "http://127.0.0.1:4123/health",

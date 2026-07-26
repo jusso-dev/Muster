@@ -2,6 +2,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDatabase, database, newId, schema } from "@muster/database";
 import { and, eq } from "drizzle-orm";
 import { ConnectorDomainService } from "./connector-domain";
+import {
+  ApprovalDomainService,
+  IntegrationActionDomainService,
+} from "./integration-action-domain";
 
 const integration = process.env.MUSTER_INTEGRATION_TESTS === "true";
 const describeIntegration = integration ? describe.sequential : describe.skip;
@@ -13,6 +17,8 @@ describeIntegration("connector domain governance", () => {
     capabilities: Set<any>;
   };
   let connectorId = "";
+  let tawnyResponseConnectorId = "";
+  let kelpieConnectorId = "";
   let jessieActorId = "";
   const instanceId = `synthetic-${newId()}`;
 
@@ -203,5 +209,145 @@ describeIntegration("connector domain governance", () => {
       .from(schema.auditEvents)
       .where(eq(schema.auditEvents.targetId, queued.id));
     expect(audit?.actorType).toBe("agent");
+  });
+
+  it("queues approval-gated Tawny response without projecting action input", async () => {
+    const connectors = new ConnectorDomainService();
+    tawnyResponseConnectorId = (
+      await connectors.configure(
+        subject,
+        {
+          product: "tawny_response",
+          instanceId: `tawny-response-${instanceId}`,
+          displayName: "Synthetic Tawny response",
+          baseUrl: "http://tawny.test",
+          allowedHosts: ["tawny.test"],
+          allowPrivateNetwork: true,
+          testMode: true,
+          auth: { type: "bearer", token: "tawny-response-secret" },
+          limits: {
+            timeoutMs: 1_000,
+            maxResponseBytes: 10_000,
+            maxRecords: 10,
+            maxPages: 2,
+            requestsPerMinute: 10,
+          },
+        },
+        `configure-tawny-response-${instanceId}`,
+      )
+    ).id;
+    const idempotencyKey = `tawny-isolate-${newId()}`;
+    const first = await new IntegrationActionDomainService().request(
+      subject,
+      {
+        operation: "tawny.isolate_host",
+        integrationId: tawnyResponseConnectorId,
+        agentId: newId(),
+        reason: "Synthetic approved containment reason",
+        idempotencyKey,
+      },
+      `trace-${idempotencyKey}`,
+    );
+    expect(first).toMatchObject({
+      status: "awaiting_approval",
+      duplicate: false,
+    });
+    const duplicate = await new IntegrationActionDomainService().request(
+      subject,
+      {
+        operation: "tawny.isolate_host",
+        integrationId: tawnyResponseConnectorId,
+        agentId: newId(),
+        reason: "This duplicate body is never persisted",
+        idempotencyKey,
+      },
+      `trace-${idempotencyKey}`,
+    );
+    expect(duplicate).toMatchObject({ id: first.id, duplicate: true });
+    const projection = JSON.stringify(
+      await new IntegrationActionDomainService().list(subject),
+    );
+    expect(projection).not.toContain("Synthetic approved containment reason");
+    expect(projection).not.toContain("envelope");
+
+    if (!first.approvalId) throw new Error("Approval record required");
+    const decision = await new ApprovalDomainService().decide(
+      subject,
+      first.approvalId,
+      {
+        status: "approved",
+        reason: "Synthetic action reviewed and approved",
+      },
+      `approve-${idempotencyKey}`,
+    );
+    expect(decision).toMatchObject({ status: "approved", duplicate: false });
+    const [delivery] = await database()
+      .select({ status: schema.integrationDeliveries.status })
+      .from(schema.integrationDeliveries)
+      .where(eq(schema.integrationDeliveries.id, first.id));
+    expect(delivery?.status).toBe("queued");
+    await expect(
+      new IntegrationActionDomainService().get(
+        { ...subject, organisationId: newId() },
+        first.id,
+      ),
+    ).rejects.toThrow("Integration action does not exist");
+  });
+
+  it("queues idempotent Kelpie mutations and denies missing capability", async () => {
+    kelpieConnectorId = (
+      await new ConnectorDomainService().configure(
+        subject,
+        {
+          product: "kelpie",
+          instanceId: `kelpie-${instanceId}`,
+          displayName: "Synthetic Kelpie",
+          baseUrl: "http://kelpie.test",
+          allowedHosts: ["kelpie.test"],
+          allowPrivateNetwork: true,
+          testMode: true,
+          auth: { type: "bearer", token: "kelpie-secret" },
+          limits: {
+            timeoutMs: 1_000,
+            maxResponseBytes: 10_000,
+            maxRecords: 10,
+            maxPages: 2,
+            requestsPerMinute: 10,
+          },
+        },
+        `configure-kelpie-${instanceId}`,
+      )
+    ).id;
+    await expect(
+      new IntegrationActionDomainService().request(
+        { ...subject, capabilities: new Set(["kelpie.cases.read"]) },
+        {
+          operation: "kelpie.timeline.comment",
+          integrationId: kelpieConnectorId,
+          caseId: "synthetic-case",
+          body: "Synthetic timeline evidence",
+          idempotencyKey: `kelpie-denied-${newId()}`,
+        },
+        "kelpie-denied",
+      ),
+    ).rejects.toThrow("Missing capability");
+    const queued = await new IntegrationActionDomainService().request(
+      subject,
+      {
+        operation: "kelpie.timeline.comment",
+        integrationId: kelpieConnectorId,
+        caseId: "synthetic-case",
+        body: "Synthetic timeline evidence",
+        evidenceReferences: ["muster:evidence:synthetic"],
+        idempotencyKey: `kelpie-comment-${newId()}`,
+      },
+      "kelpie-comment",
+    );
+    expect(queued).toMatchObject({ status: "queued", duplicate: false });
+    const [outbox] = await database()
+      .select()
+      .from(schema.outboxEvents)
+      .where(eq(schema.outboxEvents.aggregateId, queued.id));
+    expect(outbox?.eventType).toBe("integration.action.queued");
   });
 });

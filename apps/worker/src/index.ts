@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { createHash } from "node:crypto";
 import { Queue, Worker, type JobsOptions, type Processor } from "bullmq";
 import { queueNames, type QueueName } from "@muster/contracts";
 import { jsonLog, queuePolicies } from "@muster/config";
@@ -9,18 +10,26 @@ import {
   database,
   markOutboxDispatched,
   markOutboxFailed,
+  newId,
   schema,
+  writeOutbox,
 } from "@muster/database";
 import {
   ConnectorConfigurationSchema,
   GovernedConnectorError,
+  IntegrationActionRequestSchema,
   QueryTemplateSchema,
   decryptConnectorAuth,
   decryptConnectorPayload,
+  executeGovernedActionRequest,
   executeGovernedQuery,
   redactUntrusted,
+  type ConnectorAuth,
+  type ConnectorConfiguration,
+  type IntegrationActionRequest,
 } from "@muster/integrations";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 
 const redisUrl = new URL(process.env.REDIS_URL ?? "redis://localhost:6379");
 const connection = {
@@ -66,6 +75,16 @@ const authoritativeProcessor: Processor = async (job) => {
     job.name === "connector.query.queued"
   ) {
     await processConnectorQuery(
+      job.data.organisationId,
+      job.data.aggregateId,
+      job.data.traceId,
+    );
+  }
+  if (
+    job.queueName === "muster-integrations" &&
+    job.name === "integration.action.queued"
+  ) {
+    await processIntegrationAction(
       job.data.organisationId,
       job.data.aggregateId,
       job.data.traceId,
@@ -242,6 +261,50 @@ async function processConnectorQuery(
         },
         traceId,
       });
+      const requestMetadata =
+        row.run.requestMetadata &&
+        typeof row.run.requestMetadata === "object" &&
+        !Array.isArray(row.run.requestMetadata)
+          ? (row.run.requestMetadata as Record<string, unknown>)
+          : {};
+      if (typeof requestMetadata.roomId === "string") {
+        const messageId = newId();
+        const plainText = `${row.integration.displayName} ${definition.displayName} completed with ${result.metadata.records} bounded records. External content is untrusted evidence.`;
+        await tx
+          .insert(schema.messages)
+          .values({
+            id: messageId,
+            organisationId,
+            roomId: requestMetadata.roomId,
+            authorActorId: row.actor.id,
+            messageType: "query-result",
+            document: {
+              type: "integration-query-result",
+              queryRunId: runId,
+              integrationId: row.integration.id,
+              templateKey: definition.key,
+              records: result.metadata.records,
+              trust: "untrusted-evidence",
+              ...(typeof requestMetadata.taskId === "string"
+                ? { taskId: requestMetadata.taskId }
+                : {}),
+            },
+            plainText,
+            dataClassification: "internal",
+            idempotencyKey: `connector.query.message:${runId}`,
+          })
+          .onConflictDoNothing();
+        await writeOutbox(tx, {
+          organisationId,
+          eventType: "room.message.created",
+          aggregateType: "message",
+          aggregateId: messageId,
+          queueName: "muster-outbox",
+          payload: { messageId, roomId: requestMetadata.roomId },
+          idempotencyKey: `room.message.created:connector.query.message:${runId}`,
+          traceId,
+        });
+      }
     });
   } catch (error) {
     const failure =
@@ -304,6 +367,670 @@ async function processConnectorQuery(
       failure.code === "source_unavailable"
     )
       throw failure;
+  }
+}
+
+const TawnyActionResponseSchema = z
+  .object({
+    id: z.uuid(),
+    agent_id: z.uuid(),
+    action_type: z.string(),
+    status: z.string(),
+  })
+  .passthrough();
+const KelpieCaseSchema = z
+  .object({
+    id: z.string(),
+    caseNumber: z.string(),
+    status: z.string().optional(),
+    summary: z.string().nullable().optional(),
+    version: z.number().int().optional(),
+    tags: z.array(z.string()).optional(),
+  })
+  .passthrough();
+
+function actionMarker(idempotencyKey: string) {
+  return `muster-${createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 24)}`;
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+async function executeIntegrationAction(
+  request: IntegrationActionRequest,
+  configuration: ConnectorConfiguration,
+  auth: ConnectorAuth,
+) {
+  const marker = actionMarker(request.idempotencyKey);
+  switch (request.operation) {
+    case "tawny.isolate_host": {
+      const path = `/api/agents/${encodeURIComponent(request.agentId)}/actions`;
+      const existing = await executeGovernedActionRequest({
+        configuration,
+        auth,
+        method: "GET",
+        path,
+        schema: z.array(
+          z
+            .object({
+              id: z.uuid(),
+              status: z.string(),
+              payload: z.unknown(),
+            })
+            .passthrough(),
+        ),
+      });
+      const duplicate = existing.find(
+        (action) =>
+          objectValue(action.payload).muster_idempotency_key === marker,
+      );
+      if (duplicate)
+        return {
+          externalId: duplicate.id,
+          externalReference: request.agentId,
+          externalStatus: duplicate.status,
+          externalDuplicate: true,
+        };
+      const created = await executeGovernedActionRequest({
+        configuration,
+        auth,
+        method: "POST",
+        path,
+        body: {
+          action_type: "isolate_host",
+          payload: {
+            reason: request.reason,
+            muster_idempotency_key: marker,
+          },
+        },
+        schema: TawnyActionResponseSchema,
+      });
+      return {
+        externalId: created.id,
+        externalReference: created.agent_id,
+        externalStatus: created.status,
+        externalDuplicate: false,
+      };
+    }
+    case "kelpie.case.create": {
+      const existing = await executeGovernedActionRequest({
+        configuration,
+        auth,
+        method: "GET",
+        path: "/api/v1/cases?limit=200",
+        schema: z.object({ cases: z.array(KelpieCaseSchema) }),
+      });
+      const duplicate = existing.cases.find((item) =>
+        item.tags?.includes(marker),
+      );
+      if (duplicate)
+        return {
+          externalId: duplicate.id,
+          externalReference: duplicate.caseNumber,
+          externalStatus: duplicate.status ?? "open",
+          externalDuplicate: true,
+          caseId: duplicate.id,
+        };
+      const created = await executeGovernedActionRequest({
+        configuration,
+        auth,
+        method: "POST",
+        path: "/api/v1/cases",
+        body: {
+          title: request.title,
+          summary: request.summary,
+          severity: request.severity,
+          tlp: request.tlp,
+          pap: request.pap,
+          classification: request.classification,
+          tags: [...new Set([...request.tags, marker])],
+        },
+        schema: z.object({ id: z.string(), caseNumber: z.string() }),
+      });
+      return {
+        externalId: created.id,
+        externalReference: created.caseNumber,
+        externalStatus: "open",
+        externalDuplicate: false,
+        caseId: created.id,
+      };
+    }
+    case "kelpie.case.update": {
+      const path = `/api/v1/cases/${encodeURIComponent(request.caseId)}`;
+      const existing = await executeGovernedActionRequest({
+        configuration,
+        auth,
+        method: "GET",
+        path,
+        schema: KelpieCaseSchema,
+      });
+      const alreadyApplied =
+        (request.status === undefined || existing.status === request.status) &&
+        (request.summary === undefined || existing.summary === request.summary);
+      if (alreadyApplied)
+        return {
+          externalId: existing.id,
+          externalReference: existing.caseNumber,
+          externalStatus: existing.status ?? "open",
+          externalDuplicate: true,
+          caseId: existing.id,
+        };
+      const updated = await executeGovernedActionRequest({
+        configuration,
+        auth,
+        method: "PATCH",
+        path,
+        body: {
+          version: request.version ?? existing.version,
+          ...(request.status ? { status: request.status } : {}),
+          ...(request.summary !== undefined
+            ? { summary: request.summary }
+            : {}),
+        },
+        schema: KelpieCaseSchema,
+      });
+      return {
+        externalId: updated.id,
+        externalReference: updated.caseNumber,
+        externalStatus: updated.status ?? request.status ?? "open",
+        externalDuplicate: false,
+        caseId: updated.id,
+      };
+    }
+    case "kelpie.timeline.comment": {
+      const path = `/api/v1/cases/${encodeURIComponent(request.caseId)}/comments`;
+      const existing = await executeGovernedActionRequest({
+        configuration,
+        auth,
+        method: "GET",
+        path,
+        schema: z.object({
+          comments: z.array(
+            z.object({ id: z.string(), body: z.string() }).passthrough(),
+          ),
+        }),
+      });
+      const duplicate = existing.comments.find((comment) =>
+        comment.body.includes(`[${marker}]`),
+      );
+      if (duplicate)
+        return {
+          externalId: duplicate.id,
+          externalReference: request.caseId,
+          externalStatus: "recorded",
+          externalDuplicate: true,
+          caseId: request.caseId,
+        };
+      const evidence =
+        request.evidenceReferences.length > 0
+          ? `\nEvidence: ${request.evidenceReferences.join(", ")}`
+          : "";
+      const created = await executeGovernedActionRequest({
+        configuration,
+        auth,
+        method: "POST",
+        path,
+        body: { body: `${request.body}${evidence}\n[${marker}]` },
+        schema: z.object({ id: z.string() }).passthrough(),
+      });
+      return {
+        externalId: created.id,
+        externalReference: request.caseId,
+        externalStatus: "recorded",
+        externalDuplicate: false,
+        caseId: request.caseId,
+      };
+    }
+    case "kelpie.observable.add": {
+      const path = `/api/v1/cases/${encodeURIComponent(request.caseId)}/observables`;
+      const existing = await executeGovernedActionRequest({
+        configuration,
+        auth,
+        method: "GET",
+        path,
+        schema: z.object({
+          observables: z.array(
+            z
+              .object({
+                id: z.string(),
+                value: z.string(),
+                tags: z.array(z.string()).optional(),
+              })
+              .passthrough(),
+          ),
+        }),
+      });
+      const duplicate = existing.observables.find((observable) =>
+        observable.tags?.includes(marker),
+      );
+      if (duplicate)
+        return {
+          externalId: duplicate.id,
+          externalReference: request.caseId,
+          externalStatus: "recorded",
+          externalDuplicate: true,
+          caseId: request.caseId,
+        };
+      const created = await executeGovernedActionRequest({
+        configuration,
+        auth,
+        method: "POST",
+        path,
+        body: {
+          type: request.observableType,
+          value: request.value,
+          tlp: request.tlp,
+          description: request.description,
+          isIoc: request.isIoc,
+          tags: [...new Set([...request.tags, marker])],
+        },
+        schema: z.object({ id: z.string() }),
+      });
+      return {
+        externalId: created.id,
+        externalReference: request.caseId,
+        externalStatus: "recorded",
+        externalDuplicate: false,
+        caseId: request.caseId,
+      };
+    }
+  }
+}
+
+function actionCapability(operation: IntegrationActionRequest["operation"]) {
+  if (operation === "tawny.isolate_host") return "tawny.response.isolate_host";
+  if (operation === "kelpie.case.create") return "kelpie.cases.create";
+  return "kelpie.cases.update";
+}
+
+async function processIntegrationAction(
+  organisationId: string,
+  deliveryId: string,
+  traceId: string,
+) {
+  const db = database();
+  const [row] = await db
+    .select({
+      delivery: schema.integrationDeliveries,
+      integration: schema.integrationRecords,
+      credential: schema.integrationConnectorCredentials,
+    })
+    .from(schema.integrationDeliveries)
+    .innerJoin(
+      schema.integrationRecords,
+      and(
+        eq(schema.integrationRecords.organisationId, organisationId),
+        eq(
+          schema.integrationRecords.id,
+          schema.integrationDeliveries.integrationId,
+        ),
+      ),
+    )
+    .innerJoin(
+      schema.integrationConnectorCredentials,
+      and(
+        eq(
+          schema.integrationConnectorCredentials.organisationId,
+          organisationId,
+        ),
+        eq(
+          schema.integrationConnectorCredentials.integrationId,
+          schema.integrationDeliveries.integrationId,
+        ),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.integrationDeliveries.organisationId, organisationId),
+        eq(schema.integrationDeliveries.id, deliveryId),
+      ),
+    )
+    .limit(1);
+  if (!row) throw new Error("Authoritative integration action not found");
+  if (row.delivery.status === "succeeded") return;
+  if (row.delivery.status === "awaiting_approval")
+    throw new Error("Integration action still awaits approval");
+
+  const metadata = z
+    .object({
+      actorId: z.uuid(),
+      actorType: z.string(),
+      envelope: z.string(),
+      approvalId: z.uuid().optional(),
+      roomId: z.uuid().optional(),
+      taskId: z.uuid().optional(),
+    })
+    .passthrough()
+    .parse(row.delivery.requestMetadata);
+  const [actor] = await db
+    .select()
+    .from(schema.actors)
+    .where(
+      and(
+        eq(schema.actors.organisationId, organisationId),
+        eq(schema.actors.id, metadata.actorId),
+        eq(schema.actors.status, "active"),
+      ),
+    )
+    .limit(1);
+  if (!actor) throw new Error("Integration action actor is unavailable");
+  const key = process.env.CONNECTOR_ENCRYPTION_KEY;
+  if (!key) throw new Error("Connector encryption is not configured");
+  const request = IntegrationActionRequestSchema.parse(
+    decryptConnectorPayload(metadata.envelope, key),
+  );
+  if (request.integrationId !== row.integration.id)
+    throw new Error("Integration action target changed");
+  const requiredCapability = actionCapability(request.operation);
+  if (
+    !Array.isArray(actor.capabilityAssignments) ||
+    !actor.capabilityAssignments.includes(requiredCapability)
+  )
+    throw new Error("Integration action capability was revoked");
+  if (metadata.approvalId) {
+    const [approval] = await db
+      .select()
+      .from(schema.approvals)
+      .where(
+        and(
+          eq(schema.approvals.organisationId, organisationId),
+          eq(schema.approvals.id, metadata.approvalId),
+          eq(schema.approvals.status, "approved"),
+        ),
+      )
+      .limit(1);
+    const decisions = z
+      .array(z.object({ actorId: z.uuid(), status: z.string() }))
+      .safeParse(approval?.decisions);
+    const approvedCount = decisions.success
+      ? new Set(
+          decisions.data
+            .filter((decision) => decision.status === "approved")
+            .map((decision) => decision.actorId),
+        ).size
+      : 0;
+    if (!approval || approvedCount < approval.requiredApprovalCount)
+      throw new Error("Executable integration approval is missing");
+  }
+  const auth = decryptConnectorAuth(row.credential.encryptedCredential, key);
+  const { authType: _authType, ...storedConfiguration } = objectValue(
+    row.integration.configuration,
+  );
+  const configuration = ConnectorConfigurationSchema.parse({
+    ...storedConfiguration,
+    auth,
+  });
+  await db
+    .update(schema.integrationDeliveries)
+    .set({
+      status: "running",
+      attemptCount: sql`${schema.integrationDeliveries.attemptCount} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.integrationDeliveries.organisationId, organisationId),
+        eq(schema.integrationDeliveries.id, deliveryId),
+      ),
+    );
+
+  try {
+    const result = await executeIntegrationAction(request, configuration, auth);
+    await db.transaction(async (tx) => {
+      const safeResult = redactUntrusted({
+        externalId: result.externalId,
+        externalReference: result.externalReference,
+        externalStatus: result.externalStatus,
+        externalDuplicate: result.externalDuplicate,
+        completedAt: new Date().toISOString(),
+      });
+      await tx
+        .update(schema.integrationDeliveries)
+        .set({
+          status: "succeeded",
+          responseMetadata: safeResult,
+          error: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.integrationDeliveries.organisationId, organisationId),
+            eq(schema.integrationDeliveries.id, deliveryId),
+          ),
+        );
+      await tx
+        .update(schema.integrationRecords)
+        .set({
+          status: "healthy",
+          health: {
+            status: "healthy",
+            checkedAt: new Date().toISOString(),
+            lastDeliveryId: deliveryId,
+          },
+          lastSyncAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.integrationRecords.organisationId, organisationId),
+            eq(schema.integrationRecords.id, row.integration.id),
+          ),
+        );
+      await tx
+        .insert(schema.integrationEntities)
+        .values({
+          id: newId(),
+          organisationId,
+          integrationId: row.integration.id,
+          entityType: request.operation,
+          externalId: result.externalId,
+          displayName: result.externalReference,
+          status: result.externalStatus,
+          posture: {
+            deliveryId,
+            trust: "untrusted-evidence",
+            duplicateSuppressed: result.externalDuplicate,
+          },
+          lastSeenAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [
+            schema.integrationEntities.organisationId,
+            schema.integrationEntities.integrationId,
+            schema.integrationEntities.entityType,
+            schema.integrationEntities.externalId,
+          ],
+          set: {
+            status: result.externalStatus,
+            posture: {
+              deliveryId,
+              trust: "untrusted-evidence",
+              duplicateSuppressed: result.externalDuplicate,
+            },
+            lastSeenAt: new Date(),
+          },
+        });
+      if (
+        request.operation === "kelpie.case.create" &&
+        request.investigationId
+      ) {
+        await tx
+          .update(schema.investigations)
+          .set({
+            linkedKelpieCaseId: result.caseId,
+            status: "promoted",
+            promotionDecision: {
+              approvalId: metadata.approvalId,
+              deliveryId,
+              externalReference: result.externalReference,
+            },
+            lastActivityAt: new Date(),
+            version: sql`${schema.investigations.version} + 1`,
+          })
+          .where(
+            and(
+              eq(schema.investigations.organisationId, organisationId),
+              eq(schema.investigations.id, request.investigationId),
+            ),
+          );
+      }
+      if (metadata.taskId && request.operation === "kelpie.case.create") {
+        await tx
+          .update(schema.tasks)
+          .set({ relatedCaseId: result.caseId, updatedAt: new Date() })
+          .where(
+            and(
+              eq(schema.tasks.organisationId, organisationId),
+              eq(schema.tasks.id, metadata.taskId),
+            ),
+          );
+      }
+      if (metadata.roomId) {
+        const messageId = newId();
+        const plainText = `${row.integration.displayName} ${request.operation} ${result.externalDuplicate ? "confirmed existing" : "completed"} as ${result.externalReference}. External content is untrusted evidence.`;
+        await tx
+          .insert(schema.messages)
+          .values({
+            id: messageId,
+            organisationId,
+            roomId: metadata.roomId,
+            authorActorId: actor.id,
+            messageType:
+              request.operation === "tawny.isolate_host"
+                ? "response-action"
+                : "case-event",
+            document: {
+              type: "integration-action-result",
+              deliveryId,
+              operation: request.operation,
+              externalId: result.externalId,
+              externalReference: result.externalReference,
+              trust: "untrusted-evidence",
+              ...(metadata.taskId ? { taskId: metadata.taskId } : {}),
+            },
+            plainText,
+            dataClassification: "internal",
+            relatedCaseId: result.caseId ?? null,
+            relatedInvestigationId:
+              request.operation === "kelpie.case.create"
+                ? (request.investigationId ?? null)
+                : null,
+            idempotencyKey: `integration.action.message:${deliveryId}`,
+          })
+          .onConflictDoNothing();
+        await writeOutbox(tx, {
+          organisationId,
+          eventType: "room.message.created",
+          aggregateType: "message",
+          aggregateId: messageId,
+          queueName: "muster-outbox",
+          payload: { messageId, roomId: metadata.roomId },
+          idempotencyKey: `room.message.created:integration.action:${deliveryId}`,
+          traceId,
+        });
+      }
+      if (metadata.approvalId) {
+        await tx
+          .update(schema.approvals)
+          .set({ status: "executed", executedAt: new Date() })
+          .where(
+            and(
+              eq(schema.approvals.organisationId, organisationId),
+              eq(schema.approvals.id, metadata.approvalId),
+            ),
+          );
+      }
+      await appendAuditEvent(tx, {
+        organisationId,
+        actorId: actor.id,
+        actorType: actor.actorType,
+        action: "integration.action.succeeded",
+        targetType: "integration_delivery",
+        targetId: deliveryId,
+        metadata: {
+          integrationId: row.integration.id,
+          operation: request.operation,
+          externalId: result.externalId,
+          externalDuplicate: result.externalDuplicate,
+          approvalId: metadata.approvalId,
+        },
+        traceId,
+      });
+    });
+  } catch (error) {
+    const failure =
+      error instanceof GovernedConnectorError
+        ? error
+        : new GovernedConnectorError(
+            "source_unavailable",
+            "Integration action failed safely",
+          );
+    const retryable =
+      failure.code === "rate_limited" ||
+      failure.code === "source_unavailable" ||
+      failure.code === "timeout";
+    await db.transaction(async (tx) => {
+      await tx
+        .update(schema.integrationDeliveries)
+        .set({
+          status: "failed",
+          error: failure.message,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.integrationDeliveries.organisationId, organisationId),
+            eq(schema.integrationDeliveries.id, deliveryId),
+          ),
+        );
+      await tx
+        .update(schema.integrationRecords)
+        .set({
+          status: "degraded",
+          health: {
+            status: "degraded",
+            checkedAt: new Date().toISOString(),
+            errorCode: failure.code,
+          },
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.integrationRecords.organisationId, organisationId),
+            eq(schema.integrationRecords.id, row.integration.id),
+          ),
+        );
+      if (metadata.approvalId && !retryable) {
+        await tx
+          .update(schema.approvals)
+          .set({ status: "failed" })
+          .where(
+            and(
+              eq(schema.approvals.organisationId, organisationId),
+              eq(schema.approvals.id, metadata.approvalId),
+            ),
+          );
+      }
+      await appendAuditEvent(tx, {
+        organisationId,
+        actorId: actor.id,
+        actorType: actor.actorType,
+        action: "integration.action.failed",
+        targetType: "integration_delivery",
+        targetId: deliveryId,
+        metadata: {
+          integrationId: row.integration.id,
+          operation: request.operation,
+          errorCode: failure.code,
+          approvalId: metadata.approvalId,
+        },
+        traceId,
+      });
+    });
+    if (retryable) throw failure;
   }
 }
 

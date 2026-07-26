@@ -97,9 +97,12 @@ export function ConnectorAdminView() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         templateKey:
-          connector.product === "defender_endpoint"
-            ? "mde.alerts.list"
-            : "generic.alerts.list",
+          {
+            defender_endpoint: "mde.alerts.list",
+            tawny: "tawny.inventory.list",
+            tawny_response: "tawny.inventory.list",
+            kelpie: "kelpie.cases.list",
+          }[connector.product] ?? "generic.alerts.list",
         input: {},
         idempotencyKey: `connector-test-${browserUuid()}`,
       }),
@@ -163,6 +166,9 @@ export function ConnectorAdminView() {
                 <option value="sentinel">Sentinel / Log Analytics</option>
                 <option value="firewall">Firewall REST</option>
                 <option value="cspm">CSPM REST</option>
+                <option value="tawny">Tawny read-only</option>
+                <option value="tawny_response">Tawny approved response</option>
+                <option value="kelpie">Kelpie case management</option>
               </select>
             </label>
             {[

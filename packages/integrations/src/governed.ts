@@ -61,6 +61,9 @@ export const ConnectorConfigurationSchema = z
       "firewall",
       "cspm",
       "generic_rest",
+      "tawny",
+      "tawny_response",
+      "kelpie",
     ]),
     instanceId: z.string().trim().min(1).max(160),
     displayName: z.string().trim().min(1).max(160),
@@ -90,6 +93,7 @@ export const QueryTemplateSchema = z
     requiredCapability: z.enum([
       "tawny.telemetry.read",
       "tawny.hunts.execute",
+      "kelpie.cases.read",
       "sentinel.query.execute",
       "alerts.read",
     ]),
@@ -110,6 +114,8 @@ export const ExecuteConnectorQuerySchema = z.object({
   templateKey: z.string().min(1).max(80),
   input: JsonObjectSchema.default({}),
   idempotencyKey: z.string().min(8).max(200),
+  roomId: z.uuid().optional(),
+  taskId: z.uuid().optional(),
 });
 
 export type ConnectorConfiguration = z.infer<
@@ -381,7 +387,7 @@ export function valueAtPath(value: unknown, path?: string): unknown {
 }
 
 interface RequestOptions {
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "PATCH";
   headers: Record<string, string>;
   body?: string;
   limits: ConnectorLimits;
@@ -628,7 +634,160 @@ export async function executeGovernedQuery(input: {
   };
 }
 
+export async function executeGovernedActionRequest<T>(input: {
+  configuration: ConnectorConfiguration;
+  auth: ConnectorAuth;
+  method: "GET" | "POST" | "PATCH";
+  path: string;
+  body?: unknown;
+  schema: z.ZodType<T>;
+}) {
+  const path = renderTemplatePath(input.path, {});
+  const target = await resolveSafeTarget(
+    new URL(path, input.configuration.baseUrl).toString(),
+    input.configuration,
+  );
+  const body =
+    input.method === "GET" ? undefined : JSON.stringify(input.body ?? {});
+  const response = await pinnedJsonRequest(target, {
+    method: input.method,
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "user-agent": "muster-governed-action/1",
+      ...(await authenticationHeaders(input.auth, input.configuration)),
+      ...(body ? { "content-length": String(Buffer.byteLength(body)) } : {}),
+    },
+    ...(body ? { body } : {}),
+    limits: input.configuration.limits,
+  });
+  const parsed = input.schema.safeParse(response.body);
+  if (!parsed.success)
+    throw new GovernedConnectorError(
+      "malformed_response",
+      "Connector action response failed its typed schema",
+    );
+  return parsed.data;
+}
+
 export const connectorPresets: Record<string, readonly QueryTemplate[]> = {
+  tawny: [
+    {
+      key: "tawny.inventory.list",
+      version: 1,
+      displayName: "Tawny endpoint inventory",
+      method: "GET",
+      pathTemplate: "/api/agents",
+      requiredCapability: "tawny.telemetry.read",
+      inputSchema: { type: "object", additionalProperties: false },
+      outputSchema: { type: "array" },
+    },
+    {
+      key: "tawny.hunt.run",
+      version: 1,
+      displayName: "Tawny bounded hunt",
+      method: "POST",
+      pathTemplate: "/api/hunts/run",
+      requiredCapability: "tawny.hunts.execute",
+      inputSchema: {
+        type: "object",
+        required: ["query", "limit"],
+        properties: {
+          query: { type: "string", minLength: 1, maxLength: 20_000 },
+          limit: { type: "integer", minimum: 1, maximum: 1_000 },
+        },
+        additionalProperties: false,
+      },
+      outputSchema: {
+        type: "object",
+        required: ["match_count", "matches", "warnings"],
+        properties: {
+          match_count: { type: "integer", minimum: 0 },
+          matches: { type: "array" },
+          warnings: { type: "array", items: { type: "string" } },
+        },
+      },
+      recordsPath: "matches",
+    },
+  ],
+  tawny_response: [
+    {
+      key: "tawny.inventory.list",
+      version: 1,
+      displayName: "Tawny endpoint inventory for response",
+      method: "GET",
+      pathTemplate: "/api/agents",
+      requiredCapability: "tawny.telemetry.read",
+      inputSchema: { type: "object", additionalProperties: false },
+      outputSchema: { type: "array" },
+    },
+  ],
+  kelpie: [
+    {
+      key: "kelpie.cases.list",
+      version: 1,
+      displayName: "Kelpie cases",
+      method: "GET",
+      pathTemplate: "/api/v1/cases?limit=100",
+      requiredCapability: "kelpie.cases.read",
+      inputSchema: { type: "object", additionalProperties: false },
+      outputSchema: {
+        type: "object",
+        required: ["cases"],
+        properties: { cases: { type: "array" } },
+      },
+      recordsPath: "cases",
+    },
+    {
+      key: "kelpie.case.get",
+      version: 1,
+      displayName: "Kelpie case",
+      method: "GET",
+      pathTemplate: "/api/v1/cases/{caseId}",
+      requiredCapability: "kelpie.cases.read",
+      inputSchema: {
+        type: "object",
+        required: ["caseId"],
+        properties: { caseId: { type: "string", minLength: 1 } },
+        additionalProperties: false,
+      },
+      outputSchema: {
+        type: "object",
+        required: ["id", "caseNumber"],
+        properties: {
+          id: { type: "string" },
+          caseNumber: { type: "string" },
+          status: { type: "string" },
+          summary: { type: ["string", "null"] },
+          version: { type: "integer" },
+          observables: { type: "array" },
+          recent_timeline: { type: "array" },
+        },
+      },
+    },
+    {
+      key: "kelpie.observables.search",
+      version: 1,
+      displayName: "Kelpie observable search",
+      method: "GET",
+      pathTemplate: "/api/v1/observables?value={value}&exact=true",
+      requiredCapability: "kelpie.cases.read",
+      inputSchema: {
+        type: "object",
+        required: ["value"],
+        properties: {
+          value: { type: "string", minLength: 1, maxLength: 2_000 },
+        },
+        additionalProperties: false,
+      },
+      outputSchema: {
+        type: "object",
+        required: ["observables"],
+        properties: { observables: { type: "array" } },
+      },
+      recordsPath: "observables",
+    },
+  ],
   defender_endpoint: [
     {
       key: "mde.alerts.list",

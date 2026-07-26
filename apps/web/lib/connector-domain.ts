@@ -337,6 +337,43 @@ export class ConnectorDomainService {
         "Forbidden",
         "Authoritative connector capability is missing.",
       );
+    if (request.roomId) {
+      const [membership] = await this.db
+        .select({ roomId: schema.roomMemberships.roomId })
+        .from(schema.roomMemberships)
+        .where(
+          and(
+            eq(schema.roomMemberships.organisationId, subject.organisationId),
+            eq(schema.roomMemberships.roomId, request.roomId),
+            eq(schema.roomMemberships.actorId, subject.actorId),
+          ),
+        )
+        .limit(1);
+      if (!membership)
+        throw new ApiProblem(
+          403,
+          "Forbidden",
+          "Room membership is required for connector evidence delivery.",
+        );
+    }
+    if (request.taskId) {
+      const [task] = await this.db
+        .select({ roomId: schema.tasks.roomId })
+        .from(schema.tasks)
+        .where(
+          and(
+            eq(schema.tasks.organisationId, subject.organisationId),
+            eq(schema.tasks.id, request.taskId),
+          ),
+        )
+        .limit(1);
+      if (!task || (request.roomId && task.roomId !== request.roomId))
+        throw new ApiProblem(
+          404,
+          "Task not found",
+          "Task does not exist in the selected evidence room.",
+        );
+    }
     return this.db.transaction(async (tx) => {
       const [duplicate] = await tx
         .select({
@@ -373,6 +410,8 @@ export class ConnectorDomainService {
         requestMetadata: {
           templateKey: definition.key,
           templateVersion: definition.version,
+          ...(request.roomId ? { roomId: request.roomId } : {}),
+          ...(request.taskId ? { taskId: request.taskId } : {}),
         },
       });
       await appendAuditEvent(tx, {

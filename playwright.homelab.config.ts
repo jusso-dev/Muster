@@ -24,8 +24,14 @@ export default defineConfig({
     baseURL,
     ...(proxyServer ? { proxy: { server: proxyServer } } : {}),
     storageState: ".playwright/auth.json",
-    trace: "retain-on-failure",
-    screenshot: { mode: "only-on-failure", fullPage: true },
+    trace:
+      process.env.MUSTER_CAPTURE_ARTIFACTS === "false"
+        ? "off"
+        : "retain-on-failure",
+    screenshot:
+      process.env.MUSTER_CAPTURE_ARTIFACTS === "false"
+        ? "off"
+        : { mode: "only-on-failure", fullPage: true },
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export * from "./governed.ts";
+export * from "./actions.ts";
 
 export interface ConnectorOptions {
   baseUrl: string;
@@ -117,7 +118,11 @@ export class KelpieConnector extends HttpConnector {
   }
 
   getCase(id: string) {
-    return this.request("case.get", `/api/v1/cases/${encodeURIComponent(id)}`, KelpieCaseSchema);
+    return this.request(
+      "case.get",
+      `/api/v1/cases/${encodeURIComponent(id)}`,
+      KelpieCaseSchema,
+    );
   }
 
   addComment(caseId: string, body: string, idempotencyKey: string) {
@@ -131,33 +136,35 @@ export class KelpieConnector extends HttpConnector {
   }
 }
 
-export const TawnyHuntResponseSchema = z.object({
-  match_count: z.number().int().nonnegative(),
-  matches: z.array(
-    z.object({
-      event_id: z.number().int().nonnegative(),
-      agent_id: z.string(),
-      hostname: z.string(),
-      event_type: z.string(),
-      occurred_at: z.string(),
-      received_at: z.string(),
-      payload: z.unknown(),
-    }),
-  ),
-  warnings: z.array(z.string()),
-}).transform((response) => ({
-  matchCount: response.match_count,
-  matches: response.matches.map((match) => ({
-    eventId: match.event_id,
-    agentId: match.agent_id,
-    hostname: match.hostname,
-    eventType: match.event_type,
-    occurredAt: match.occurred_at,
-    receivedAt: match.received_at,
-    payload: match.payload,
-  })),
-  warnings: response.warnings,
-}));
+export const TawnyHuntResponseSchema = z
+  .object({
+    match_count: z.number().int().nonnegative(),
+    matches: z.array(
+      z.object({
+        event_id: z.number().int().nonnegative(),
+        agent_id: z.string(),
+        hostname: z.string(),
+        event_type: z.string(),
+        occurred_at: z.string(),
+        received_at: z.string(),
+        payload: z.unknown(),
+      }),
+    ),
+    warnings: z.array(z.string()),
+  })
+  .transform((response) => ({
+    matchCount: response.match_count,
+    matches: response.matches.map((match) => ({
+      eventId: match.event_id,
+      agentId: match.agent_id,
+      hostname: match.hostname,
+      eventType: match.event_type,
+      occurredAt: match.occurred_at,
+      receivedAt: match.received_at,
+      payload: match.payload,
+    })),
+    warnings: response.warnings,
+  }));
 
 export class TawnyConnector extends HttpConnector {
   constructor(options: ConnectorOptions) {
@@ -165,13 +172,12 @@ export class TawnyConnector extends HttpConnector {
   }
 
   runHunt(query: string, limit = 500) {
-    if (limit < 1 || limit > 1_000) throw new Error("Tawny hunt limit out of range");
-    return this.request(
-      "hunt.run",
-      "/api/hunts/run",
-      TawnyHuntResponseSchema,
-      { method: "POST", body: JSON.stringify({ query, limit }) },
-    );
+    if (limit < 1 || limit > 1_000)
+      throw new Error("Tawny hunt limit out of range");
+    return this.request("hunt.run", "/api/hunts/run", TawnyHuntResponseSchema, {
+      method: "POST",
+      body: JSON.stringify({ query, limit }),
+    });
   }
 
   requestResponseAction(
@@ -183,17 +189,19 @@ export class TawnyConnector extends HttpConnector {
     return this.request(
       "response.create",
       `/api/agents/${encodeURIComponent(agentId)}/actions`,
-      z.object({
-        id: z.string(),
-        agent_id: z.string(),
-        action_type: z.string(),
-        status: z.string(),
-      }).transform((response) => ({
-        id: response.id,
-        agentId: response.agent_id,
-        actionType: response.action_type,
-        status: response.status,
-      })),
+      z
+        .object({
+          id: z.string(),
+          agent_id: z.string(),
+          action_type: z.string(),
+          status: z.string(),
+        })
+        .transform((response) => ({
+          id: response.id,
+          agentId: response.agent_id,
+          actionType: response.action_type,
+          status: response.status,
+        })),
       {
         method: "POST",
         body: JSON.stringify({ action_type: actionType, payload }),

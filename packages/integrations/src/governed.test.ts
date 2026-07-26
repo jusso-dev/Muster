@@ -1,10 +1,12 @@
 import { createServer, type RequestListener, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   GovernedConnectorError,
   decryptConnectorAuth,
   encryptConnectorAuth,
   executeGovernedQuery,
+  executeGovernedActionRequest,
   publicConnectorConfiguration,
   renderTemplatePath,
   resolveSafeTarget,
@@ -245,5 +247,36 @@ describe("governed connector failures", () => {
         values: { tenant: "tenant-a" },
       }),
     ).rejects.toMatchObject({ code: "malformed_response" });
+  });
+});
+
+describe("governed connector actions", () => {
+  it("executes only a typed action against the pinned approved target", async () => {
+    const mock = await server(async (request, response) => {
+      expect(request.method).toBe("PATCH");
+      expect(request.headers.authorization).toBe("Bearer never-return-this");
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(chunk as Buffer);
+      expect(JSON.parse(Buffer.concat(chunks).toString("utf8"))).toEqual({
+        status: "contained",
+      });
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          id: "synthetic-case",
+          status: "contained",
+        }),
+      );
+    });
+    await expect(
+      executeGovernedActionRequest({
+        configuration: configuration(mock.url),
+        auth: { type: "bearer", token: "never-return-this" },
+        method: "PATCH",
+        path: "/api/v1/cases/synthetic-case",
+        body: { status: "contained" },
+        schema: z.object({ id: z.string(), status: z.string() }),
+      }),
+    ).resolves.toEqual({ id: "synthetic-case", status: "contained" });
   });
 });
