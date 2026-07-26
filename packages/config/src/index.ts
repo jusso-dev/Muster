@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { queueNames, type QueueName } from "@muster/contracts";
+import { redactForObservation } from "./redaction.js";
+
+export * from "./redaction.js";
 
 export const EnvironmentSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -36,8 +39,11 @@ export function queuePolicy(name: QueueName): QueuePolicy {
 }
 
 export function jsonLog(level: "debug" | "info" | "warn" | "error", message: string, fields: Record<string, unknown> = {}) {
-  const redacted = Object.fromEntries(
-    Object.entries(fields).filter(([key]) => !/password|secret|token|cookie|evidence/i.test(key)),
-  );
-  process.stdout.write(`${JSON.stringify({ timestamp: new Date().toISOString(), level, message, ...redacted })}\n`);
+  const safeEntry = redactForObservation({
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+    ...fields,
+  });
+  process.stdout.write(`${JSON.stringify(safeEntry)}\n`);
 }
