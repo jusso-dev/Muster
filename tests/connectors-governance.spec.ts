@@ -7,6 +7,8 @@ test("administrator configures a connector without secret projection", async ({
   test.skip(testInfo.project.name !== "chromium");
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   const displayName = `Synthetic connector ${suffix}`;
+  const connectorUrl =
+    process.env.MUSTER_CONNECTOR_TEST_URL ?? "http://127.0.0.1:4123";
   const secret = `synthetic-secret-${suffix}`;
   await page.goto("/integrations/connectors");
   await expect(
@@ -14,7 +16,7 @@ test("administrator configures a connector without secret projection", async ({
   ).toBeVisible();
   await page.getByLabel("Display name").fill(displayName);
   await page.getByLabel("Instance ID").fill(`synthetic-${suffix}`);
-  await page.getByLabel("Base URL").fill("http://127.0.0.1:4123");
+  await page.getByLabel("Base URL").fill(connectorUrl);
   await page.getByLabel("Bearer token (optional)").fill(secret);
   await page.getByText("Test mode (permits HTTP)").click();
   await page.getByText("Allow approved private host").click();
