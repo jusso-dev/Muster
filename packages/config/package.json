@@ -16,6 +16,12 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
-  "dependencies": { "@muster/contracts": "workspace:*", "zod": "4.4.3" },
-  "devDependencies": { "typescript": "catalog:", "vitest": "4.1.10" }
+  "dependencies": {
+    "@muster/contracts": "workspace:*",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "4.1.10"
+  }
 }

@@ -3,6 +3,10 @@ packages:
   - "packages/*"
   - "integrations/*"
 
+injectWorkspacePackages: true
+syncInjectedDepsAfterScripts:
+  - build
+
 allowBuilds:
   esbuild: true
   msgpackr-extract: true
@@ -19,21 +23,21 @@ catalog:
   bullmq: 5.81.2
 
 minimumReleaseAgeExclude:
-  - '@next/env@16.2.12'
-  - '@next/swc-darwin-arm64@16.2.12'
-  - '@next/swc-darwin-x64@16.2.12'
-  - '@next/swc-linux-arm64-gnu@16.2.12'
-  - '@next/swc-linux-arm64-musl@16.2.12'
-  - '@next/swc-linux-x64-gnu@16.2.12'
-  - '@next/swc-linux-x64-musl@16.2.12'
-  - '@next/swc-win32-arm64-msvc@16.2.12'
-  - '@next/swc-win32-x64-msvc@16.2.12'
-  - '@turbo/darwin-64@2.10.7'
-  - '@turbo/darwin-arm64@2.10.7'
-  - '@turbo/linux-64@2.10.7'
-  - '@turbo/linux-arm64@2.10.7'
-  - '@turbo/windows-64@2.10.7'
-  - '@turbo/windows-arm64@2.10.7'
+  - "@next/env@16.2.12"
+  - "@next/swc-darwin-arm64@16.2.12"
+  - "@next/swc-darwin-x64@16.2.12"
+  - "@next/swc-linux-arm64-gnu@16.2.12"
+  - "@next/swc-linux-arm64-musl@16.2.12"
+  - "@next/swc-linux-x64-gnu@16.2.12"
+  - "@next/swc-linux-x64-musl@16.2.12"
+  - "@next/swc-win32-arm64-msvc@16.2.12"
+  - "@next/swc-win32-x64-msvc@16.2.12"
+  - "@turbo/darwin-64@2.10.7"
+  - "@turbo/darwin-arm64@2.10.7"
+  - "@turbo/linux-64@2.10.7"
+  - "@turbo/linux-arm64@2.10.7"
+  - "@turbo/windows-64@2.10.7"
+  - "@turbo/windows-arm64@2.10.7"
   - lucide-react@1.27.0
   - next@16.2.12
   - recharts@3.10.1

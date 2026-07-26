@@ -19,7 +19,7 @@ Muster is a self-hosted workspace where analysts, responders, engineers, securit
 - PostgreSQL-scoped domain services, transactional outbox, nine policy-separated BullMQ queues, idempotency, and hash-chained audit events
 - Better Auth password, verification, TOTP, recovery-code, passkey, OIDC/Entra-ready configuration
 - Capability-based authorisation and default approval policy for response actions
-- Agent gateway trust boundaries, typed outputs, tool validation, cancellation, kill switch, cost limits, and governed continuous learning
+- Subscription-backed Codex agent runtime, typed outputs, read-only/no-network isolation, cancellation, kill switch, and governed continuous learning
 - PWA shell with safe offline page and local draft preservation; sensitive data is not cached offline
 
 ## Quick start
@@ -46,6 +46,18 @@ The default CI workflow publishes multi-architecture `linux/amd64` and
 `linux/arm64` images as `latest`, version tags, and immutable SHA tags with SBOM
 and provenance on pushes to `main`. Its final publication gate logs out of GHCR
 and verifies an anonymous pull, so CI fails if the package is not public.
+
+Muster uses the Codex SDK and your ChatGPT Codex subscription for agent runs.
+Authenticate the persistent private Docker volume once:
+
+```bash
+docker compose --profile setup run --rm codex-login
+```
+
+The gateway never uses the credential as an OpenAI API key. Codex runs receive
+organisation-scoped PostgreSQL context, typed output schemas, an empty read-only
+workspace, disabled network/web search, and no action approval. State-changing
+security actions still use Muster tools and approval records outside Codex.
 
 For a single-node homelab installation that pulls the public image:
 
@@ -75,7 +87,7 @@ flowchart LR
   Q --> G[Agent gateway]
   K --> E[S3-compatible evidence]
   K --> X[Kelpie · Tawny · Bower · Sentinel]
-  G --> R[Scoped agent runtimes]
+  G --> R[Codex SDK · ChatGPT subscription]
   K -->|ephemeral fan-out| W
 ```
 

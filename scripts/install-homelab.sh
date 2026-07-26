@@ -68,4 +68,5 @@ printf '%s\n' \
   "Web: ${MUSTER_PUBLIC_URL}" \
   "Administrator: ${MUSTER_LOCAL_ADMIN_EMAIL}" \
   "Password: ${MUSTER_LOCAL_ADMIN_PASSWORD}" \
+  "Codex: copy an authorised auth.json into the private codex-state volume or run the setup profile." \
   "External products are local mocks and are labelled as such."
