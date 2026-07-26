@@ -17,6 +17,7 @@
     "@muster/agents": "workspace:*",
     "@muster/auth": "workspace:*",
     "@muster/authz": "workspace:*",
+    "@muster/config": "workspace:*",
     "@muster/contracts": "workspace:*",
     "@muster/database": "workspace:*",
     "@muster/event-protocol": "workspace:*",

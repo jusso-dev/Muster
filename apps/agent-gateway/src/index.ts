@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { access } from "node:fs/promises";
 import { createServer, type IncomingMessage } from "node:http";
 import { join } from "node:path";
+import { redactObservationText } from "@muster/config";
 import { AgentInvestigationJobSchema } from "@muster/contracts";
 import {
   appendAuditEvent,
@@ -134,7 +135,7 @@ async function queueDirectRun(
         targetType: "agent_run",
         targetId: run.id,
         metadata: { trigger: "api", idempotencyKey },
-        traceId: input.traceId,
+        traceId: redactObservationText(input.traceId),
       });
     }
     return { run, duplicate: !inserted };
@@ -252,7 +253,10 @@ const server = createServer(async (incoming, response) => {
       response.writeHead(409);
       response.end(
         JSON.stringify({
-          error: error instanceof Error ? error.message : "Could not queue run",
+          error:
+            error instanceof Error
+              ? redactObservationText(error.message)
+              : "Could not queue run",
         }),
       );
     }

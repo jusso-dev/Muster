@@ -455,6 +455,117 @@ test("task APIs deny cross-organisation references and runs", async ({
   }
 });
 
+test("agent observer APIs redact secrets for authorised and unauthorised callers", async ({
+  page,
+  playwright,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium");
+  const db = database();
+  const runId = newId();
+  const taskId = newId();
+  const eventId = newId();
+  const canary = `synthetic-observer-secret-${newId()}`;
+  const [definition] = await db
+    .select()
+    .from(schema.agentDefinitions)
+    .limit(1);
+  if (!definition) throw new Error("Seeded agent definition required");
+
+  try {
+    await db.insert(schema.agentRuns).values({
+      id: runId,
+      organisationId: definition.organisationId,
+      agentId: definition.id,
+      requestedByActorId: definition.ownerActorId,
+      investigationId: null,
+      trigger: "browser_redaction_test",
+      status: "completed",
+      request: { traceId: `browser-redaction-${runId}` },
+      progress: { stage: "completed", percent: 100, apiKey: canary },
+      startedAt: new Date(),
+      completedAt: new Date(),
+      inputHash: "c".repeat(64),
+      outputHash: "d".repeat(64),
+      outputSchema: "ExecutiveUpdate",
+      structuredOutput: {
+        headline: "Synthetic useful observer evidence",
+        client_secret: canary,
+      },
+      error: `Authorization: Bearer ${canary}`,
+      promptVersion: definition.systemPromptVersion,
+      runtime: "mock",
+      model: definition.model,
+      maximumRuntimeSeconds: definition.maximumRuntimeSeconds,
+      maximumTokenBudget: definition.maximumTokenBudget,
+      maximumCostCents: definition.maximumCostCents,
+      idempotencyKey: `browser-redaction:${runId}`,
+    });
+    await db.insert(schema.tasks).values({
+      id: taskId,
+      organisationId: definition.organisationId,
+      title: "Synthetic observer redaction task",
+      idempotencyKey: `browser-redaction-task:${taskId}`,
+      createdByActorId: definition.ownerActorId,
+      agentRunId: runId,
+      agentRunStatus: "completed",
+    });
+    await db.insert(schema.agentRunEvents).values({
+      id: eventId,
+      organisationId: definition.organisationId,
+      runId,
+      eventType: "synthetic_observer_test",
+      message: `Cookie: session=${canary}`,
+      payload: { refreshToken: canary, evidenceCount: 3 },
+    });
+
+    for (const path of ["/api/v1/tasks", `/api/v1/agent-runs/${runId}`]) {
+      const response = await page.request.get(path, {
+        headers: { "x-trace-id": `password=${canary}` },
+      });
+      expect(response.ok(), path).toBe(true);
+      const body = await response.text();
+      expect(body).not.toContain(canary);
+      expect(body).toContain("[REDACTED]");
+      expect(body).toContain("Synthetic useful observer evidence");
+    }
+
+    const baseURL = testInfo.project.use.baseURL?.toString();
+    if (!baseURL) throw new Error("Playwright baseURL required");
+    const anonymous = await playwright.request.newContext({
+      baseURL,
+      storageState: { cookies: [], origins: [] },
+    });
+    try {
+      for (const path of ["/api/v1/tasks", `/api/v1/agent-runs/${runId}`]) {
+        const response = await anonymous.get(path, {
+          headers: { "x-trace-id": `password=${canary}` },
+        });
+        expect(response.status(), path).toBe(401);
+        const body = await response.text();
+        expect(body).not.toContain(canary);
+      }
+    } finally {
+      await anonymous.dispose();
+    }
+
+    const [persisted] = await db
+      .select({
+        structuredOutput: schema.agentRuns.structuredOutput,
+        error: schema.agentRuns.error,
+      })
+      .from(schema.agentRuns)
+      .where(eq(schema.agentRuns.id, runId))
+      .limit(1);
+    expect(JSON.stringify(persisted)).toContain(canary);
+  } finally {
+    await db
+      .delete(schema.agentRunEvents)
+      .where(eq(schema.agentRunEvents.id, eventId));
+    await db.delete(schema.tasks).where(eq(schema.tasks.id, taskId));
+    await db.delete(schema.agentRuns).where(eq(schema.agentRuns.id, runId));
+  }
+});
+
 test("workflow YAML editor, integrations, search, and approvals render", async ({
   page,
 }) => {

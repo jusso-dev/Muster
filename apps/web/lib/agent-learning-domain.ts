@@ -5,6 +5,7 @@ import {
   mayPublishSkill,
   prepareSkillProposal,
 } from "@muster/agents";
+import { redactObservationText } from "@muster/config";
 import {
   appendAuditEvent,
   database,
@@ -776,6 +777,7 @@ async function setKillSwitch(
           .returning({ id: schema.agentRuns.id })
       : [];
     if (cancelledRuns.length > 0) {
+      const safeReason = redactObservationText(reason);
       await tx.insert(schema.agentRunEvents).values(
         cancelledRuns.map((run) => ({
           id: newId(),
@@ -783,7 +785,7 @@ async function setKillSwitch(
           runId: run.id,
           eventType: "cancelled",
           message: "Agent kill switch cancelled execution",
-          payload: { reason },
+          payload: { reason: safeReason },
         })),
       );
     }
@@ -797,7 +799,7 @@ async function setKillSwitch(
       targetType: "agent",
       targetId: context.agentId,
       metadata: {
-        reason,
+        reason: redactObservationText(reason),
         cancelledRunIds: cancelledRuns.map((run) => run.id),
       },
       traceId: context.traceId,

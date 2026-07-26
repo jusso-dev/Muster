@@ -98,6 +98,9 @@ importers:
       '@muster/authz':
         specifier: workspace:*
         version: link:../../packages/authz
+      '@muster/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@muster/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

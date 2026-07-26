@@ -7,7 +7,7 @@ import {
   jsonLog,
   redactForObservation,
   redactObservationText,
-} from "./index.js";
+} from "./index.ts";
 
 const canary = "synthetic-secret-canary-31";
 
@@ -50,6 +50,7 @@ describe("redactForObservation", () => {
   it("redacts private keys, assignments, authorization, cookies, and token-shaped strings", () => {
     const text = [
       `password=${canary}`,
+      `client_secret="${canary} with synthetic spacing"`,
       `Authorization: Bearer ${canary}`,
       `Cookie: session=${canary}`,
       "-----BEGIN PRIVATE KEY-----",
@@ -62,6 +63,17 @@ describe("redactForObservation", () => {
     expect(result).not.toContain(canary);
     expect(result).not.toContain("ghp_");
     expect(result).toContain(REDACTION_MARKER);
+  });
+
+  it("does not leak an oversized private key prefix", () => {
+    const result = redactObservationText(
+      `-----BEGIN PRIVATE KEY-----\n${canary.repeat(20)}`,
+      { maxStringLength: 64 },
+    );
+
+    expect(result).not.toContain(canary);
+    expect(result).toContain(REDACTION_MARKER);
+    expect(result).toContain(TRUNCATION_MARKER);
   });
 
   it("bounds cycles, depth, item count, strings, and unserialisable values", () => {

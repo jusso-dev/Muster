@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { requireCapability } from "@muster/authz";
+import { redactForObservation } from "@muster/config";
 import { database, schema } from "@muster/database";
 import {
   ApiProblem,
@@ -77,7 +78,10 @@ export async function GET(
         result as AgentRunResult,
       );
     }
-    return Response.json({ data: result, traceId });
+    return Response.json({
+      data: redactForObservation(result),
+      traceId,
+    });
   } catch (error) {
     return problemResponse(error, traceId);
   }

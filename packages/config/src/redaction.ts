@@ -79,19 +79,23 @@ function isEnvironmentSecretName(value: string): boolean {
 
 export function redactObservationText(value: string, options: RedactionOptions = {}): string {
   const limits = { ...DEFAULT_OPTIONS, ...options };
-  const redacted = value
-    .replace(/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/gi, REDACTION_MARKER)
+  const boundedInput = value.slice(0, limits.maxStringLength);
+  const redacted = boundedInput
+    .replace(
+      /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/gi,
+      REDACTION_MARKER,
+    )
     .replace(/\b(authorization|proxy-authorization)\s*[:=]\s*(?:bearer|basic)?\s*[^\s,;]+/gi, `$1: ${REDACTION_MARKER}`)
     .replace(/\b(cookie|set-cookie)\s*[:=]\s*[^\r\n]+/gi, `$1: ${REDACTION_MARKER}`)
     .replace(
-      /\b(password|passwd|passphrase|api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|session[_-]?token|private[_-]?key)\b(\s*["']?\s*[:=]\s*["']?)[^"',;\s}]+/gi,
-      `$1$2${REDACTION_MARKER}`,
+      /\b(password|passwd|passphrase|api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|session[_-]?token|private[_-]?key|aws[_-]?secret[_-]?access[_-]?key)\b\s*["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^,;\s}]+)/gi,
+      `$1=${REDACTION_MARKER}`,
     )
     .replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^/@\s:]+):([^/@\s]+)@/gi, `$1${REDACTION_MARKER}@`)
     .replace(/\b(?:eyJ[a-zA-Z0-9_-]{8,}\.[a-zA-Z0-9_-]{8,}\.[a-zA-Z0-9_-]{8,}|(?:sk|pk|ghp|gho|github_pat)_[a-zA-Z0-9_-]{12,})\b/g, REDACTION_MARKER);
 
-  return redacted.length > limits.maxStringLength
-    ? `${redacted.slice(0, limits.maxStringLength)}${TRUNCATION_MARKER}`
+  return value.length > limits.maxStringLength
+    ? `${redacted}${TRUNCATION_MARKER}`
     : redacted;
 }
 

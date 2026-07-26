@@ -152,6 +152,53 @@ describeIntegration("durable agent runtime", () => {
     );
   });
 
+  it("returns a redacted observer projection without changing the execution record", async () => {
+    const canary = `synthetic-api-secret-${newId()}`;
+    const run = await insertRun("redacted-observer", {
+      status: "completed",
+      progress: {
+        stage: "completed",
+        percent: 100,
+        apiKey: canary,
+      },
+      structuredOutput: {
+        headline: "Synthetic useful result",
+        nested: { client_secret: canary },
+      },
+      error: `Authorization: Bearer ${canary}`,
+      completedAt: new Date(),
+    });
+    await database().insert(schema.agentRunEvents).values({
+      id: newId(),
+      organisationId,
+      runId: run.id,
+      eventType: "synthetic_observer_test",
+      message: `Cookie: session=${canary}`,
+      payload: { refreshToken: canary, evidenceCount: 3 },
+    });
+    const runtime = new DurableAgentRuntime({
+      executionRuntime: "mock",
+      codexHome: "/tmp/muster-runtime-integration",
+    });
+
+    const projection = await runtime.read(run.id);
+    const serialisedProjection = JSON.stringify(projection);
+    expect(serialisedProjection).not.toContain(canary);
+    expect(serialisedProjection).toContain("[REDACTED]");
+    expect(serialisedProjection).toContain("Synthetic useful result");
+    expect(serialisedProjection).toContain('"evidenceCount":3');
+
+    const [persisted] = await database()
+      .select({
+        structuredOutput: schema.agentRuns.structuredOutput,
+        error: schema.agentRuns.error,
+      })
+      .from(schema.agentRuns)
+      .where(eq(schema.agentRuns.id, run.id))
+      .limit(1);
+    expect(JSON.stringify(persisted)).toContain(canary);
+  });
+
   it("enforces the persisted deadline and records diagnostics", async () => {
     const run = await insertRun("timeout", {
       deadlineAt: new Date(Date.now() + 75),

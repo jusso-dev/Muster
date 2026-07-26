@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { queueNames, type QueueName } from "@muster/contracts";
-import { redactForObservation } from "./redaction.js";
+import { redactForObservation } from "./redaction.ts";
 
-export * from "./redaction.js";
+export * from "./redaction.ts";
 
 export const EnvironmentSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

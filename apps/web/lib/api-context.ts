@@ -6,6 +6,7 @@ import {
   type Capability,
 } from "@muster/authz";
 import { database, schema } from "@muster/database";
+import { redactObservationText } from "@muster/config";
 
 export class ApiProblem extends Error {
   constructor(
@@ -77,8 +78,8 @@ export function problemResponse(error: unknown, traceId: string) {
       type: `https://muster.security/problems/${problem.title.toLowerCase().replaceAll(" ", "-")}`,
       title: problem.title,
       status: problem.status,
-      detail: problem.detail,
-      traceId,
+      detail: redactObservationText(problem.detail),
+      traceId: redactObservationText(traceId, { maxStringLength: 200 }),
     },
     {
       status: problem.status,
@@ -88,5 +89,8 @@ export function problemResponse(error: unknown, traceId: string) {
 }
 
 export function requestTraceId(request: Request) {
-  return request.headers.get("x-trace-id") ?? crypto.randomUUID();
+  return redactObservationText(
+    request.headers.get("x-trace-id") ?? crypto.randomUUID(),
+    { maxStringLength: 200 },
+  );
 }

@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { requireCapability } from "@muster/authz";
+import { redactForObservation } from "@muster/config";
 import { TaskPrioritySchema, TaskStatusSchema } from "@muster/contracts";
 import { database, schema } from "@muster/database";
 import { z } from "zod";
@@ -126,7 +127,9 @@ async function taskView(organisationId: string) {
         ? (actorById.get(task.assignedActorId) ?? null)
         : null,
       room: task.roomId ? (roomById.get(task.roomId) ?? null) : null,
-      run: task.agentRunId ? (runById.get(task.agentRunId) ?? null) : null,
+      run: task.agentRunId
+        ? redactForObservation(runById.get(task.agentRunId) ?? null)
+        : null,
     })),
     availableAssignees,
     availableRooms,

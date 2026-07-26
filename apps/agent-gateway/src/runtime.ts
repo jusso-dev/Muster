@@ -8,7 +8,11 @@ import {
   validateStructuredOutput,
   type PromptPart,
 } from "@muster/agents";
-import { jsonLog } from "@muster/config";
+import {
+  jsonLog,
+  redactForObservation,
+  redactObservationText,
+} from "@muster/config";
 import {
   AgentStructuredOutputSchemas,
   type AgentInvestigationJob,
@@ -138,7 +142,7 @@ export class DurableAgentRuntime {
         ),
       )
       .orderBy(asc(schema.agentRunEvents.createdAt));
-    return {
+    const projection = {
       runId: run.id,
       status: run.status,
       runtime:
@@ -158,6 +162,7 @@ export class DurableAgentRuntime {
       completedAt: run.completedAt,
       events,
     };
+    return redactForObservation(projection) as typeof projection;
   }
 
   async cancel(runId: string, reason = "Cancelled by operator") {
@@ -190,7 +195,7 @@ export class DurableAgentRuntime {
         organisationId: updated.organisationId,
         runId: updated.id,
         eventType: "cancelled",
-        message: reason,
+        message: redactObservationText(reason),
         payload: { workerId: this.workerId },
       });
       await appendAuditEvent(tx, {
@@ -200,8 +205,10 @@ export class DurableAgentRuntime {
         action: "agent.run.cancelled",
         targetType: "agent_run",
         targetId: updated.id,
-        metadata: { reason },
-        traceId: this.request(updated).traceId ?? `agent-run-${updated.id}`,
+        metadata: { reason: redactObservationText(reason) },
+        traceId: redactObservationText(
+          this.request(updated).traceId ?? `agent-run-${updated.id}`,
+        ),
       });
       return [updated];
     });
@@ -710,7 +717,9 @@ export class DurableAgentRuntime {
           tokenUsage: result.usage,
           estimatedCostCents: result.estimatedCostCents,
         },
-        traceId: this.request(run).traceId ?? `agent-run-${run.id}`,
+        traceId: redactObservationText(
+          this.request(run).traceId ?? `agent-run-${run.id}`,
+        ),
       });
     });
     jsonLog("info", "agent.run.completed", {
@@ -737,7 +746,7 @@ export class DurableAgentRuntime {
           diagnostics: {
             validation: "failed",
             failureCode: failure.code,
-            ...failure.diagnostics,
+            ...(redactForObservation(failure.diagnostics) as Record<string, unknown>),
           },
         })
         .where(
@@ -754,8 +763,13 @@ export class DurableAgentRuntime {
         organisationId: run.organisationId,
         runId: run.id,
         eventType: "failed",
-        message: failure.message.slice(0, 500),
-        payload: { failureCode: failure.code, ...failure.diagnostics },
+        message: redactObservationText(failure.message, {
+          maxStringLength: 500,
+        }),
+        payload: redactForObservation({
+          failureCode: failure.code,
+          ...failure.diagnostics,
+        }),
       });
       await tx.insert(schema.agentMemories).values({
         id: newId(),
@@ -764,7 +778,9 @@ export class DurableAgentRuntime {
         sourceRunId: run.id,
         kind: "failure",
         title: `Run failed: ${failure.code}`,
-        content: failure.message.slice(0, 2_000),
+        content: redactObservationText(failure.message, {
+          maxStringLength: 2_000,
+        }),
         evidenceReferences: [`agent-run:${run.id}`],
         confidence: 100,
       });
@@ -776,7 +792,9 @@ export class DurableAgentRuntime {
         targetType: "agent_run",
         targetId: run.id,
         metadata: { failureCode: failure.code },
-        traceId: this.request(run).traceId ?? `agent-run-${run.id}`,
+        traceId: redactObservationText(
+          this.request(run).traceId ?? `agent-run-${run.id}`,
+        ),
       });
     });
     jsonLog("error", "agent.run.failed", {

@@ -28,4 +28,16 @@ describe("problemResponse", () => {
       detail: "Invalid transition",
     });
   });
+
+  it("redacts secret-shaped error details and trace identifiers", async () => {
+    const canary = "synthetic-problem-secret-31";
+    const response = problemResponse(
+      new Error(`Authorization: Bearer ${canary}`),
+      `password=${canary}`,
+    );
+    const body = JSON.stringify(await response.json());
+
+    expect(body).not.toContain(canary);
+    expect(body).toContain("[REDACTED]");
+  });
 });
