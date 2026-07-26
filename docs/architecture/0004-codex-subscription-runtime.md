@@ -22,6 +22,21 @@ read-only sandbox, disabled network access, disabled web search, and no Codex
 action approvals. The selected agent determines the required JSON output
 schema, which Muster validates again before accepting the result.
 
+PostgreSQL is the authority for queued, running, cancelled, failed, and
+completed runs. BullMQ jobs contain identifiers and only trigger dispatch.
+Gateway workers atomically claim records with expiring leases, heartbeat while
+executing, and recover expired leases after restart without creating another
+run. Stable organisation-scoped idempotency keys prevent duplicate inbound
+runs. Progress events, source hashes, prompt and output hashes, structured
+validation diagnostics, token usage, estimated cost, cancellation, timeout,
+and recovery attempts remain attached to the durable run.
+
+Runtime, token, and cost ceilings are snapshots of the reviewed agent
+definition. Cancellation is persisted before an in-memory abort signal is
+sent, so a restart cannot resurrect cancelled work. Completion and failure
+create evidence-linked learning notes, while skill publication remains a
+separate evaluated human-approval workflow.
+
 Codex does not receive direct production shell access or credentials for
 Kelpie, Tawny, Bower, Entra, or Sentinel. Mutating operations remain explicit
 Muster tool calls guarded by capabilities and persisted human approvals.

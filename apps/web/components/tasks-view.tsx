@@ -174,7 +174,12 @@ export function TasksView() {
   const runningTaskIds = useMemo(
     () =>
       tasks
-        .filter((task) => task.agentRunId && task.agentRunStatus === "running")
+        .filter(
+          (task) =>
+            task.agentRunId &&
+            (task.agentRunStatus === "queued" ||
+              task.agentRunStatus === "running"),
+        )
         .map((task) => task.id),
     [tasks],
   );
@@ -305,6 +310,13 @@ export function TasksView() {
     try {
       const response = await fetch(`/api/v1/tasks/${task.id}/${action}`, {
         method: "POST",
+        ...(action === "delegate"
+          ? {
+              headers: {
+                "Idempotency-Key": `task:${task.id}:after:${task.agentRunId ?? "initial"}`,
+              },
+            }
+          : {}),
       });
       if (!response.ok) {
         throw new Error(
@@ -581,7 +593,9 @@ export function TasksView() {
                   <div className="min-h-28 space-y-2 p-2">
                     {columnTasks.map((task) => {
                       const agent = task.assignee?.actorType === "agent";
-                      const running = task.agentRunStatus === "running";
+                      const running =
+                        task.agentRunStatus === "running" ||
+                        task.agentRunStatus === "queued";
                       const retryable =
                         task.agentRunStatus === "failed" ||
                         task.agentRunStatus === "cancelled";

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import {
   appendAuditEvent,
   database,
@@ -214,14 +214,19 @@ export type AcceptedAgentRun = {
   promptVersion: string;
   model: string;
   inputHash: string;
+  request: Record<string, unknown>;
+  idempotencyKey: string;
+  maximumRuntimeSeconds: number;
+  maximumTokenBudget: number;
+  maximumCostCents: number;
 };
 
-export async function attachAgentRun(
+export async function queueAgentRun(
   context: TaskMutationContext,
   taskId: string,
   run: AcceptedAgentRun,
 ) {
-  await database().transaction(async (tx) => {
+  return database().transaction(async (tx) => {
     const [task] = await tx
       .select({ id: schema.tasks.id })
       .from(schema.tasks)
@@ -233,28 +238,52 @@ export async function attachAgentRun(
       )
       .limit(1);
     if (!task) throw new ApiProblem(404, "Not found", "Task not found.");
-    await tx.insert(schema.agentRuns).values({
-      id: run.runId,
-      agentId: run.agentId,
-      organisationId: context.organisationId,
-      roomId: run.roomId,
-      investigationId: run.investigationId,
-      requestedByActorId: context.actorId,
-      trigger: "task",
-      status: run.status,
-      startedAt: new Date(),
-      inputHash: run.inputHash,
-      promptVersion: run.promptVersion,
-      runtime: run.runtime,
-      model: run.model,
-      idempotencyKey: `task:${taskId}:run:${run.runId}`,
-    });
+    const [inserted] = await tx
+      .insert(schema.agentRuns)
+      .values({
+        id: run.runId,
+        agentId: run.agentId,
+        organisationId: context.organisationId,
+        roomId: run.roomId,
+        investigationId: run.investigationId,
+        requestedByActorId: context.actorId,
+        trigger: "task",
+        status: "queued",
+        request: run.request,
+        progress: { stage: "queued", percent: 0 },
+        deadlineAt: new Date(Date.now() + run.maximumRuntimeSeconds * 1_000),
+        inputHash: run.inputHash,
+        promptVersion: run.promptVersion,
+        runtime: run.runtime,
+        model: run.model,
+        maximumRuntimeSeconds: run.maximumRuntimeSeconds,
+        maximumTokenBudget: run.maximumTokenBudget,
+        maximumCostCents: run.maximumCostCents,
+        idempotencyKey: run.idempotencyKey,
+      })
+      .onConflictDoNothing()
+      .returning({ id: schema.agentRuns.id });
+    const runId =
+      inserted?.id ??
+      (
+        await tx
+          .select({ id: schema.agentRuns.id })
+          .from(schema.agentRuns)
+          .where(
+            and(
+              eq(schema.agentRuns.organisationId, context.organisationId),
+              eq(schema.agentRuns.idempotencyKey, run.idempotencyKey),
+            ),
+          )
+          .limit(1)
+      )[0]?.id;
+    if (!runId) throw new Error("Could not queue agent run");
     await tx
       .update(schema.tasks)
       .set({
         status: "in_progress",
-        agentRunId: run.runId,
-        agentRunStatus: run.status,
+        agentRunId: runId,
+        agentRunStatus: "queued",
         updatedAt: new Date(),
       })
       .where(
@@ -263,11 +292,22 @@ export async function attachAgentRun(
           eq(schema.tasks.organisationId, context.organisationId),
         ),
       );
-    await recordMutation(tx, context, taskId, "task.agent_run.started", {
-      runId: run.runId,
-      agentId: run.agentId,
-      runtime: run.runtime,
-    });
+    if (inserted) {
+      await tx.insert(schema.agentRunEvents).values({
+        id: newId(),
+        organisationId: context.organisationId,
+        runId,
+        eventType: "queued",
+        message: "Task delegation queued durable agent execution",
+        payload: { taskId, agentId: run.agentId },
+      });
+      await recordMutation(tx, context, taskId, "task.agent_run.queued", {
+        runId,
+        agentId: run.agentId,
+        runtime: run.runtime,
+      });
+    }
+    return { runId, status: "queued" as const, duplicate: !inserted };
   });
 }
 
@@ -304,33 +344,36 @@ export async function settleAgentRun(
       )
       .limit(1);
     if (!run) throw new ApiProblem(404, "Not found", "Agent run not found.");
-    if (run.status !== "running" && run.status !== "queued") return;
-    await tx
-      .update(schema.agentRuns)
-      .set({
-        status: result.status,
-        completedAt: new Date(),
-        structuredOutput: result.output ?? null,
-        outputHash: result.outputHash ?? null,
-        tokenUsage:
-          result.usage && typeof result.usage === "object" ? result.usage : {},
-        estimatedCostCents: result.estimatedCostCents ?? 0,
-        error:
-          result.status === "failed"
-            ? (result.error ?? "Agent run failed")
-            : null,
-        cancellationReason:
-          result.status === "cancelled"
-            ? (result.error ?? "Cancelled by operator")
-            : null,
-      })
-      .where(
-        and(
-          eq(schema.agentRuns.id, runId),
-          eq(schema.agentRuns.organisationId, context.organisationId),
-        ),
-      );
-    await tx
+    if (run.status === "running" || run.status === "queued") {
+      await tx
+        .update(schema.agentRuns)
+        .set({
+          status: result.status,
+          completedAt: new Date(),
+          structuredOutput: result.output ?? null,
+          outputHash: result.outputHash ?? null,
+          tokenUsage:
+            result.usage && typeof result.usage === "object"
+              ? result.usage
+              : {},
+          estimatedCostCents: result.estimatedCostCents ?? 0,
+          error:
+            result.status === "failed"
+              ? (result.error ?? "Agent run failed")
+              : null,
+          cancellationReason:
+            result.status === "cancelled"
+              ? (result.error ?? "Cancelled by operator")
+              : null,
+        })
+        .where(
+          and(
+            eq(schema.agentRuns.id, runId),
+            eq(schema.agentRuns.organisationId, context.organisationId),
+          ),
+        );
+    }
+    const [updatedTask] = await tx
       .update(schema.tasks)
       .set({
         status: taskStatusAfterAgentRun(result.status),
@@ -342,8 +385,14 @@ export async function settleAgentRun(
           eq(schema.tasks.id, taskId),
           eq(schema.tasks.organisationId, context.organisationId),
           eq(schema.tasks.agentRunId, runId),
+          or(
+            eq(schema.tasks.agentRunStatus, "queued"),
+            eq(schema.tasks.agentRunStatus, "running"),
+          ),
         ),
-      );
+      )
+      .returning({ id: schema.tasks.id });
+    if (!updatedTask) return;
     await recordMutation(tx, context, taskId, "task.agent_run.settled", {
       runId,
       status: result.status,

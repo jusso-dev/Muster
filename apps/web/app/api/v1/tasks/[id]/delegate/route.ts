@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
+import { redactSecrets } from "@muster/agents";
 import { requireCapability } from "@muster/authz";
-import { database, schema } from "@muster/database";
+import { database, newId, schema } from "@muster/database";
 import {
   ApiProblem,
   apiSubject,
   problemResponse,
   requestTraceId,
 } from "@/lib/api-context";
-import { attachAgentRun } from "@/lib/task-domain";
+import { queueAgentRun } from "@/lib/task-domain";
 
 export async function POST(
   request: Request,
@@ -38,7 +39,7 @@ export async function POST(
         "Agent required",
         "Task needs an agent assignee.",
       );
-    if (task.agentRunStatus === "running") {
+    if (task.agentRunStatus === "running" || task.agentRunStatus === "queued") {
       throw new ApiProblem(
         409,
         "Run in progress",
@@ -51,6 +52,9 @@ export async function POST(
         promptVersion: schema.agentDefinitions.systemPromptVersion,
         runtime: schema.agentDefinitions.runtime,
         model: schema.agentDefinitions.model,
+        maximumRuntimeSeconds: schema.agentDefinitions.maximumRuntimeSeconds,
+        maximumTokenBudget: schema.agentDefinitions.maximumTokenBudget,
+        maximumCostCents: schema.agentDefinitions.maximumCostCents,
       })
       .from(schema.actors)
       .innerJoin(
@@ -81,32 +85,18 @@ export async function POST(
       );
     }
 
-    const gateway = await fetch(
-      `${process.env.AGENT_GATEWAY_URL ?? "http://agent-gateway:3002"}/v1/runs`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          organisationId: subject.organisationId,
-          investigationId: task.investigationId,
-          agentId: agent.id,
-          requestedByActorId: subject.actorId,
-          traceId,
-          humanRequest: `${task.title}\n\n${task.description}`,
-        }),
-        signal: AbortSignal.timeout(10_000),
-      },
-    );
-    const result = (await gateway.json()) as {
-      runId?: string;
-      status?: string;
-      runtime?: string;
-      error?: string;
-    };
-    if (!gateway.ok || !result.runId) {
-      throw new Error(result.error ?? "Agent gateway rejected the task");
+    const humanRequest = redactSecrets(`${task.title}\n\n${task.description}`);
+    const idempotencyKey =
+      request.headers.get("idempotency-key")?.trim() ||
+      `task:${task.id}:after:${task.agentRunId ?? "initial"}`;
+    if (idempotencyKey.length > 200) {
+      throw new ApiProblem(
+        400,
+        "Invalid idempotency key",
+        "Idempotency key exceeds 200 characters.",
+      );
     }
-    await attachAgentRun(
+    const result = await queueAgentRun(
       {
         organisationId: subject.organisationId,
         actorId: subject.actorId,
@@ -114,17 +104,20 @@ export async function POST(
       },
       task.id,
       {
-        runId: result.runId,
-        status: result.status ?? "running",
-        runtime: result.runtime ?? agent.runtime,
+        runId: newId(),
+        status: "queued",
+        runtime: agent.runtime,
         agentId: agent.id,
         roomId: task.roomId,
         investigationId: task.investigationId,
         promptVersion: agent.promptVersion,
         model: agent.model,
-        inputHash: createHash("sha256")
-          .update(`${task.title}\n\n${task.description}`)
-          .digest("hex"),
+        inputHash: createHash("sha256").update(humanRequest).digest("hex"),
+        request: { humanRequest, traceId },
+        idempotencyKey,
+        maximumRuntimeSeconds: agent.maximumRuntimeSeconds,
+        maximumTokenBudget: agent.maximumTokenBudget,
+        maximumCostCents: agent.maximumCostCents,
       },
     );
     return Response.json({ data: result, traceId }, { status: 202 });

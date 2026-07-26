@@ -625,16 +625,33 @@ export const agentRuns = pgTable(
       .references(() => actors.id),
     trigger: text("trigger").notNull(),
     status: text("status").notNull().default("queued"),
+    request: jsonb("request").notNull().default({}),
+    progress: jsonb("progress").notNull().default({}),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    deadlineAt: timestamp("deadline_at", { withTimezone: true }),
+    cancellationRequestedAt: timestamp("cancellation_requested_at", {
+      withTimezone: true,
+    }),
+    workerId: text("worker_id"),
+    attemptCount: integer("attempt_count").notNull().default(0),
     inputHash: text("input_hash").notNull(),
+    promptHash: text("prompt_hash"),
     outputHash: text("output_hash"),
+    outputSchema: text("output_schema"),
     promptVersion: text("prompt_version").notNull(),
     runtime: text("runtime").notNull(),
     model: text("model").notNull(),
+    maximumRuntimeSeconds: integer("maximum_runtime_seconds").notNull().default(300),
+    maximumTokenBudget: integer("maximum_token_budget").notNull().default(20_000),
+    maximumCostCents: integer("maximum_cost_cents").notNull().default(500),
     tokenUsage: jsonb("token_usage").notNull().default({}),
     estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
     toolCallCount: integer("tool_call_count").notNull().default(0),
+    diagnostics: jsonb("diagnostics").notNull().default({}),
+    failureCode: text("failure_code"),
     error: text("error"),
     cancellationReason: text("cancellation_reason"),
     structuredOutput: jsonb("structured_output"),
@@ -648,6 +665,97 @@ export const agentRuns = pgTable(
     index("agent_runs_org_status_idx").on(
       table.organisationId,
       table.status,
+      table.startedAt,
+    ),
+    index("agent_runs_recovery_idx").on(
+      table.status,
+      table.leaseExpiresAt,
+      table.startedAt,
+    ),
+  ],
+);
+
+export const agentRunEvents = pgTable(
+  "agent_run_events",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => agentRuns.id),
+    eventType: text("event_type").notNull(),
+    message: text("message").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_run_events_org_run_idx").on(
+      table.organisationId,
+      table.runId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const agentRunSources = pgTable(
+  "agent_run_sources",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => agentRuns.id),
+    sourceType: text("source_type").notNull(),
+    sourceId: text("source_id").notNull(),
+    contentHash: text("content_hash").notNull(),
+    classification: text("classification").notNull().default("internal"),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_run_sources_org_run_unique").on(
+      table.organisationId,
+      table.runId,
+      table.sourceType,
+      table.sourceId,
+    ),
+    index("agent_run_sources_org_run_idx").on(
+      table.organisationId,
+      table.runId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const agentToolCalls = pgTable(
+  "agent_tool_calls",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => agentRuns.id),
+    toolName: text("tool_name").notNull(),
+    capability: text("capability").notNull(),
+    classification: text("classification").notNull(),
+    argumentsHash: text("arguments_hash").notNull(),
+    resultHash: text("result_hash"),
+    approvalId: uuid("approval_id").references(() => approvals.id),
+    status: text("status").notNull(),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("agent_tool_calls_org_run_idx").on(
+      table.organisationId,
+      table.runId,
       table.startedAt,
     ),
   ],

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { authoriseToolCall, buildRuntimePrompt } from "./index";
+import { authoriseToolCall, buildRuntimePrompt, registeredTool } from "./index";
 
 describe("prompt trust boundary", () => {
   it("never promotes untrusted evidence into system policy", () => {
@@ -40,5 +40,25 @@ describe("tool escalation", () => {
         },
       ),
     ).toThrow("human approval");
+  });
+
+  it("rejects prohibited registry tools even with capability and approval", () => {
+    expect(() =>
+      authoriseToolCall(
+        registeredTool("evidence.delete"),
+        { evidenceId: "018f55d8-c4c7-7c3e-88ef-000000000001" },
+        {
+          subject: {
+            actorId: "actor",
+            organisationId: "org",
+            capabilities: new Set(["evidence.export"]),
+          },
+          allowedTools: new Set(["evidence.delete"]),
+          approvedActions: new Map([
+            ["evidence.delete", "018f55d8-c4c7-7c3e-88ef-000000000002"],
+          ]),
+        },
+      ),
+    ).toThrow("prohibited");
   });
 });

@@ -1,17 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   Bot,
   BrainCircuit,
-  Check,
   CircleStop,
-  Clock3,
   FileDiff,
+  RefreshCcw,
   Search,
   ShieldCheck,
+  ShieldOff,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
@@ -130,8 +130,15 @@ const agentTabs = [
   "Audit",
 ];
 
-export function AgentDetailView({ tab = "overview" }: { tab?: string }) {
-  const agent = demoAgents[0]!;
+export function AgentDetailView({
+  agentId,
+  tab = "overview",
+}: {
+  agentId: string;
+  tab?: string;
+}) {
+  const agent =
+    demoAgents.find((candidate) => candidate.id === agentId) ?? demoAgents[0]!;
   return (
     <AppShell>
       <PageHeader
@@ -189,14 +196,10 @@ export function AgentDetailView({ tab = "overview" }: { tab?: string }) {
       </nav>
       <div className="scroll-region min-h-0 flex-1 overflow-y-auto p-3 tablet:p-5">
         <div className="mx-auto max-w-6xl">
-          {demoMode ? (
-            tab === "learning" ? (
-              <LearningPanel />
-            ) : (
-              <AgentOverview />
-            )
-          ) : tab === "learning" ? (
-            <CleanLearningPanel />
+          {tab === "learning" ? (
+            <GovernedLearningPanel agentId={agentId} />
+          ) : demoMode ? (
+            <AgentOverview />
           ) : (
             <CleanAgentOverview purpose={agent.purpose} />
           )}
@@ -331,7 +334,101 @@ function AgentOverview() {
   );
 }
 
-function LearningPanel() {
+type LearningState = {
+  agent: {
+    id: string;
+    name: string;
+    killSwitch: boolean;
+    allowedTools: string[];
+    capabilityRequirements: string[];
+  };
+  memories: Array<{
+    id: string;
+    kind: string;
+    title: string;
+    content: string;
+    confidence: number;
+    sourceRunId: string;
+    evidenceReferences: unknown;
+  }>;
+  skills: Array<{
+    id: string;
+    skillKey: string;
+    name: string;
+    description: string;
+    status: string;
+    activeVersionId: string | null;
+    versions: Array<{
+      id: string;
+      version: number;
+      state: string;
+      sourceRunId: string;
+      basedOnVersionId: string | null;
+      content: string;
+      changeRationale: string;
+      contentHash: string;
+      evaluation: {
+        passed: boolean;
+        score: number;
+        baselineScore: number | null;
+        regressions: unknown;
+      } | null;
+      approval: { id: string; status: string } | null;
+    }>;
+  }>;
+};
+
+function GovernedLearningPanel({ agentId }: { agentId: string }) {
+  const [learning, setLearning] = useState<LearningState | null>(null);
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState("");
+
+  async function load() {
+    const response = await fetch(`/api/v1/agents/${agentId}/learning`, {
+      cache: "no-store",
+    });
+    const payload = (await response.json()) as {
+      data?: LearningState;
+      detail?: string;
+    };
+    if (!response.ok || !payload.data) {
+      throw new Error(payload.detail ?? "Learning state could not be loaded");
+    }
+    setLearning(payload.data);
+  }
+
+  useEffect(() => {
+    void load().catch((reason) =>
+      setError(reason instanceof Error ? reason.message : "Load failed"),
+    );
+  }, [agentId]);
+
+  async function mutate(input: Record<string, unknown>, key: string) {
+    setPending(key);
+    setError("");
+    try {
+      const response = await fetch(`/api/v1/agents/${agentId}/learning`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const payload = (await response.json()) as { detail?: string };
+      if (!response.ok) {
+        throw new Error(payload.detail ?? "Learning action failed");
+      }
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Action failed");
+    } finally {
+      setPending("");
+    }
+  }
+
+  const proposals =
+    learning?.skills.flatMap((skill) =>
+      skill.versions.map((version) => ({ skill, version })),
+    ) ?? [];
+
   return (
     <div className="space-y-4">
       <div className="border border-[var(--color-agent)] bg-[var(--color-agent-soft)] p-4">
@@ -347,8 +444,36 @@ function LearningPanel() {
               and human approval.
             </p>
           </div>
+          {learning && (
+            <Button
+              className="ml-auto"
+              size="sm"
+              variant={learning.agent.killSwitch ? "default" : "outline"}
+              disabled={pending === "kill-switch"}
+              onClick={() =>
+                void mutate(
+                  {
+                    action: "set_kill_switch",
+                    enabled: !learning.agent.killSwitch,
+                    reason: learning.agent.killSwitch
+                      ? "Human operator restored governed execution"
+                      : "Human operator paused agent execution",
+                  },
+                  "kill-switch",
+                )
+              }
+            >
+              {learning.agent.killSwitch ? <RefreshCcw /> : <ShieldOff />}
+              {learning.agent.killSwitch ? "Restore agent" : "Kill switch"}
+            </Button>
+          )}
         </div>
       </div>
+      {error && (
+        <p className="error-surface border p-3 text-xs text-[var(--color-error)]">
+          {error}
+        </p>
+      )}
       <div className="grid gap-4 wide:grid-cols-[minmax(0,1fr)_22rem]">
         <section className="border bg-card">
           <div className="flex items-center justify-between border-b p-3">
@@ -357,72 +482,190 @@ function LearningPanel() {
                 Skill proposals
               </h2>
               <p className="text-xs text-muted-foreground">
-                Self-authored changes awaiting review
+                Immutable versions with evidence, evaluation, and approval
               </p>
             </div>
             <Badge className="approval-surface text-[var(--color-warning)]">
-              1 pending
+              {
+                proposals.filter(
+                  ({ version }) =>
+                    version.approval?.status === "pending" &&
+                    version.state !== "rejected",
+                ).length
+              }{" "}
+              pending
             </Badge>
           </div>
-          <article className="p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <FileDiff className="size-4 text-[var(--color-agent)]" />
-              <code className="text-xs">correlate-legacy-auth@3</code>
-              <Badge className="approval-surface text-[var(--color-warning)]">
-                Proposed
-              </Badge>
-              <span className="ml-auto text-xs text-muted-foreground">
-                RUN-1048 · 3 min ago
-              </span>
+          {proposals.length === 0 ? (
+            <div className="p-8 text-center">
+              <FileDiff className="mx-auto size-5 text-muted-foreground" />
+              <p className="mt-2 text-xs text-muted-foreground">
+                No skill proposals. Reviewed completed runs can propose one.
+              </p>
             </div>
-            <h3 className="mt-3 text-sm font-bold">
-              Bound identity correlation to explicit evidence
-            </h3>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Require a matching identity plus at least one of source IP, owned
-              endpoint, or a ten-minute window. Record contradictory matches.
-            </p>
-            <div className="mt-3 grid grid-cols-3 border text-center text-xs">
-              <div className="border-r p-2">
-                <span className="block text-muted-foreground">Evaluation</span>
-                <strong>92 / 100</strong>
-              </div>
-              <div className="border-r p-2">
-                <span className="block text-muted-foreground">Baseline</span>
-                <strong>88 / 100</strong>
-              </div>
-              <div className="p-2">
-                <span className="block text-muted-foreground">Regressions</span>
-                <strong className="text-[var(--color-success)]">0</strong>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                disabled
-                title="Learning review is not available yet"
-              >
-                <ShieldCheck />
-                Review and publish
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled
-                title="Learning diff is not available yet"
-              >
-                View diff
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled
-                title="Learning review is not available yet"
-              >
-                Reject
-              </Button>
-            </div>
-          </article>
+          ) : (
+            proposals.map(({ skill, version }) => {
+              const regressionCount = Array.isArray(
+                version.evaluation?.regressions,
+              )
+                ? version.evaluation.regressions.length
+                : 0;
+              const active = skill.activeVersionId === version.id;
+              return (
+                <article
+                  key={version.id}
+                  className="border-b p-4 last:border-0"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <FileDiff className="size-4 text-[var(--color-agent)]" />
+                    <code className="text-xs">
+                      {skill.skillKey}@{version.version}
+                    </code>
+                    <Badge
+                      className={
+                        version.state === "published"
+                          ? "success-surface text-[var(--color-success)]"
+                          : "approval-surface text-[var(--color-warning)]"
+                      }
+                    >
+                      {active ? "active" : version.state}
+                    </Badge>
+                    <code className="ml-auto text-xs text-muted-foreground">
+                      {version.contentHash.slice(0, 12)}
+                    </code>
+                  </div>
+                  <h3 className="mt-3 text-sm font-bold">{skill.name}</h3>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {version.changeRationale}
+                  </p>
+                  <pre className="mono scroll-region mt-3 max-h-48 overflow-auto border bg-muted/30 p-3 text-xs whitespace-pre-wrap">
+                    {version.content}
+                  </pre>
+                  <div className="mt-3 grid grid-cols-3 border text-center text-xs">
+                    <div className="border-r p-2">
+                      <span className="block text-muted-foreground">
+                        Evaluation
+                      </span>
+                      <strong>{version.evaluation?.score ?? "—"} / 100</strong>
+                    </div>
+                    <div className="border-r p-2">
+                      <span className="block text-muted-foreground">
+                        Baseline
+                      </span>
+                      <strong>
+                        {version.evaluation?.baselineScore ?? "—"} / 100
+                      </strong>
+                    </div>
+                    <div className="p-2">
+                      <span className="block text-muted-foreground">
+                        Regressions
+                      </span>
+                      <strong>{regressionCount}</strong>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {!active && version.approval?.status === "pending" && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={pending === version.id}
+                          onClick={() =>
+                            void mutate(
+                              {
+                                action: "evaluate_skill",
+                                versionId: version.id,
+                              },
+                              version.id,
+                            )
+                          }
+                        >
+                          <ShieldCheck />
+                          Evaluate
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={
+                            pending === version.id ||
+                            !version.evaluation?.passed
+                          }
+                          onClick={() =>
+                            void mutate(
+                              {
+                                action: "publish_skill",
+                                versionId: version.id,
+                                reason:
+                                  "Human reviewed evidence, diff, and passing evaluation",
+                              },
+                              version.id,
+                            )
+                          }
+                        >
+                          Publish
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={pending === version.id}
+                          onClick={() =>
+                            void mutate(
+                              {
+                                action: "reject_skill",
+                                versionId: version.id,
+                                reason: "Human reviewer rejected proposal",
+                              },
+                              version.id,
+                            )
+                          }
+                        >
+                          Reject
+                        </Button>
+                      </>
+                    )}
+                    {active && version.basedOnVersionId && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pending === version.id}
+                        onClick={() =>
+                          void mutate(
+                            {
+                              action: "rollback_skill",
+                              versionId: version.id,
+                              reason: "Human reviewer restored prior version",
+                            },
+                            version.id,
+                          )
+                        }
+                      >
+                        <RefreshCcw />
+                        Roll back
+                      </Button>
+                    )}
+                    {active && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={pending === version.id}
+                        onClick={() =>
+                          void mutate(
+                            {
+                              action: "retire_skill",
+                              versionId: version.id,
+                              reason: "Human reviewer retired skill",
+                            },
+                            version.id,
+                          )
+                        }
+                      >
+                        Retire
+                      </Button>
+                    )}
+                  </div>
+                </article>
+              );
+            })
+          )}
         </section>
         <aside className="border bg-card">
           <div className="border-b p-3">
@@ -447,6 +690,10 @@ function LearningPanel() {
                 Never self-authorised
               </dd>
             </div>
+            <div>
+              <dt className="text-muted-foreground">Allowed tools</dt>
+              <dd>{learning?.agent.allowedTools.join(", ") || "None"}</dd>
+            </div>
           </dl>
         </aside>
       </div>
@@ -456,44 +703,34 @@ function LearningPanel() {
             Recent learning notes
           </h2>
         </div>
-        {[
-          [
-            "lesson",
-            "Legacy portal events use canonical identity after redaction",
-            "98%",
-            "RUN-1048",
-            "3 evidence",
-          ],
-          [
-            "failure",
-            "Historical search must exclude closed false positives",
-            "87%",
-            "RUN-1041",
-            "2 evidence",
-          ],
-          [
-            "procedure_hint",
-            "Tawny endpoint ownership resolves ambiguous usernames",
-            "91%",
-            "RUN-1032",
-            "4 evidence",
-          ],
-        ].map(([kind, title, confidence, run, evidence]) => (
+        {(learning?.memories ?? []).map((memory) => (
           <div
-            key={title}
+            key={memory.id}
             className="grid grid-cols-[auto_1fr_auto] gap-3 border-b p-3 last:border-0 tablet:grid-cols-[7rem_1fr_5rem_7rem_6rem]"
           >
-            <Badge className="agent-surface">{kind}</Badge>
-            <p className="text-xs font-semibold">{title}</p>
-            <span className="text-xs">{confidence}</span>
+            <Badge className="agent-surface">{memory.kind}</Badge>
+            <div>
+              <p className="text-xs font-semibold">{memory.title}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {memory.content}
+              </p>
+            </div>
+            <span className="text-xs">{memory.confidence}%</span>
             <code className="hidden text-xs text-muted-foreground tablet:block">
-              {run}
+              {memory.sourceRunId.slice(0, 8)}
             </code>
             <span className="hidden text-xs text-muted-foreground tablet:block">
-              {evidence}
+              {Array.isArray(memory.evidenceReferences)
+                ? `${memory.evidenceReferences.length} evidence`
+                : "Evidence linked"}
             </span>
           </div>
         ))}
+        {learning && learning.memories.length === 0 && (
+          <p className="p-6 text-center text-xs text-muted-foreground">
+            No evidence-linked learning notes yet.
+          </p>
+        )}
       </section>
     </div>
   );

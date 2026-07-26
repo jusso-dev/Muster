@@ -181,13 +181,91 @@ test("investigation exposes hypotheses, findings, and promotion approval", async
 
 test("agent learning is evidence-backed and approval gated", async ({
   page,
-}) => {
-  await page.goto("/agents/018f55d8-c4c7-7c3e-88ef-000000000020/learning");
+}, testInfo) => {
+  const agentId = "018f55d8-c4c7-7c3e-88ef-000000000020";
+  const sourceRunId = newId();
+  const skillKey = `browser-governance-${testInfo.project.name}-${Date.now()}`;
+  const [definition] = await database()
+    .select()
+    .from(schema.agentDefinitions)
+    .where(eq(schema.agentDefinitions.id, agentId))
+    .limit(1);
+  if (!definition) throw new Error("Seeded triage agent required");
+  await database()
+    .insert(schema.agentRuns)
+    .values({
+      id: sourceRunId,
+      organisationId: definition.organisationId,
+      agentId,
+      requestedByActorId: definition.ownerActorId,
+      investigationId: null,
+      trigger: "browser_governance_test",
+      status: "completed",
+      request: { traceId: `browser-learning-${sourceRunId}` },
+      progress: { stage: "completed", percent: 100 },
+      startedAt: new Date(),
+      completedAt: new Date(),
+      inputHash: "a".repeat(64),
+      outputHash: "b".repeat(64),
+      promptVersion: definition.systemPromptVersion,
+      runtime: "mock",
+      model: definition.model,
+      maximumRuntimeSeconds: definition.maximumRuntimeSeconds,
+      maximumTokenBudget: definition.maximumTokenBudget,
+      maximumCostCents: definition.maximumCostCents,
+      idempotencyKey: `browser-learning:${sourceRunId}`,
+    });
+  const allowedTools = Array.isArray(definition.allowedTools)
+    ? definition.allowedTools.filter(
+        (value): value is string => typeof value === "string",
+      )
+    : [];
+  const requiredCapabilities = Array.isArray(definition.capabilityRequirements)
+    ? definition.capabilityRequirements.filter(
+        (value): value is string => typeof value === "string",
+      )
+    : [];
+  const proposed = await page.request.post(
+    `/api/v1/agents/${agentId}/learning`,
+    {
+      data: {
+        action: "propose_skill",
+        sourceRunId,
+        proposal: {
+          skillKey,
+          name: `Browser governed skill ${testInfo.project.name}`,
+          description:
+            "Synthetic browser proposal proving evaluation and human approval.",
+          content: `# Browser governed procedure\n\nSynthetic proposal ${skillKey}. Read only organisation-scoped evidence supplied by Muster. Compare identifiers and timestamps, cite every supporting record, preserve contradictions, and return uncertainty for human review. Never perform an external action.`,
+          changeRationale:
+            "A synthetic completed run demonstrates the governed browser review.",
+          evidenceReferences: [`agent-run:${sourceRunId}`],
+          requiredCapabilities,
+          allowedTools,
+        },
+      },
+    },
+  );
+  expect(proposed.status()).toBe(200);
+
+  await page.goto(`/agents/${agentId}/learning`);
   await expect(page.getByText("Governed continuous learning")).toBeVisible();
   await expect(page.getByText("Evaluation + human approval")).toBeVisible();
   await expect(page.getByText("Never self-authorised")).toBeVisible();
+  const proposal = page.getByRole("article").filter({ hasText: skillKey });
+  await proposal.getByRole("button", { name: "Evaluate" }).click();
+  await expect(proposal.getByText("100 / 100")).toBeVisible();
+  await proposal.getByRole("button", { name: "Publish" }).click();
+  await expect(proposal.getByText("active", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Kill switch" }).click();
   await expect(
-    page.getByRole("button", { name: /Review and publish/ }),
+    page.getByRole("button", { name: "Restore agent" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Restore agent" }).click();
+  await expect(page.getByRole("button", { name: "Kill switch" })).toBeVisible();
+  await proposal.getByRole("button", { name: "Retire" }).click();
+  await expect(
+    proposal.getByText("rolled_back", { exact: true }),
   ).toBeVisible();
 });
 
@@ -241,7 +319,7 @@ test("task board manages durable agent work end to end", async ({
 
   taskCard = page.getByRole("article").filter({ hasText: taskTitle });
   await taskCard.getByRole("button", { name: "Delegate" }).click();
-  await expect(taskCard.getByText("Agent running")).toBeVisible();
+  await expect(taskCard.getByText(/Agent (queued|running)/)).toBeVisible();
   await taskCard.getByRole("button", { name: "Cancel" }).click();
   await expect(taskCard.getByText("Agent cancelled")).toBeVisible();
   await expect(taskCard.getByRole("button", { name: "Retry" })).toBeVisible();

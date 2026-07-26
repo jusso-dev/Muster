@@ -22,6 +22,20 @@
       "when": 1785073250130,
       "tag": "0002_spicy_sebastian_shaw",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785074579629,
+      "tag": "0003_tan_photon",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785075121351,
+      "tag": "0004_minor_iron_man",
+      "breakpoints": true
     }
   ]
 }

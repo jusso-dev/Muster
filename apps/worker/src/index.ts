@@ -24,23 +24,47 @@ let ready = false;
 
 for (const name of queueNames) {
   const policy = queuePolicies[name];
-  queues.set(name, new Queue(name, {
-    connection,
-    defaultJobOptions: {
-      attempts: policy.attempts,
-      backoff: policy.backoff,
-      removeOnComplete: { age: 86_400, count: 10_000 },
-      removeOnFail: false,
-    },
-  }));
+  queues.set(
+    name,
+    new Queue(name, {
+      connection,
+      defaultJobOptions: {
+        attempts: policy.attempts,
+        backoff: policy.backoff,
+        removeOnComplete: { age: 86_400, count: 10_000 },
+        removeOnFail: false,
+      },
+    }),
+  );
 }
 
 const authoritativeProcessor: Processor = async (job) => {
   // Bodies contain identifiers only. Every processor reloads authoritative state
   // from PostgreSQL before side effects and records its idempotency key there.
-  jsonLog("info", "job.started", { queue: job.queueName, jobId: job.id, traceId: job.data.traceId, organisationId: job.data.organisationId });
-  if (!job.data.organisationId || !job.data.traceId) throw new Error("Missing execution metadata");
-  return { processedAt: new Date().toISOString(), authoritativeStateLoaded: true };
+  jsonLog("info", "job.started", {
+    queue: job.queueName,
+    jobId: job.id,
+    traceId: job.data.traceId,
+    organisationId: job.data.organisationId,
+  });
+  if (!job.data.organisationId || !job.data.traceId)
+    throw new Error("Missing execution metadata");
+  if (job.queueName === "muster-agents") {
+    const response = await fetch(
+      `${process.env.AGENT_GATEWAY_URL ?? "http://agent-gateway:3002"}/v1/runs/dispatch`,
+      {
+        method: "POST",
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Agent gateway dispatch failed with ${response.status}`);
+    }
+  }
+  return {
+    processedAt: new Date().toISOString(),
+    authoritativeStateLoaded: true,
+  };
 };
 
 for (const name of queueNames.filter((queue) => queue !== "muster-outbox")) {
@@ -52,8 +76,16 @@ for (const name of queueNames.filter((queue) => queue !== "muster-outbox")) {
     ...(policy.rateLimit ? { limiter: policy.rateLimit } : {}),
   };
   const worker = new Worker(name, authoritativeProcessor, workerOptions);
-  worker.on("completed", (job) => jsonLog("info", "job.completed", { queue: name, jobId: job.id }));
-  worker.on("failed", (job, error) => jsonLog("error", "job.failed", { queue: name, jobId: job?.id, error: error.message }));
+  worker.on("completed", (job) =>
+    jsonLog("info", "job.completed", { queue: name, jobId: job.id }),
+  );
+  worker.on("failed", (job, error) =>
+    jsonLog("error", "job.failed", {
+      queue: name,
+      jobId: job?.id,
+      error: error.message,
+    }),
+  );
   workers.push(worker);
 }
 
@@ -70,18 +102,27 @@ async function dispatchOutbox() {
         attempts: policy.attempts,
         backoff: policy.backoff,
       };
-      await queue.add(event.eventType, {
-        outboxEventId: event.id,
-        organisationId: event.organisationId,
-        aggregateType: event.aggregateType,
-        aggregateId: event.aggregateId,
-        traceId: event.traceId,
-      }, options);
+      await queue.add(
+        event.eventType,
+        {
+          outboxEventId: event.id,
+          organisationId: event.organisationId,
+          aggregateType: event.aggregateType,
+          aggregateId: event.aggregateId,
+          traceId: event.traceId,
+        },
+        options,
+      );
       await markOutboxDispatched(db, event.id);
     } catch (error) {
       const attempt = event.attempts + 1;
       const retryMs = Math.min(300_000, 1_000 * 2 ** attempt);
-      await markOutboxFailed(database(), event.id, error instanceof Error ? error.message : "dispatch failed", new Date(Date.now() + retryMs));
+      await markOutboxFailed(
+        database(),
+        event.id,
+        error instanceof Error ? error.message : "dispatch failed",
+        new Date(Date.now() + retryMs),
+      );
     }
   }
 }
@@ -94,11 +135,18 @@ ready = true;
 const healthServer = createServer((request, response) => {
   if (request.url === "/metrics") {
     response.writeHead(200, { "content-type": "text/plain; version=0.0.4" });
-    response.end(`muster_worker_ready ${ready ? 1 : 0}\nmuster_worker_queues ${queueNames.length}\n`);
+    response.end(
+      `muster_worker_ready ${ready ? 1 : 0}\nmuster_worker_queues ${queueNames.length}\n`,
+    );
     return;
   }
   response.writeHead(ready ? 200 : 503, { "content-type": "application/json" });
-  response.end(JSON.stringify({ status: ready ? "ready" : "starting", queues: queueNames }));
+  response.end(
+    JSON.stringify({
+      status: ready ? "ready" : "starting",
+      queues: queueNames,
+    }),
+  );
 });
 healthServer.listen(Number(process.env.WORKER_HEALTH_PORT ?? 3001));
 

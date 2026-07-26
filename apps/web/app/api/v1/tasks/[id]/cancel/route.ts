@@ -34,7 +34,10 @@ export async function POST(
       )
       .limit(1);
     if (!task) throw new ApiProblem(404, "Not found", "Task not found.");
-    if (!task.agentRunId || task.agentRunStatus !== "running") {
+    if (
+      !task.agentRunId ||
+      (task.agentRunStatus !== "running" && task.agentRunStatus !== "queued")
+    ) {
       throw new ApiProblem(
         409,
         "No active run",

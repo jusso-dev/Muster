@@ -23,11 +23,20 @@ Muster implements three distinct learning tiers:
    known regression, capability review, and human approval. Published versions
    can be rolled back without destroying history.
 
-The gateway performs a post-run learning review job. It extracts candidate
-notes and skill changes using typed schemas, records provenance to the source
-run and evidence, and never modifies an active skill in place. Retrieval obeys
-organisation, room, classification, and agent boundaries. All proposal,
-evaluation, approval, publication, use, and rollback actions are audit events.
+The gateway records an evidence-linked note after every terminal run. Reviewed
+runs can submit candidate notes and skill changes through typed, capability-
+checked application services. These record provenance to the source run and
+evidence and never modify an active skill in place. Retrieval obeys
+organisation, classification, and agent boundaries. All proposal, evaluation,
+approval, publication, rollback, retirement, and kill-switch actions are audit
+events.
+
+The deterministic `muster-agent-security-v1` evaluation rejects instruction
+injection, policy bypass language, and any tool or capability expansion beyond
+the reviewed agent definition. A proposal creates a pending approval record,
+but only a human with `agents.manage` can execute publication. The former
+active version remains available for rollback; retirement preserves immutable
+version and evaluation history.
 
 Self-authored skills cannot add tools, capabilities, network origins, runtime,
 token budget, cost budget, or approval exemptions. Those remain properties of

@@ -7,7 +7,7 @@ if (process.env.MUSTER_DEMO_MODE !== "true") {
 }
 
 const db = database();
-const allCapabilities = ["administration.manage", "rooms.read", "rooms.create", "rooms.manage", "messages.create", "alerts.read", "alerts.acknowledge", "alerts.promote", "investigations.read", "investigations.create", "investigations.update", "investigations.promote", "tasks.read", "tasks.create", "tasks.update", "tasks.assign", "workflows.approve", "agents.invoke", "agents.cancel", "audit.read"];
+const allCapabilities = ["administration.manage", "rooms.read", "rooms.create", "rooms.manage", "messages.create", "alerts.read", "alerts.acknowledge", "alerts.promote", "investigations.read", "investigations.create", "investigations.update", "investigations.promote", "tasks.read", "tasks.create", "tasks.update", "tasks.assign", "workflows.approve", "agents.read", "agents.invoke", "agents.manage", "agents.cancel", "audit.read"];
 
 await db.insert(schema.organisations).values({
   id: demoIds.organisation,
