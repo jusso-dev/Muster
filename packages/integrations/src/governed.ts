@@ -400,8 +400,15 @@ async function pinnedJsonRequest(target: SafeTarget, options: RequestOptions) {
       {
         method: options.method,
         headers: options.headers,
-        lookup: (_hostname, _options, callback) =>
-          callback(null, target.address, target.family),
+        family: target.family,
+        lookup: (_hostname, lookupOptions, callback) =>
+          callback(
+            null,
+            lookupOptions.all
+              ? [{ address: target.address, family: target.family }]
+              : target.address,
+            lookupOptions.all ? undefined : target.family,
+          ),
       },
       (response) => {
         const chunks: Buffer[] = [];
