@@ -26,9 +26,9 @@ test("fresh workspace is empty and accepts first message and task", async ({
   const composer = page.locator(".tiptap");
   await composer.fill(message);
   await page.keyboard.press("Enter");
-  await expect(page.getByText(message)).toBeVisible();
+  await expect(page.locator("#room-timeline").getByText(message)).toBeVisible();
   await page.reload();
-  await expect(page.getByText(message)).toBeVisible();
+  await expect(page.locator("#room-timeline").getByText(message)).toBeVisible();
 
   await page.goto("/tasks");
   await expect(page.getByText("0 shown")).toBeVisible();
