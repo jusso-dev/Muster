@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { database, newId, schema } from "@muster/database";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { login } from "./helpers";
 
 test("local administrator can sign in", async ({ page }) => {
@@ -368,19 +368,19 @@ test("agent readiness distinguishes ready, attention, unknown, and unauthorised 
     await expect(
       page.getByRole("heading", { name: "Needs attention", exact: true }),
     ).toBeVisible();
-  await expect(
-    page.getByText("Requested and effective permission modes diverge.", {
-      exact: true,
-    }),
-  ).toBeVisible();
+    await expect(
+      page.getByText("Requested and effective permission modes diverge.", {
+        exact: true,
+      }),
+    ).toBeVisible();
 
     await page.goto(`/agents/${definitions[2]!.id}`);
     await expect(
       page.getByRole("heading", { name: "Unknown", exact: true }),
     ).toBeVisible();
-  await expect(
-    page.getByText("Required runtime evidence is unknown.", { exact: true }),
-  ).toBeVisible();
+    await expect(
+      page.getByText("Required runtime evidence is unknown.", { exact: true }),
+    ).toBeVisible();
 
     await page.goto("/tasks");
     await page.getByRole("button", { name: "New task" }).click();
@@ -414,6 +414,266 @@ test("agent readiness distinguishes ready, attention, unknown, and unauthorised 
     await db
       .delete(schema.agentReadinessSnapshots)
       .where(inArray(schema.agentReadinessSnapshots.id, snapshotIds));
+  }
+});
+
+test("room shows scoped live multi-agent activity and run timeline", async ({
+  page,
+  playwright,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium");
+  const db = database();
+  const [room] = await db
+    .select()
+    .from(schema.rooms)
+    .where(eq(schema.rooms.slug, "soc-operations"))
+    .limit(1);
+  if (!room) throw new Error("Seeded SOC operations room required");
+  const definitions = await db
+    .select()
+    .from(schema.agentDefinitions)
+    .where(eq(schema.agentDefinitions.organisationId, room.organisationId))
+    .limit(3);
+  if (definitions.length < 3) {
+    throw new Error("Three synthetic agent definitions required");
+  }
+  const [otherRoom] = await db
+    .select()
+    .from(schema.rooms)
+    .where(
+      and(
+        eq(schema.rooms.organisationId, room.organisationId),
+        eq(schema.rooms.slug, "detection-engineering"),
+      ),
+    )
+    .limit(1);
+  if (!otherRoom) throw new Error("Second seeded room required");
+
+  const now = new Date();
+  const runIds = [newId(), newId(), newId(), newId()];
+  const taskIds = [newId(), newId()];
+  const eventIds = [newId(), newId(), newId(), newId()];
+  const syntheticSecret = `synthetic-room-secret-${newId()}`;
+
+  try {
+    await db.insert(schema.agentRuns).values([
+      {
+        id: runIds[0]!,
+        agentId: definitions[0]!.id,
+        organisationId: room.organisationId,
+        roomId: room.id,
+        requestedByActorId: definitions[0]!.ownerActorId,
+        trigger: "task",
+        status: "running",
+        progress: { stage: "analysis", percent: 35 },
+        startedAt: new Date(now.getTime() - 65_000),
+        heartbeatAt: now,
+        leaseExpiresAt: new Date(now.getTime() + 5 * 60_000),
+        deadlineAt: new Date(now.getTime() + 10 * 60_000),
+        workerId: "synthetic-room-worker",
+        inputHash: `synthetic-input-${runIds[0]}`,
+        promptVersion: "synthetic-room-v1",
+        runtime: "mock",
+        model: "synthetic-room-model",
+        idempotencyKey: `synthetic-room-run:${runIds[0]}`,
+      },
+      {
+        id: runIds[1]!,
+        agentId: definitions[1]!.id,
+        organisationId: room.organisationId,
+        roomId: room.id,
+        requestedByActorId: definitions[1]!.ownerActorId,
+        trigger: "task",
+        status: "running",
+        progress: { stage: "verification", percent: 60 },
+        startedAt: new Date(now.getTime() - 35_000),
+        heartbeatAt: now,
+        leaseExpiresAt: new Date(now.getTime() + 5 * 60_000),
+        deadlineAt: new Date(now.getTime() + 10 * 60_000),
+        workerId: "synthetic-room-worker",
+        inputHash: `synthetic-input-${runIds[1]}`,
+        promptVersion: "synthetic-room-v1",
+        runtime: "mock",
+        model: "synthetic-room-model",
+        idempotencyKey: `synthetic-room-run:${runIds[1]}`,
+      },
+      {
+        id: runIds[2]!,
+        agentId: definitions[2]!.id,
+        organisationId: room.organisationId,
+        roomId: room.id,
+        requestedByActorId: definitions[2]!.ownerActorId,
+        trigger: "task",
+        status: "running",
+        progress: { stage: "stale", percent: 10 },
+        startedAt: new Date(now.getTime() - 10 * 60_000),
+        heartbeatAt: new Date(now.getTime() - 5 * 60_000),
+        leaseExpiresAt: new Date(now.getTime() + 5 * 60_000),
+        deadlineAt: new Date(now.getTime() + 10 * 60_000),
+        workerId: "synthetic-room-worker",
+        inputHash: `synthetic-input-${runIds[2]}`,
+        promptVersion: "synthetic-room-v1",
+        runtime: "mock",
+        model: "synthetic-room-model",
+        idempotencyKey: `synthetic-room-run:${runIds[2]}`,
+      },
+      {
+        id: runIds[3]!,
+        agentId: definitions[2]!.id,
+        organisationId: room.organisationId,
+        roomId: otherRoom.id,
+        requestedByActorId: definitions[2]!.ownerActorId,
+        trigger: "task",
+        status: "running",
+        progress: { stage: "unrelated", percent: 50 },
+        startedAt: new Date(now.getTime() - 20_000),
+        heartbeatAt: now,
+        leaseExpiresAt: new Date(now.getTime() + 5 * 60_000),
+        deadlineAt: new Date(now.getTime() + 10 * 60_000),
+        workerId: "synthetic-room-worker",
+        inputHash: `synthetic-input-${runIds[3]}`,
+        promptVersion: "synthetic-room-v1",
+        runtime: "mock",
+        model: "synthetic-room-model",
+        idempotencyKey: `synthetic-room-run:${runIds[3]}`,
+      },
+    ]);
+    await db.insert(schema.tasks).values(
+      taskIds.map((id, index) => ({
+        id,
+        organisationId: room.organisationId,
+        title: `Synthetic room activity ${index + 1}`,
+        status: "in_progress" as const,
+        createdByActorId: definitions[index]!.ownerActorId,
+        roomId: room.id,
+        idempotencyKey: `synthetic-room-task:${id}`,
+        agentRunId: runIds[index]!,
+        agentRunStatus: "running",
+      })),
+    );
+    await db.insert(schema.agentRunEvents).values([
+      {
+        id: eventIds[0]!,
+        organisationId: room.organisationId,
+        runId: runIds[0]!,
+        eventType: "prompt_prepared",
+        message: `Investigating synthetic room evidence api_key=${syntheticSecret}`,
+        createdAt: new Date(now.getTime() - 4_000),
+      },
+      {
+        id: eventIds[1]!,
+        organisationId: room.organisationId,
+        runId: runIds[0]!,
+        eventType: "started",
+        message: "Agent run claimed for execution",
+        createdAt: new Date(now.getTime() - 2_000),
+      },
+      {
+        id: eventIds[2]!,
+        organisationId: room.organisationId,
+        runId: runIds[1]!,
+        eventType: "prompt_prepared",
+        message: "Verifying synthetic controls and evidence",
+        createdAt: new Date(now.getTime() - 3_000),
+      },
+      {
+        id: eventIds[3]!,
+        organisationId: room.organisationId,
+        runId: runIds[1]!,
+        eventType: "started",
+        message: "Agent run claimed for execution",
+        createdAt: new Date(now.getTime() - 1_000),
+      },
+    ]);
+
+    await page.goto(`/rooms/${room.slug}`);
+    const activity = page.getByTestId("room-agent-activity");
+    await expect(activity).toContainText("2 agents working");
+    await expect(activity.getByRole("button", { name: "View all" }))
+      .toBeVisible();
+    await expect(activity).toContainText("[REDACTED]");
+    await expect(activity).not.toContainText(syntheticSecret);
+
+    await activity.getByRole("button", { name: "View all" }).click();
+    let panel = page.getByTestId("agent-activity-panel");
+    await expect(panel).toBeVisible();
+    await expect(
+      panel.getByRole("heading", { name: definitions[0]!.name }),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("heading", { name: definitions[1]!.name }),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("heading", { name: definitions[2]!.name }),
+    ).toHaveCount(0);
+
+    const firstCard = panel
+      .getByRole("article")
+      .filter({ hasText: definitions[0]!.name });
+    await firstCard.getByRole("button", { name: "View" }).click();
+    await expect(
+      panel.getByRole("heading", { name: "Run timeline" }),
+    ).toBeVisible();
+    await expect(
+      panel.getByText("Investigating synthetic room evidence"),
+    ).toBeVisible();
+    await expect(panel.getByText("Agent run claimed for execution"))
+      .toBeVisible();
+    await expect(panel).not.toContainText(syntheticSecret);
+
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await activity.getByRole("button", { name: "View all" }).click();
+    panel = page.getByTestId("agent-activity-panel");
+    await expect(panel).toBeVisible();
+    expect((await panel.boundingBox())?.width).toBe(390);
+    await panel
+      .getByRole("button", { name: "Close agent activity panel" })
+      .click();
+    await expect(panel).toBeHidden();
+
+    await activity.getByRole("button", { name: "View all" }).click();
+    await page.goto(`/rooms/${otherRoom.slug}`);
+    await expect(page.getByTestId("agent-activity-panel")).toHaveCount(0);
+
+    await db
+      .update(schema.agentRuns)
+      .set({ heartbeatAt: new Date(Date.now() - 5 * 60_000) })
+      .where(eq(schema.agentRuns.id, runIds[1]!));
+    await page.goto(`/rooms/${room.slug}`);
+    const singleActivity = page.getByTestId("room-agent-activity");
+    await expect(singleActivity).toContainText(definitions[0]!.name);
+    await expect(
+      singleActivity.getByRole("button", { name: "View all" }),
+    ).toHaveCount(0);
+
+    const baseURL = testInfo.project.use.baseURL?.toString();
+    if (!baseURL) throw new Error("Playwright baseURL required");
+    const anonymous = await playwright.request.newContext({
+      baseURL,
+      storageState: { cookies: [], origins: [] },
+    });
+    try {
+      expect(
+        (
+          await anonymous.get(
+            `/api/v1/rooms/${room.id}/agent-activity`,
+          )
+        ).status(),
+      ).toBe(401);
+    } finally {
+      await anonymous.dispose();
+    }
+  } finally {
+    await db.delete(schema.tasks).where(inArray(schema.tasks.id, taskIds));
+    await db
+      .delete(schema.agentRunEvents)
+      .where(inArray(schema.agentRunEvents.id, eventIds));
+    await db
+      .delete(schema.agentRuns)
+      .where(inArray(schema.agentRuns.id, runIds));
   }
 });
 

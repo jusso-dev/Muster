@@ -38,6 +38,7 @@ import {
   RoomComposer,
   type RoomMessageRecord,
 } from "@/components/room-composer";
+import { RoomAgentActivity } from "@/components/room-agent-activity";
 import { SeverityBadge } from "@/components/severity";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -2697,16 +2698,11 @@ export function RoomView({ slug }: { slug: string }) {
                 </p>
               </div>
             )}
-          {demoMode && (
-            <div className="mx-4 mt-3 flex items-center gap-2 rounded border border-[var(--color-accent)] bg-[var(--color-accent-soft)] p-2 text-xs">
-              <Bot className="size-4 text-[var(--color-agent)]" />
-              <span className="flex-1">
-                <strong>Detection Engineering Agent</strong> is drafting Sigma
-                and KQL proposals…
-              </span>
-              <Badge className="agent-surface">Running · 01:18</Badge>
-            </div>
-          )}
+          <RoomAgentActivity
+            roomId={roomId}
+            roomResolved={roomResolved}
+            showDemoFallback={demoMode}
+          />
           {typingActors.length > 0 && (
             <div
               role="status"
