@@ -42,7 +42,10 @@ Published releases are available from GitHub Container Registry:
 docker pull ghcr.io/jusso-dev/muster:latest
 ```
 
-The default CI workflow publishes `latest`, version tags, and immutable SHA tags with SBOM and provenance on pushes to `main`. Its final publication gate logs out of GHCR and verifies an anonymous pull, so CI fails if the package is not public.
+The default CI workflow publishes multi-architecture `linux/amd64` and
+`linux/arm64` images as `latest`, version tags, and immutable SHA tags with SBOM
+and provenance on pushes to `main`. Its final publication gate logs out of GHCR
+and verifies an anonymous pull, so CI fails if the package is not public.
 
 For a single-node homelab installation that pulls the public image:
 
