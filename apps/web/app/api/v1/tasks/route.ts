@@ -5,6 +5,7 @@ import { TaskPrioritySchema, TaskStatusSchema } from "@muster/contracts";
 import { database, schema } from "@muster/database";
 import { z } from "zod";
 import { apiSubject, problemResponse, requestTraceId } from "@/lib/api-context";
+import { agentReadinessDirectory } from "@/lib/agent-readiness-domain";
 import { createTask } from "@/lib/task-domain";
 
 const CreateTaskSchema = z.object({
@@ -37,7 +38,14 @@ async function taskView(organisationId: string) {
   const runIds = rows
     .map((task) => task.agentRunId)
     .filter((id): id is string => Boolean(id));
-  const [actors, rooms, runs, availableAssignees, availableRooms] =
+  const [
+    actors,
+    rooms,
+    runs,
+    availableAssignees,
+    availableRooms,
+    readinessDirectory,
+  ] =
     await Promise.all([
       actorIds.length
         ? db
@@ -116,10 +124,14 @@ async function taskView(organisationId: string) {
         .from(schema.rooms)
         .where(eq(schema.rooms.organisationId, organisationId))
         .orderBy(asc(schema.rooms.displayName)),
+      agentReadinessDirectory(organisationId),
     ]);
   const actorById = new Map(actors.map((actor) => [actor.id, actor]));
   const roomById = new Map(rooms.map((room) => [room.id, room]));
   const runById = new Map(runs.map((run) => [run.id, run]));
+  const readinessByAgentId = new Map(
+    readinessDirectory.map((agent) => [agent.id, agent]),
+  );
   return {
     tasks: rows.map((task) => ({
       ...task,
@@ -131,7 +143,17 @@ async function taskView(organisationId: string) {
         ? redactForObservation(runById.get(task.agentRunId) ?? null)
         : null,
     })),
-    availableAssignees,
+    availableAssignees: availableAssignees.map((assignee) => {
+      const agent =
+        assignee.actorType === "agent"
+          ? readinessByAgentId.get(assignee.id)
+          : undefined;
+      return {
+        ...assignee,
+        description: agent?.description ?? null,
+        readiness: agent?.readiness ?? null,
+      };
+    }),
     availableRooms,
   };
 }

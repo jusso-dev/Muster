@@ -150,7 +150,7 @@ export function reduceAgentReadiness(
   }
   const evidence = parsed.data;
   const now = options.now ?? new Date();
-  const freshnessMs = options.freshnessMs ?? 60_000;
+  const freshnessMs = options.freshnessMs ?? 120_000;
   const newestEvidenceAt = Math.min(
     evidence.verifiedAt.getTime(),
     evidence.heartbeatAt.getTime(),

@@ -25,7 +25,7 @@ import {
   schema,
   TenantRepository,
 } from "@muster/database";
-import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 type AgentRunRow = typeof schema.agentRuns.$inferSelect;
@@ -49,6 +49,7 @@ class RunFailure extends Error {
 export type DurableAgentRuntimeOptions = {
   executionRuntime: "codex" | "mock";
   codexHome: string;
+  isAuthenticated?: () => Promise<boolean>;
   leaseMs?: number;
   pollMs?: number;
   mockDelayMs?: number;
@@ -63,6 +64,7 @@ export class DurableAgentRuntime {
   private pollTimer: NodeJS.Timeout | undefined;
   private dispatching = false;
   private stopping = false;
+  private lastReadinessSnapshotAt = 0;
 
   constructor(private readonly options: DurableAgentRuntimeOptions) {
     this.leaseMs = options.leaseMs ?? 30_000;
@@ -93,6 +95,16 @@ export class DurableAgentRuntime {
     if (this.dispatching) return;
     this.dispatching = true;
     try {
+      try {
+        await this.recordReadinessSnapshots();
+      } catch (error) {
+        jsonLog("warn", "agent.readiness.snapshot.failed", {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown readiness snapshot error",
+        });
+      }
       const candidates = await database()
         .select()
         .from(schema.agentRuns)
@@ -122,6 +134,122 @@ export class DurableAgentRuntime {
     } finally {
       this.dispatching = false;
     }
+  }
+
+  private async recordReadinessSnapshots() {
+    const now = new Date();
+    if (now.getTime() - this.lastReadinessSnapshotAt < 60_000) return;
+    const db = database();
+    const definitions = await db
+      .select({
+        id: schema.agentDefinitions.id,
+        organisationId: schema.agentDefinitions.organisationId,
+        runtime: schema.agentDefinitions.runtime,
+        model: schema.agentDefinitions.model,
+        status: schema.agentDefinitions.status,
+        killSwitch: schema.agentDefinitions.killSwitch,
+        allowedTools: schema.agentDefinitions.allowedTools,
+        requestedPermissionMode:
+          schema.agentDefinitions.requestedPermissionMode,
+      })
+      .from(schema.agentDefinitions);
+    if (definitions.length === 0) {
+      this.lastReadinessSnapshotAt = now.getTime();
+      return;
+    }
+    const activeRuns = await db
+      .select({ agentId: schema.agentRuns.agentId })
+      .from(schema.agentRuns)
+      .where(inArray(schema.agentRuns.status, ["queued", "running"]));
+    const activeAgentIds = new Set(activeRuns.map((run) => run.agentId));
+    let authenticationState: "reported" | "unavailable" | "unknown" =
+      this.options.executionRuntime === "mock" ? "reported" : "unknown";
+    if (this.options.executionRuntime === "codex") {
+      try {
+        authenticationState = (await this.options.isAuthenticated?.())
+          ? "reported"
+          : "unavailable";
+      } catch {
+        authenticationState = "unknown";
+      }
+    }
+
+    await db.insert(schema.agentReadinessSnapshots).values(
+      definitions.map((definition) => {
+        const allowedTools = Array.isArray(definition.allowedTools)
+          ? definition.allowedTools.filter(
+              (tool): tool is string => typeof tool === "string",
+            )
+          : [];
+        const toolSources = [
+          ...new Set(
+            allowedTools.map((tool) => tool.split(".")[0]).filter(Boolean),
+          ),
+        ];
+        const toolRiskClasses = [
+          ...new Set(
+            allowedTools.map((tool) =>
+              /kill|isolate|publish|create|update/i.test(tool)
+                ? "dangerous"
+                : /execute|hunt|query/i.test(tool)
+                  ? "execute"
+                  : "read",
+            ),
+          ),
+        ];
+        const requestedPermissionMode =
+          definition.requestedPermissionMode === "approval_gated"
+          || definition.requestedPermissionMode === "read_only"
+            ? definition.requestedPermissionMode
+            : "unknown";
+        return {
+          id: newId(),
+          organisationId: definition.organisationId,
+          agentId: definition.id,
+          processIdentity: this.workerId,
+          gatewayState: "reported",
+          authenticationState,
+          observerState: this.stopping ? "unavailable" : "reported",
+          lifecycleEvidenceState: "reported",
+          lifecycleState:
+            definition.status !== "active" || definition.killSwitch
+              ? "stopped"
+              : activeAgentIds.has(definition.id)
+                ? "running"
+                : "idle",
+          capabilityState: Array.isArray(definition.allowedTools)
+            ? "reported"
+            : "unknown",
+          toolState: Array.isArray(definition.allowedTools)
+            ? "reported"
+            : "unknown",
+          permissionState:
+            requestedPermissionMode === "unknown" ? "unknown" : "reported",
+          reportedRuntime:
+            this.options.executionRuntime === "codex"
+              ? "codex-subscription"
+              : "mock",
+          reportedProvider:
+            this.options.executionRuntime === "codex" ? "openai" : "synthetic",
+          reportedModel: definition.model,
+          inputCapabilities: ["task", "investigation", "room evidence"],
+          outputCapabilities: ["schema-valid security result"],
+          availableCommands: ["run", "cancel"],
+          toolSources,
+          toolRiskClasses,
+          requestedPermissionMode,
+          effectivePermissionMode: "read_only",
+          limitations: [
+            "Filesystem access is read-only",
+            "Network access is disabled",
+            "External actions remain approval-gated",
+          ],
+          heartbeatAt: now,
+          verifiedAt: now,
+        };
+      }),
+    );
+    this.lastReadinessSnapshotAt = now.getTime();
   }
 
   async read(runId: string) {

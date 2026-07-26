@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDatabase, database, newId, schema } from "@muster/database";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { DurableAgentRuntime } from "./runtime.ts";
 
 const integration = process.env.MUSTER_INTEGRATION_TESTS === "true";
@@ -197,6 +197,40 @@ describeIntegration("durable agent runtime", () => {
       .where(eq(schema.agentRuns.id, run.id))
       .limit(1);
     expect(JSON.stringify(persisted)).toContain(canary);
+  });
+
+  it("records allowlisted readiness evidence for the current gateway process", async () => {
+    const runtime = new DurableAgentRuntime({
+      executionRuntime: "mock",
+      codexHome: "/tmp/muster-runtime-integration",
+    });
+    await runtime.dispatch();
+    const [snapshot] = await database()
+      .select()
+      .from(schema.agentReadinessSnapshots)
+      .where(
+        and(
+          eq(schema.agentReadinessSnapshots.organisationId, organisationId),
+          eq(schema.agentReadinessSnapshots.agentId, agentId),
+        ),
+      )
+      .orderBy(desc(schema.agentReadinessSnapshots.verifiedAt))
+      .limit(1);
+
+    expect(snapshot).toMatchObject({
+      gatewayState: "reported",
+      authenticationState: "reported",
+      observerState: "reported",
+      lifecycleEvidenceState: "reported",
+      capabilityState: "reported",
+      toolState: "reported",
+      permissionState: "reported",
+      effectivePermissionMode: "read_only",
+    });
+    expect(snapshot?.processIdentity).toMatch(/^agent-gateway:/);
+    expect(JSON.stringify(snapshot)).not.toMatch(
+      /auth\\.json|CODEX_HOME|DATABASE_URL|api[_-]?key/i,
+    );
   });
 
   it("enforces the persisted deadline and records diagnostics", async () => {

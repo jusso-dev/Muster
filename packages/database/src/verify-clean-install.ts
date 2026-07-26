@@ -10,6 +10,7 @@ const operationalTables = {
   findings: schema.findings,
   decisions: schema.decisions,
   approvals: schema.approvals,
+  agentReadinessSnapshots: schema.agentReadinessSnapshots,
   agentRuns: schema.agentRuns,
   agentRunEvents: schema.agentRunEvents,
   agentRunSources: schema.agentRunSources,

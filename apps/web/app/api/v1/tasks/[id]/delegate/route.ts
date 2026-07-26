@@ -9,6 +9,7 @@ import {
   problemResponse,
   requestTraceId,
 } from "@/lib/api-context";
+import { agentReadinessEntry } from "@/lib/agent-readiness-domain";
 import { queueAgentRun } from "@/lib/task-domain";
 
 export async function POST(
@@ -82,6 +83,18 @@ export async function POST(
         409,
         "Agent unavailable",
         "Task assignee is not an active agent.",
+      );
+    }
+    const readiness = await agentReadinessEntry(
+      subject.organisationId,
+      agent.id,
+    );
+    if (!readiness || readiness.readiness.state !== "ready") {
+      throw new ApiProblem(
+        409,
+        "Agent not ready",
+        readiness?.readiness.reason
+          ?? "Agent readiness evidence is unavailable.",
       );
     }
 

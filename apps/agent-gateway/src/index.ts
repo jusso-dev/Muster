@@ -27,6 +27,7 @@ const globalKillSwitch = process.env.AGENT_KILL_SWITCH === "true";
 const runtime = new DurableAgentRuntime({
   executionRuntime,
   codexHome,
+  isAuthenticated: codexAuthenticated,
   leaseMs: Number(process.env.MUSTER_AGENT_LEASE_MS ?? 30_000),
   pollMs: Number(process.env.MUSTER_AGENT_POLL_MS ?? 1_000),
 });
