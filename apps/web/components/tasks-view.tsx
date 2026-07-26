@@ -36,6 +36,11 @@ type BoardAssignee = {
   id: string;
   displayName: string;
   actorType: "human" | "agent";
+  description: string | null;
+  readiness: {
+    state: "ready" | "needs_attention" | "unknown";
+    reason: string;
+  } | null;
 };
 type BoardRoom = { id: string; slug: string; displayName: string };
 type AgentRun = {
@@ -111,6 +116,19 @@ function priorityClass(priority: TaskPriority) {
   if (priority === "high") return "severity-high";
   if (priority === "low") return "severity-low";
   return "bg-muted text-muted-foreground";
+}
+
+function agentReadinessLabel(
+  state: "ready" | "needs_attention" | "unknown",
+) {
+  if (state === "ready") return "Ready";
+  if (state === "needs_attention") return "Needs attention";
+  return "Unknown";
+}
+
+function shortRole(value: string | null) {
+  if (!value) return "";
+  return value.length > 72 ? `${value.slice(0, 71)}…` : value;
 }
 
 function toLocalDateTime(value: string | null) {
@@ -219,6 +237,9 @@ export function TasksView() {
         return matchesText && matchesActor;
       }),
     [filter, query, tasks],
+  );
+  const selectedAssignee = assignees.find(
+    (assignee) => assignee.id === form.assignedActorId,
   );
 
   function resetComposer() {
@@ -491,9 +512,27 @@ export function TasksView() {
                 <option key={actor.id} value={actor.id}>
                   {actor.actorType === "agent" ? "Agent: " : "Person: "}
                   {actor.displayName}
+                  {actor.actorType === "agent" && actor.readiness
+                    ? ` — ${agentReadinessLabel(actor.readiness.state)}`
+                    : ""}
+                  {actor.description
+                    ? ` — ${shortRole(actor.description)}`
+                    : ""}
                 </option>
               ))}
             </select>
+            {selectedAssignee?.actorType === "agent"
+              && selectedAssignee.readiness && (
+              <p className="text-xs leading-5 text-muted-foreground">
+                <strong>
+                  {agentReadinessLabel(selectedAssignee.readiness.state)}
+                </strong>
+                {" · "}
+                {selectedAssignee.description}
+                {" · "}
+                {selectedAssignee.readiness.reason}
+              </p>
+            )}
           </label>
           <div className="space-y-1 desktop:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -663,7 +702,9 @@ export function TasksView() {
                               </p>
                               <p className="text-xs text-muted-foreground">
                                 {agent
-                                  ? "Agent assignee"
+                                  ? task.assignee?.readiness
+                                    ? `${agentReadinessLabel(task.assignee.readiness.state)} · ${task.assignee.description ?? "Agent assignee"}`
+                                    : "Agent readiness unknown"
                                   : task.assignee
                                     ? "Human assignee"
                                     : "No assignee"}
@@ -829,7 +870,15 @@ export function TasksView() {
                                 <Button
                                   size="sm"
                                   className="ml-auto"
-                                  disabled={pendingTaskId === task.id}
+                                  disabled={
+                                    pendingTaskId === task.id
+                                    || task.assignee?.readiness?.state
+                                      !== "ready"
+                                  }
+                                  title={
+                                    task.assignee?.readiness?.reason
+                                    ?? "Agent readiness evidence is unavailable."
+                                  }
                                   onClick={() =>
                                     void runAction(task, "delegate")
                                   }

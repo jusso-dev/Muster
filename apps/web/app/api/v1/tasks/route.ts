@@ -136,7 +136,19 @@ async function taskView(organisationId: string) {
     tasks: rows.map((task) => ({
       ...task,
       assignee: task.assignedActorId
-        ? (actorById.get(task.assignedActorId) ?? null)
+        ? (() => {
+            const actor = actorById.get(task.assignedActorId);
+            if (!actor) return null;
+            const agent =
+              actor.actorType === "agent"
+                ? readinessByAgentId.get(actor.id)
+                : undefined;
+            return {
+              ...actor,
+              description: agent?.description ?? null,
+              readiness: agent?.readiness ?? null,
+            };
+          })()
         : null,
       room: task.roomId ? (roomById.get(task.roomId) ?? null) : null,
       run: task.agentRunId

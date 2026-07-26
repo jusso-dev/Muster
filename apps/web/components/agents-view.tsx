@@ -3,10 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
-  Activity,
   Bot,
   BrainCircuit,
-  CircleStop,
   FileDiff,
   RefreshCcw,
   Search,
@@ -18,13 +16,115 @@ import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { demoAgents, demoMode } from "@/lib/demo-data";
+
+type EvidenceState = "reported" | "unavailable" | "unknown";
+type AgentReadiness = {
+  state: "ready" | "needs_attention" | "unknown";
+  reason: string;
+  freshness: "fresh" | "stale" | "unknown";
+  verifiedAt: string | null;
+  ageSeconds: number | null;
+  process: { current: boolean | null };
+  lifecycle: { evidence: EvidenceState; state: string };
+  evidence: {
+    gateway: EvidenceState;
+    authentication: EvidenceState;
+    observer: EvidenceState;
+    capabilities: EvidenceState;
+    tools: EvidenceState;
+    permissions: EvidenceState;
+  };
+  permissions: {
+    requested: string;
+    effective: string;
+    diverges: boolean | null;
+  };
+  reported: {
+    runtime: string | null;
+    provider: string | null;
+    model: string | null;
+    inputCapabilities: string[];
+    outputCapabilities: string[];
+    availableCommands: string[];
+    toolSources: string[];
+    toolRiskClasses: string[];
+    limitations: string[];
+  };
+};
+
+type DirectoryAgent = {
+  id: string;
+  name: string;
+  description: string;
+  initials: string;
+  configuredRuntime: string;
+  configuredModel: string;
+  owner: string;
+  status: string;
+  killSwitch: boolean;
+  roomCount: number;
+  allowedToolCount: number;
+  readiness: AgentReadiness;
+};
+
+function readinessLabel(state: AgentReadiness["state"]) {
+  if (state === "ready") return "Ready";
+  if (state === "needs_attention") return "Needs attention";
+  return "Unknown";
+}
+
+function readinessClass(state: AgentReadiness["state"]) {
+  if (state === "ready")
+    return "success-surface text-[var(--color-success)]";
+  if (state === "needs_attention")
+    return "approval-surface text-[var(--color-warning)]";
+  return "bg-muted text-muted-foreground";
+}
+
+function verificationAge(readiness: AgentReadiness) {
+  if (readiness.ageSeconds === null) return "Not verified";
+  if (readiness.ageSeconds < 60) return `${readiness.ageSeconds}s ago`;
+  return `${Math.floor(readiness.ageSeconds / 60)}m ago`;
+}
 
 export function AgentsView() {
   const [query, setQuery] = useState("");
-  const agents = demoAgents.filter((agent) =>
+  const [directory, setDirectory] = useState<DirectoryAgent[]>([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    void fetch("/api/v1/agents", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          data?: DirectoryAgent[];
+          detail?: string;
+        };
+        if (!response.ok || !payload.data) {
+          throw new Error(payload.detail ?? "Agent directory unavailable");
+        }
+        setDirectory(payload.data);
+      })
+      .catch((reason) =>
+        setError(
+          reason instanceof Error ? reason.message : "Agent directory failed",
+        ),
+      )
+      .finally(() => setLoading(false));
+  }, []);
+
+  const agents = directory.filter((agent) =>
     agent.name.toLowerCase().includes(query.toLowerCase()),
   );
+  const gatewayState = directory.some(
+    (agent) => agent.readiness.evidence.gateway === "reported",
+  )
+    ? "reported"
+    : directory.some(
+          (agent) => agent.readiness.evidence.gateway === "unavailable",
+        )
+      ? "unavailable"
+      : "unknown";
   return (
     <AppShell>
       <PageHeader
@@ -49,12 +149,28 @@ export function AgentsView() {
             className="min-w-0 flex-1 bg-transparent text-xs outline-none"
           />
         </label>
-        <Badge className="success-surface text-[var(--color-success)]">
-          Gateway healthy
+        <Badge
+          className={
+            gatewayState === "reported"
+              ? "success-surface text-[var(--color-success)]"
+              : gatewayState === "unavailable"
+                ? "error-surface text-[var(--color-error)]"
+                : "bg-muted text-muted-foreground"
+          }
+        >
+          Gateway {gatewayState}
         </Badge>
       </div>
       <div className="scroll-region min-h-0 flex-1 overflow-y-auto p-3 tablet:p-5">
         <div className="mx-auto grid max-w-7xl gap-3 tablet:grid-cols-2 wide:grid-cols-3">
+          {loading && (
+            <p className="text-xs text-muted-foreground">
+              Loading authorised agent readiness…
+            </p>
+          )}
+          {error && (
+            <p className="text-xs text-[var(--color-error)]">{error}</p>
+          )}
           {agents.map((agent) => (
             <Link
               key={agent.id}
@@ -70,8 +186,8 @@ export function AgentsView() {
                     </h2>
                     <Badge className="agent-surface">Agent</Badge>
                   </div>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    {agent.purpose}
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                    {agent.description}
                   </p>
                 </div>
               </div>
@@ -79,35 +195,35 @@ export function AgentsView() {
                 <div>
                   <dt className="text-muted-foreground">Runtime</dt>
                   <dd className="mt-0.5 truncate font-semibold">
-                    {agent.runtime}
+                    {agent.configuredRuntime}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Model</dt>
-                  <dd className="mono mt-0.5 truncate">{agent.model}</dd>
+                  <dd className="mono mt-0.5 truncate">
+                    {agent.configuredModel}
+                  </dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">Last run</dt>
-                  <dd className="mt-0.5 font-semibold">{agent.lastRun}</dd>
+                  <dt className="text-muted-foreground">Readiness</dt>
+                  <dd className="mt-0.5">
+                    <Badge className={readinessClass(agent.readiness.state)}>
+                      {readinessLabel(agent.readiness.state)}
+                    </Badge>
+                  </dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">Success</dt>
-                  <dd className="mt-0.5 font-semibold">{agent.successRate}</dd>
+                  <dt className="text-muted-foreground">Verified</dt>
+                  <dd className="mt-0.5 font-semibold">
+                    {verificationAge(agent.readiness)}
+                  </dd>
                 </div>
               </dl>
               <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
                 <span>
-                  {agent.tools.length} tools · {agent.rooms} rooms
+                  {agent.allowedToolCount} tools · {agent.roomCount} rooms
                 </span>
-                <span
-                  className={
-                    agent.status === "running"
-                      ? "text-[var(--color-agent)]"
-                      : "text-[var(--color-success)]"
-                  }
-                >
-                  {agent.status}
-                </span>
+                <span>{agent.readiness.reason}</span>
               </div>
             </Link>
           ))}
@@ -137,46 +253,78 @@ export function AgentDetailView({
   agentId: string;
   tab?: string;
 }) {
-  const agent =
-    demoAgents.find((candidate) => candidate.id === agentId) ?? demoAgents[0]!;
+  const [agent, setAgent] = useState<DirectoryAgent | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setAgent(null);
+    setError("");
+    void fetch(`/api/v1/agents/${agentId}/readiness`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          data?: DirectoryAgent;
+          detail?: string;
+        };
+        if (!response.ok || !payload.data) {
+          throw new Error(payload.detail ?? "Agent readiness unavailable");
+        }
+        setAgent(payload.data);
+      })
+      .catch((reason) =>
+        setError(
+          reason instanceof Error ? reason.message : "Agent readiness failed",
+        ),
+      );
+  }, [agentId]);
+
+  if (!agent) {
+    return (
+      <AppShell>
+        <PageHeader
+          eyebrow="Agent"
+          title="Agent readiness"
+          description="Loading authorised runtime evidence"
+        />
+        <div className="p-6 text-xs text-muted-foreground">
+          {error || "Loading…"}
+        </div>
+      </AppShell>
+    );
+  }
   return (
     <AppShell>
       <PageHeader
         eyebrow="Agent"
         title={agent.name}
-        description={`${agent.runtime} · ${agent.model} · owned by ${agent.owner}`}
+        description={`${agent.configuredRuntime} · ${agent.configuredModel} · owned by ${agent.owner}`}
         actions={
-          <>
-            {demoMode && (
-              <Button
-                variant="outline"
-                disabled
-                title="Run cancellation is not available yet"
-              >
-                <CircleStop />
-                Cancel active run
-              </Button>
-            )}
-            <Button disabled title="Assign work from Tasks">
-              <Bot />
-              Invoke
-            </Button>
-          </>
+          <Button
+            disabled
+            title={
+              agent.readiness.state === "ready"
+                ? "Assign work from Tasks"
+                : agent.readiness.reason
+            }
+          >
+            <Bot />
+            Invoke
+          </Button>
         }
       />
       <div className="flex items-center gap-3 border-b bg-[var(--color-paper-2)] px-4 py-3">
         <Avatar initials={agent.initials} agent size="lg" />
         <Badge className="agent-surface">Agent</Badge>
-        <Badge className="success-surface text-[var(--color-success)]">
-          Active
+        <Badge className={readinessClass(agent.readiness.state)}>
+          {readinessLabel(agent.readiness.state)}
         </Badge>
         <span className="text-xs text-muted-foreground">
-          {demoMode
-            ? `${agent.successRate} success · last run ${agent.lastRun}`
-            : "No runs yet"}
+          {agent.readiness.reason} · verified{" "}
+          {verificationAge(agent.readiness)}
         </span>
         <Badge className="ml-auto bg-muted text-muted-foreground">
-          Kill switch off
+          Kill switch {agent.killSwitch ? "on" : "off"}
         </Badge>
       </div>
       <nav className="scroll-region flex overflow-x-auto border-b px-3">
@@ -198,10 +346,8 @@ export function AgentDetailView({
         <div className="mx-auto max-w-6xl">
           {tab === "learning" ? (
             <GovernedLearningPanel agentId={agentId} />
-          ) : demoMode ? (
-            <AgentOverview />
           ) : (
-            <CleanAgentOverview purpose={agent.purpose} />
+            <AgentOverview agent={agent} />
           )}
         </div>
       </div>
@@ -209,28 +355,126 @@ export function AgentDetailView({
   );
 }
 
-function CleanAgentOverview({ purpose }: { purpose: string }) {
+function AgentOverview({ agent }: { agent: DirectoryAgent }) {
+  const evidence = Object.entries(agent.readiness.evidence);
   return (
     <div className="grid gap-4 tablet:grid-cols-[minmax(0,1fr)_20rem]">
-      <section className="border bg-card p-4">
-        <h2 className="font-display text-sm font-bold">Purpose</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          {purpose}
-        </p>
-        <div className="mt-6 border border-dashed p-8 text-center">
-          <Activity className="mx-auto size-5 text-muted-foreground" />
-          <h3 className="mt-3 text-sm font-bold">No runs yet</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Assign a task or invoke this agent to create the first audited run.
+      <div className="space-y-4">
+        <section className="border bg-card p-4">
+          <h2 className="font-display text-sm font-bold">Purpose</h2>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            {agent.description}
           </p>
-        </div>
-      </section>
+        </section>
+        <section className="border bg-card p-4">
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Delegation readiness
+              </p>
+              <h2 className="mt-1 font-display text-lg font-bold">
+                {readinessLabel(agent.readiness.state)}
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {agent.readiness.reason}
+              </p>
+            </div>
+            <Badge className={readinessClass(agent.readiness.state)}>
+              {agent.readiness.freshness}
+            </Badge>
+          </div>
+          <details className="mt-4 border-t pt-3">
+            <summary className="cursor-pointer text-xs font-semibold">
+              Capabilities, permissions, and verification details
+            </summary>
+            <dl className="mt-3 grid gap-3 text-xs tablet:grid-cols-2">
+              <div>
+                <dt className="text-muted-foreground">Requested permission</dt>
+                <dd className="mt-0.5 font-semibold">
+                  {agent.readiness.permissions.requested}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Effective permission</dt>
+                <dd className="mt-0.5 font-semibold">
+                  {agent.readiness.permissions.effective}
+                  {agent.readiness.permissions.diverges ? " · differs" : ""}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Reported runtime</dt>
+                <dd>{agent.readiness.reported.runtime ?? "unknown"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Provider / model</dt>
+                <dd>
+                  {agent.readiness.reported.provider ?? "unknown"} /{" "}
+                  {agent.readiness.reported.model ?? "unknown"}
+                </dd>
+              </div>
+            </dl>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {evidence.map(([name, state]) => (
+                <Badge
+                  key={name}
+                  className={
+                    state === "reported"
+                      ? "success-surface text-[var(--color-success)]"
+                      : state === "unavailable"
+                        ? "error-surface text-[var(--color-error)]"
+                        : "bg-muted text-muted-foreground"
+                  }
+                >
+                  {name}: {state}
+                </Badge>
+              ))}
+            </div>
+            <div className="mt-4 grid gap-3 text-xs tablet:grid-cols-2">
+              {[
+                [
+                  "Inputs",
+                  agent.readiness.reported.inputCapabilities,
+                ],
+                [
+                  "Outputs",
+                  agent.readiness.reported.outputCapabilities,
+                ],
+                ["Commands", agent.readiness.reported.availableCommands],
+                ["Tool sources", agent.readiness.reported.toolSources],
+                ["Tool risk", agent.readiness.reported.toolRiskClasses],
+                ["Known limits", agent.readiness.reported.limitations],
+              ].map(([label, values]) => (
+                <div key={label as string}>
+                  <h3 className="font-semibold">{label as string}</h3>
+                  <p className="mt-1 leading-5 text-muted-foreground">
+                    {(values as string[]).join(", ") || "unknown"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </details>
+        </section>
+      </div>
       <aside className="border bg-card p-3">
-        <h2 className="font-display text-sm font-bold">Boundaries</h2>
-        <p className="mt-3 text-xs leading-5 text-muted-foreground">
-          Tools are capability-scoped. External actions require the configured
-          human approval policy.
-        </p>
+        <h2 className="font-display text-sm font-bold">Configured boundary</h2>
+        <dl className="mt-3 space-y-3 text-xs">
+          <div>
+            <dt className="text-muted-foreground">Runtime</dt>
+            <dd>{agent.configuredRuntime}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Model</dt>
+            <dd>{agent.configuredModel}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Allowed tools</dt>
+            <dd>{agent.allowedToolCount}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Allowed rooms</dt>
+            <dd>{agent.roomCount}</dd>
+          </div>
+        </dl>
       </aside>
     </div>
   );
@@ -247,89 +491,6 @@ function CleanLearningPanel() {
         Evidence-linked notes and skill proposals appear after reviewed runs.
         Publication always requires evaluation and human approval.
       </p>
-    </div>
-  );
-}
-
-function AgentOverview() {
-  return (
-    <div className="grid gap-4 tablet:grid-cols-[minmax(0,1fr)_20rem]">
-      <div className="space-y-4">
-        <section className="border bg-card p-4">
-          <h2 className="font-display text-sm font-bold">Purpose</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Correlates alert evidence, searches prior organisational security
-            memory, and returns a typed disposition recommendation. It cannot
-            execute response actions.
-          </p>
-        </section>
-        <section className="border bg-card">
-          <div className="border-b px-3 py-2.5">
-            <h2 className="font-display text-sm font-bold">Recent runs</h2>
-          </div>
-          {[
-            [
-              "RUN-1048",
-              "Legacy portal credential access",
-              "Completed",
-              "3 min ago",
-              "94%",
-            ],
-            [
-              "RUN-1041",
-              "Impossible travel triage",
-              "Completed",
-              "41 min ago",
-              "87%",
-            ],
-            ["RUN-1038", "Bower policy drift", "Failed", "2 h ago", "—"],
-          ].map(([id, title, status, time, confidence]) => (
-            <div
-              key={id}
-              className="grid grid-cols-[1fr_auto] gap-3 border-b p-3 last:border-0 tablet:grid-cols-[6rem_1fr_6rem_6rem_4rem]"
-            >
-              <code className="text-xs">{id}</code>
-              <p className="text-xs font-semibold">{title}</p>
-              <Badge
-                className={
-                  status === "Completed"
-                    ? "success-surface text-[var(--color-success)]"
-                    : "error-surface text-[var(--color-error)]"
-                }
-              >
-                {status}
-              </Badge>
-              <span className="hidden text-xs text-muted-foreground tablet:block">
-                {time}
-              </span>
-              <span className="hidden text-xs tablet:block">{confidence}</span>
-            </div>
-          ))}
-        </section>
-      </div>
-      <aside className="space-y-4">
-        <section className="border bg-card p-3">
-          <h2 className="font-display text-sm font-bold">Boundaries</h2>
-          <dl className="mt-3 space-y-3 text-xs">
-            <div>
-              <dt className="text-muted-foreground">Runtime limit</dt>
-              <dd>5 minutes</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Token budget</dt>
-              <dd>20,000</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Cost ceiling</dt>
-              <dd>AUD $5.00</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Classification</dt>
-              <dd>Internal, restricted</dd>
-            </div>
-          </dl>
-        </section>
-      </aside>
     </div>
   );
 }

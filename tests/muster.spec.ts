@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { database, newId, schema } from "@muster/database";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { login } from "./helpers";
 
 test("local administrator can sign in", async ({ page }) => {
@@ -275,6 +275,146 @@ test("agent learning is evidence-backed and approval gated", async ({
   await expect(
     proposal.getByText("rolled_back", { exact: true }),
   ).toBeVisible();
+});
+
+test("agent readiness distinguishes ready, attention, unknown, and unauthorised views", async ({
+  page,
+  playwright,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium");
+  const db = database();
+  const definitions = await db
+    .select()
+    .from(schema.agentDefinitions)
+    .limit(3);
+  if (definitions.length < 3) {
+    throw new Error("Three synthetic agent definitions required");
+  }
+  const processIdentity = `synthetic-readiness-process-${newId()}`;
+  const verifiedAt = new Date(Date.now() + 5 * 60_000);
+  const snapshotIds = definitions.map(() => newId());
+
+  try {
+    await db.insert(schema.agentReadinessSnapshots).values(
+      definitions.map((definition, index) => {
+        const requestedPermissionMode =
+          definition.requestedPermissionMode === "approval_gated"
+            ? "approval_gated"
+            : "read_only";
+        return {
+          id: snapshotIds[index]!,
+          organisationId: definition.organisationId,
+          agentId: definition.id,
+          processIdentity,
+          gatewayState: index === 2 ? "unknown" : "reported",
+          authenticationState: "reported",
+          observerState: "reported",
+          lifecycleEvidenceState: "reported",
+          lifecycleState: "idle",
+          capabilityState: "reported",
+          toolState: "reported",
+          permissionState: "reported",
+          reportedRuntime: "mock",
+          reportedProvider: "synthetic",
+          reportedModel: "synthetic-readiness-model",
+          inputCapabilities: ["task", "investigation"],
+          outputCapabilities: ["schema-valid security result"],
+          availableCommands: ["run", "cancel"],
+          toolSources: ["synthetic"],
+          toolRiskClasses: ["read"],
+          requestedPermissionMode,
+          effectivePermissionMode:
+            index === 1
+              ? requestedPermissionMode === "read_only"
+                ? "approval_gated"
+                : "read_only"
+              : requestedPermissionMode,
+          limitations: ["Synthetic browser evidence only"],
+          heartbeatAt: verifiedAt,
+          verifiedAt,
+        };
+      }),
+    );
+
+    await page.goto("/agents");
+    await expect(
+      page.getByRole("heading", { name: "Agent directory" }),
+    ).toBeVisible();
+    const expectedStates = ["Ready", "Needs attention", "Unknown"];
+    for (const [index, definition] of definitions.entries()) {
+      const card = page
+        .getByRole("link")
+        .filter({ has: page.getByRole("heading", { name: definition.name }) });
+      await expect(card.getByText(expectedStates[index]!, { exact: true }))
+        .toBeVisible();
+      await expect(card).toContainText(definition.description);
+    }
+
+    await page.goto(`/agents/${definitions[0]!.id}`);
+    await expect(
+      page.getByRole("heading", { name: definitions[0]!.name }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Ready", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByText("Capabilities, permissions, and verification details")
+      .click();
+    await expect(page.getByText("Requested permission")).toBeVisible();
+    await expect(page.getByText("Effective permission")).toBeVisible();
+    await expect(page.getByText("gateway: reported")).toBeVisible();
+
+    await page.goto(`/agents/${definitions[1]!.id}`);
+    await expect(
+      page.getByRole("heading", { name: "Needs attention", exact: true }),
+    ).toBeVisible();
+  await expect(
+    page.getByText("Requested and effective permission modes diverge.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+
+    await page.goto(`/agents/${definitions[2]!.id}`);
+    await expect(
+      page.getByRole("heading", { name: "Unknown", exact: true }),
+    ).toBeVisible();
+  await expect(
+    page.getByText("Required runtime evidence is unknown.", { exact: true }),
+  ).toBeVisible();
+
+    await page.goto("/tasks");
+    await page.getByRole("button", { name: "New task" }).click();
+    const readyOption = page
+      .getByLabel("Assign to")
+      .locator(`option[value="${definitions[0]!.id}"]`);
+    await expect(readyOption).toContainText("Ready");
+    await expect(readyOption).toContainText(
+      definitions[0]!.description.slice(0, 30),
+    );
+
+    const baseURL = testInfo.project.use.baseURL?.toString();
+    if (!baseURL) throw new Error("Playwright baseURL required");
+    const anonymous = await playwright.request.newContext({
+      baseURL,
+      storageState: { cookies: [], origins: [] },
+    });
+    try {
+      expect((await anonymous.get("/api/v1/agents")).status()).toBe(401);
+      expect(
+        (
+          await anonymous.get(
+            `/api/v1/agents/${definitions[0]!.id}/readiness`,
+          )
+        ).status(),
+      ).toBe(401);
+    } finally {
+      await anonymous.dispose();
+    }
+  } finally {
+    await db
+      .delete(schema.agentReadinessSnapshots)
+      .where(inArray(schema.agentReadinessSnapshots.id, snapshotIds));
+  }
 });
 
 test("task board manages durable agent work end to end", async ({
