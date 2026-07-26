@@ -74,3 +74,38 @@ test("deployed user can send and reload a durable room message", async ({
     await attachDiagnostics();
   }
 });
+
+test("deployed user uploads governed evidence and reloads its message", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium");
+  const attachDiagnostics = collectSanitisedDiagnostics(page, testInfo);
+  const suffix = `${Date.now()}`;
+  const fileName = `synthetic-homelab-evidence-${suffix}.txt`;
+  const message = `Synthetic homelab evidence ${suffix}`;
+
+  try {
+    await page.goto("/rooms/investigation-suspicious-powershell");
+    await expect(page.getByTestId("room-presence")).toHaveText("1 present");
+    await page.getByLabel("Choose evidence files").setInputFiles({
+      name: fileName,
+      mimeType: "text/plain",
+      buffer: Buffer.from(`Synthetic homelab evidence payload ${suffix}`),
+    });
+    await expect(page.getByText("Stored · pending scan")).toBeVisible();
+    await page.locator(".tiptap").fill(message);
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+
+    const posted = page.getByRole("article").filter({ hasText: message });
+    await expect(posted.getByText(fileName)).toBeVisible();
+    await expect(
+      posted.getByText("Stored evidence · pending scan"),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByRole("article").filter({ hasText: message }).getByText(fileName),
+    ).toBeVisible();
+  } finally {
+    await attachDiagnostics();
+  }
+});
