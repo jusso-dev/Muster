@@ -302,9 +302,11 @@ test("two deployed identities complete critical collaboration work", async ({
         request.method() === "POST" && request.url().endsWith("/messages"),
     );
     await first.getByRole("button", { name: "Retry" }).click();
-    const retryRequestBody = (await retryRequest).postDataJSON() as ReturnType<
+    const retriedRequest = await retryRequest;
+    const retryRequestBody = retriedRequest.postDataJSON() as ReturnType<
       typeof messageBody
     >;
+    expect((await retriedRequest.response())?.ok()).toBe(true);
     expect(retryRequestBody.idempotencyKey).toBe(retryBody?.idempotencyKey);
     await expect(first.getByText(retryText).last()).toBeVisible();
 
@@ -400,7 +402,7 @@ test("mobile room work uses explicit send and survives reload", async ({
 
   await page.goto("/");
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("link", { name: /SOC operations/i }).click();
+  await page.locator('a[href="/rooms/soc-operations"]').first().click();
   const message = `Synthetic mobile critical ${Date.now()}`;
   const composer = page.locator(".tiptap");
   await composer.fill(message);
