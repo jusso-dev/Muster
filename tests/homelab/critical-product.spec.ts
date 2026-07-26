@@ -323,7 +323,7 @@ test("two deployed identities complete critical collaboration work", async ({
         request.method() === "POST" && request.url().endsWith("/messages"),
     );
     await first.locator(".tiptap").fill(refreshText);
-    await first.getByRole("button", { name: "Send message" }).click();
+    await first.getByRole("button", { name: "Send", exact: true }).click();
     const refreshBody = (await refreshRequest).postDataJSON() as ReturnType<
       typeof messageBody
     >;
