@@ -107,6 +107,9 @@ importers:
       '@muster/event-protocol':
         specifier: workspace:*
         version: link:../../packages/event-protocol
+      '@muster/evidence':
+        specifier: workspace:*
+        version: link:../../packages/evidence
       '@muster/investigations':
         specifier: workspace:*
         version: link:../../packages/investigations

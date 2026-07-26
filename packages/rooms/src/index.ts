@@ -130,7 +130,10 @@ export function sanitiseMessageDocument(input: unknown) {
         };
       } else if (source.type === "reference" || source.type === "attachment") {
         node.attrs = {
-          id: z.string().max(300).parse(attrs.id),
+          id:
+            source.type === "attachment"
+              ? z.uuid().parse(attrs.id)
+              : z.string().max(300).parse(attrs.id),
           label: z.string().max(300).parse(attrs.label),
         };
       }
@@ -145,6 +148,26 @@ export function sanitiseMessageDocument(input: unknown) {
 }
 
 const MessageDocumentSchema = z.unknown().transform(sanitiseMessageDocument);
+
+function attachmentIds(document: Record<string, unknown>) {
+  const ids = new Set<string>();
+  function visit(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const node = value as Record<string, unknown>;
+    if (
+      node.type === "attachment" &&
+      node.attrs &&
+      typeof node.attrs === "object" &&
+      !Array.isArray(node.attrs)
+    ) {
+      const id = (node.attrs as Record<string, unknown>).id;
+      if (typeof id === "string") ids.add(id);
+    }
+    if (Array.isArray(node.content)) node.content.forEach(visit);
+  }
+  visit(document);
+  return [...ids];
+}
 
 export const PostMessageSchema = z.object({
   roomId: z.string().uuid(),
@@ -203,6 +226,8 @@ export const MarkRoomReadSchema = z.object({
 
 export const RoomNotificationSchema = z.object({
   notificationLevel: z.enum(["all", "mentions", "nothing"]),
+  notifyReplies: z.boolean(),
+  notifyFollowedThreads: z.boolean(),
   muted: z.boolean(),
 });
 
@@ -530,10 +555,8 @@ export class RoomService {
   ) {
     requireCapability(subject, "messages.create");
     const parsed = PostMessageSchema.parse(input);
-    if (
-      JSON.stringify(parsed.document).includes('"type":"attachment"') &&
-      !hasCapability(subject, "evidence.upload")
-    ) {
+    const attachments = attachmentIds(parsed.document);
+    if (attachments.length > 0 && !hasCapability(subject, "evidence.upload")) {
       throw new Error("Attachment upload capability required");
     }
     const mentionRecords = Array.from(
@@ -583,6 +606,22 @@ export class RoomService {
         )
         .limit(1);
       if (!membership) throw new Error("Room membership required");
+      if (attachments.length > 0) {
+        const governedAttachments = await tx
+          .select({ id: schema.evidence.id })
+          .from(schema.evidence)
+          .where(
+            and(
+              eq(schema.evidence.organisationId, subject.organisationId),
+              eq(schema.evidence.relatedRoomId, parsed.roomId),
+              inArray(schema.evidence.id, attachments),
+              inArray(schema.evidence.scanState, ["pending", "clean"]),
+            ),
+          );
+        if (governedAttachments.length !== attachments.length) {
+          throw new Error("Attachment unavailable in room");
+        }
+      }
 
       const existing = await tx.query.messages.findFirst({
         where: and(
@@ -1138,6 +1177,8 @@ export class RoomService {
       .returning({
         roomId: schema.roomMemberships.roomId,
         notificationLevel: schema.roomMemberships.notificationLevel,
+        notifyReplies: schema.roomMemberships.notifyReplies,
+        notifyFollowedThreads: schema.roomMemberships.notifyFollowedThreads,
         muted: schema.roomMemberships.muted,
       });
     if (!membership) throw new Error("Room membership required");
@@ -1150,6 +1191,8 @@ export class RoomService {
       .select({
         roomId: schema.roomMemberships.roomId,
         notificationLevel: schema.roomMemberships.notificationLevel,
+        notifyReplies: schema.roomMemberships.notifyReplies,
+        notifyFollowedThreads: schema.roomMemberships.notifyFollowedThreads,
         muted: schema.roomMemberships.muted,
       })
       .from(schema.roomMemberships)

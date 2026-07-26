@@ -1,4 +1,9 @@
-import { request as playwrightRequest, expect, test } from "@playwright/test";
+import {
+  request as playwrightRequest,
+  expect,
+  test,
+  type Locator,
+} from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { database, newId, schema } from "@muster/database";
 import { count, eq } from "drizzle-orm";
@@ -71,6 +76,7 @@ test("two authenticated sessions complete the durable room lifecycle", async ({
       expect(first.getByText("Live", { exact: true })).toBeVisible(),
       expect(second.getByText("Live", { exact: true })).toBeVisible(),
     ]);
+    await expect(first.getByTestId("room-presence")).toHaveText("2 present");
 
     const message = `Synthetic two-session message ${Date.now()}`;
     const firstComposer = first.locator(".tiptap");
@@ -118,11 +124,37 @@ test("two authenticated sessions complete the durable room lifecycle", async ({
     await expect(first).toHaveURL(/thread=/);
     await first.getByRole("button", { name: "Close thread" }).click();
     const notifications = first.getByLabel("Notifications", { exact: true });
-    await notifications.selectOption("mentions");
+    const waitForNotificationSave = () =>
+      first.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response.url().endsWith(`/rooms/${room.id}/notifications`),
+      );
+    if ((await notifications.inputValue()) !== "mentions") {
+      const notificationSave = waitForNotificationSave();
+      await notifications.selectOption("mentions");
+      await notificationSave;
+    }
+    const replyNotifications = first.getByLabel("Replies to my messages");
+    const followedThreadNotifications = first.getByLabel(
+      "Activity in followed threads",
+    );
+    async function setNotificationCheckbox(locator: Locator, checked: boolean) {
+      if ((await locator.isChecked()) === checked) return;
+      const notificationSave = waitForNotificationSave();
+      await locator.setChecked(checked);
+      await notificationSave;
+    }
+    await setNotificationCheckbox(replyNotifications, false);
+    await setNotificationCheckbox(followedThreadNotifications, false);
     await first.reload();
     await expect(
       first.getByLabel("Notifications", { exact: true }),
     ).toHaveValue("mentions");
+    await expect(first.getByLabel("Replies to my messages")).not.toBeChecked();
+    await expect(
+      first.getByLabel("Activity in followed threads"),
+    ).not.toBeChecked();
 
     const lifecycleMessage = first
       .getByRole("article")
@@ -307,6 +339,86 @@ test("failed sends retry with the original idempotency key", async ({
     .where(eq(schema.messages.idempotencyKey, retriedIdempotencyKey))
     .limit(1);
   expect(persisted?.value).toBe(1);
+});
+
+test("composer preserves send preference and renders safe links", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium");
+  await page.goto("/rooms/investigation-suspicious-powershell");
+  const composer = page.locator(".tiptap");
+  const suffix = newId();
+  const messageText = `Synthetic explicit-send link ${suffix}`;
+  await page.getByLabel("Enter sends").uncheck();
+  await composer.fill(`${messageText} `);
+  await page.keyboard.press("Enter");
+  await expect(composer).toContainText("Synthetic explicit-send link");
+
+  await page.getByRole("button", { name: "Add link" }).click();
+  await page.getByLabel("Link URL").fill("example.test/synthetic-reference");
+  await page.getByRole("button", { name: "Apply link" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+
+  const message = page.getByRole("article").filter({ hasText: messageText });
+  await expect(
+    message.getByRole("link", { name: /example\.test\/synthetic-reference/ }),
+  ).toHaveAttribute("href", "https://example.test/synthetic-reference");
+  await page.reload();
+  await expect(page.getByLabel("Enter sends")).not.toBeChecked();
+});
+
+test("composer uploads and persists governed evidence", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium");
+  const [room] = await database()
+    .select()
+    .from(schema.rooms)
+    .where(eq(schema.rooms.slug, "investigation-suspicious-powershell"))
+    .limit(1);
+  if (!room) throw new Error("Synthetic investigation room required");
+
+  await page.goto("/rooms/investigation-suspicious-powershell");
+  const suffix = newId();
+  const fileName = `synthetic-room-evidence-${suffix}.txt`;
+  const message = `Synthetic governed attachment ${suffix}`;
+  await page.route("**/api/v1/rooms/*/attachments", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await route.continue();
+  });
+  await page.getByLabel("Choose evidence files").setInputFiles({
+    name: fileName,
+    mimeType: "text/plain",
+    buffer: Buffer.from(`Synthetic evidence payload ${suffix}`),
+  });
+  await expect(page.getByLabel(`Uploading ${fileName}`)).toBeVisible();
+  await expect(page.getByText("Stored · pending scan")).toBeVisible();
+  await page.locator(".tiptap").fill(message);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const posted = page.getByRole("article").filter({ hasText: message });
+  await expect(posted.getByText(fileName)).toBeVisible();
+  await expect(
+    posted.getByText("Stored evidence · pending scan"),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("article").filter({ hasText: message }).getByText(fileName),
+  ).toBeVisible();
+
+  const [stored] = await database()
+    .select({
+      relatedRoomId: schema.evidence.relatedRoomId,
+      scanState: schema.evidence.scanState,
+      storageKey: schema.evidence.storageKey,
+    })
+    .from(schema.evidence)
+    .where(eq(schema.evidence.fileName, fileName))
+    .limit(1);
+  expect(stored).toMatchObject({
+    relatedRoomId: room.id,
+    scanState: "pending",
+    storageKey: expect.stringContaining("/evidence/"),
+  });
 });
 
 test("mobile composer requires the explicit send button", async ({

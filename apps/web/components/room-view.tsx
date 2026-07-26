@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   AlertTriangle,
   Bookmark,
@@ -12,6 +19,7 @@ import {
   Clock3,
   Copy,
   Edit3,
+  FileText,
   Hash,
   MessageSquare,
   MoreHorizontal,
@@ -359,6 +367,131 @@ function MessageText({ text }: { text: string }) {
   );
 }
 
+function safeMessageHref(value: unknown) {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function MessageDocument({ document }: { document: Record<string, unknown> }) {
+  function renderNode(value: unknown, key: string): ReactNode {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      return null;
+    const node = value as Record<string, unknown>;
+    const content = Array.isArray(node.content)
+      ? node.content.map((child, index) => renderNode(child, `${key}-${index}`))
+      : null;
+
+    if (node.type === "text" && typeof node.text === "string") {
+      let rendered: ReactNode = <MessageText text={node.text} />;
+      if (Array.isArray(node.marks)) {
+        node.marks.forEach((mark, index) => {
+          if (!mark || typeof mark !== "object" || Array.isArray(mark)) return;
+          const typedMark = mark as Record<string, unknown>;
+          const markKey = `${key}-mark-${index}`;
+          if (typedMark.type === "bold")
+            rendered = <strong key={markKey}>{rendered}</strong>;
+          if (typedMark.type === "italic")
+            rendered = <em key={markKey}>{rendered}</em>;
+          if (typedMark.type === "code")
+            rendered = <code key={markKey}>{rendered}</code>;
+          if (
+            typedMark.type === "link" &&
+            typedMark.attrs &&
+            typeof typedMark.attrs === "object" &&
+            !Array.isArray(typedMark.attrs)
+          ) {
+            const href = safeMessageHref(
+              (typedMark.attrs as Record<string, unknown>).href,
+            );
+            if (href) {
+              rendered = (
+                <a
+                  key={markKey}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="text-[var(--color-accent)] underline"
+                >
+                  {rendered}
+                </a>
+              );
+            }
+          }
+        });
+      }
+      return <Fragment key={key}>{rendered}</Fragment>;
+    }
+
+    switch (node.type) {
+      case "doc":
+        return <Fragment key={key}>{content}</Fragment>;
+      case "paragraph":
+        return <p key={key}>{content}</p>;
+      case "heading": {
+        const level =
+          node.attrs &&
+          typeof node.attrs === "object" &&
+          !Array.isArray(node.attrs) &&
+          (node.attrs as Record<string, unknown>).level === 3
+            ? "h3"
+            : "h2";
+        return level === "h3" ? (
+          <h3 key={key}>{content}</h3>
+        ) : (
+          <h2 key={key}>{content}</h2>
+        );
+      }
+      case "bulletList":
+        return <ul key={key}>{content}</ul>;
+      case "orderedList":
+        return <ol key={key}>{content}</ol>;
+      case "listItem":
+        return <li key={key}>{content}</li>;
+      case "blockquote":
+        return <blockquote key={key}>{content}</blockquote>;
+      case "codeBlock":
+        return (
+          <pre key={key}>
+            <code>{content}</code>
+          </pre>
+        );
+      case "hardBreak":
+        return <br key={key} />;
+      default:
+        return null;
+    }
+  }
+
+  return <>{renderNode(document, "document")}</>;
+}
+
+function messageAttachments(document: Record<string, unknown> | undefined) {
+  const attachments: Array<{ id: string; label: string }> = [];
+  function visit(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const node = value as Record<string, unknown>;
+    if (
+      node.type === "attachment" &&
+      node.attrs &&
+      typeof node.attrs === "object" &&
+      !Array.isArray(node.attrs)
+    ) {
+      const attrs = node.attrs as Record<string, unknown>;
+      if (typeof attrs.id === "string" && typeof attrs.label === "string") {
+        attachments.push({ id: attrs.id, label: attrs.label });
+      }
+    }
+    if (Array.isArray(node.content)) node.content.forEach(visit);
+  }
+  visit(document);
+  return attachments;
+}
+
 const structuredMessageLabels: Record<string, string> = {
   system: "System activity",
   alert: "Security alert",
@@ -449,6 +582,17 @@ function DynamicMessageEntry({
     message.messageType && message.messageType !== "text"
       ? message.messageType
       : null;
+  const attachments = messageAttachments(message.document);
+  const displayText = attachments
+    .reduce(
+      (text, attachment) =>
+        text.replace(
+          `${text.includes("\n") ? "\n" : ""}Evidence attachment: ${attachment.label}`,
+          "",
+        ),
+      message.plainText,
+    )
+    .trim();
   const authorName =
     message.authorName ?? (demoMode ? "Jordan Blake" : "Muster Administrator");
   const initials = authorName
@@ -654,15 +798,42 @@ function DynamicMessageEntry({
           </div>
         ) : structured ? (
           <StructuredMessageCard message={message} type={structured} />
-        ) : (
-          <p
+        ) : displayText ? (
+          <div
             className={cn(
               "message-prose mt-1 whitespace-pre-wrap text-sm leading-5 text-[var(--color-ink-2)]",
               message.deletedAt && "italic text-muted-foreground",
             )}
           >
-            <MessageText text={message.plainText} />
-          </p>
+            {message.document ? (
+              <MessageDocument document={message.document} />
+            ) : (
+              <p>
+                <MessageText text={displayText} />
+              </p>
+            )}
+          </div>
+        ) : null}
+        {attachments.length > 0 && (
+          <div
+            className="mt-2 space-y-1"
+            aria-label="Governed evidence attachments"
+          >
+            {attachments.map((attachment) => (
+              <div
+                key={attachment.id}
+                className="flex items-center gap-2 rounded border bg-muted px-2 py-1.5 text-xs"
+              >
+                <FileText className="size-3.5 text-[var(--color-accent)]" />
+                <span className="min-w-0 flex-1 truncate">
+                  {attachment.label}
+                </span>
+                <span className="text-muted-foreground">
+                  Stored evidence · pending scan
+                </span>
+              </div>
+            ))}
+          </div>
         )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {(message.reactions ?? []).map((reaction) => (
@@ -970,6 +1141,8 @@ function RoomDetailsPanel({ slug }: { slug: string }) {
 
 function RoomNotificationPreferences({ roomId }: { roomId: string }) {
   const [level, setLevel] = useState<"all" | "mentions" | "nothing">("all");
+  const [notifyReplies, setNotifyReplies] = useState(true);
+  const [notifyFollowedThreads, setNotifyFollowedThreads] = useState(true);
   const [muted, setMuted] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -983,10 +1156,14 @@ function RoomNotificationPreferences({ roomId }: { roomId: string }) {
         const payload = (await response.json()) as {
           data: {
             notificationLevel: "all" | "mentions" | "nothing";
+            notifyReplies: boolean;
+            notifyFollowedThreads: boolean;
             muted: boolean;
           };
         };
         setLevel(payload.data.notificationLevel);
+        setNotifyReplies(payload.data.notifyReplies);
+        setNotifyFollowedThreads(payload.data.notifyFollowedThreads);
         setMuted(payload.data.muted);
       })
       .catch(() => undefined);
@@ -996,16 +1173,25 @@ function RoomNotificationPreferences({ roomId }: { roomId: string }) {
   async function save(
     notificationLevel: "all" | "mentions" | "nothing",
     nextMuted: boolean,
+    nextNotifyReplies = notifyReplies,
+    nextNotifyFollowedThreads = notifyFollowedThreads,
   ) {
     setSaving(true);
     try {
       const response = await fetch(`/api/v1/rooms/${roomId}/notifications`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ notificationLevel, muted: nextMuted }),
+        body: JSON.stringify({
+          notificationLevel,
+          muted: nextMuted,
+          notifyReplies: nextNotifyReplies,
+          notifyFollowedThreads: nextNotifyFollowedThreads,
+        }),
       });
       if (!response.ok) return;
       setLevel(notificationLevel);
+      setNotifyReplies(nextNotifyReplies);
+      setNotifyFollowedThreads(nextNotifyFollowedThreads);
       setMuted(nextMuted);
     } finally {
       setSaving(false);
@@ -1033,6 +1219,31 @@ function RoomNotificationPreferences({ roomId }: { roomId: string }) {
       <label className="mt-2 flex items-center gap-2">
         <input
           type="checkbox"
+          className="size-6 shrink-0"
+          checked={notifyReplies}
+          disabled={saving || muted}
+          onChange={(event) =>
+            void save(level, muted, event.target.checked, notifyFollowedThreads)
+          }
+        />
+        Replies to my messages
+      </label>
+      <label className="mt-2 flex items-center gap-2">
+        <input
+          type="checkbox"
+          className="size-6 shrink-0"
+          checked={notifyFollowedThreads}
+          disabled={saving || muted}
+          onChange={(event) =>
+            void save(level, muted, notifyReplies, event.target.checked)
+          }
+        />
+        Activity in followed threads
+      </label>
+      <label className="mt-2 flex items-center gap-2">
+        <input
+          type="checkbox"
+          className="size-6 shrink-0"
           checked={muted}
           disabled={saving}
           onChange={(event) => void save(level, event.target.checked)}
@@ -1233,6 +1444,9 @@ export function RoomView({ slug }: { slug: string }) {
     Array<{ id: string; type: string }>
   >([]);
   const [typingActors, setTypingActors] = useState<string[]>([]);
+  const [presentSessions, setPresentSessions] = useState<
+    Array<{ actorId: string; sessionId: string }>
+  >([]);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [roomQuery, setRoomQuery] = useState("");
@@ -1248,6 +1462,10 @@ export function RoomView({ slug }: { slug: string }) {
   const typingTimersRef = useRef(
     new Map<string, ReturnType<typeof setTimeout>>(),
   );
+  const presenceTimersRef = useRef(
+    new Map<string, ReturnType<typeof setTimeout>>(),
+  );
+  const presenceSessionRef = useRef(browserUuid());
   const roomId =
     roomIdBySlug[slug] ?? roomIdBySlug["investigation-suspicious-powershell"]!;
 
@@ -1337,7 +1555,20 @@ export function RoomView({ slug }: { slug: string }) {
 
   useEffect(() => {
     const source = new EventSource("/api/v1/events/stream");
-    source.addEventListener("connected", () => setRealtimeConnected(true));
+    const reportPresence = (active: boolean) =>
+      fetch(`/api/v1/rooms/${roomId}/presence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          active,
+          sessionId: presenceSessionRef.current,
+        }),
+        keepalive: !active,
+      }).catch(() => undefined);
+    source.addEventListener("connected", () => {
+      setRealtimeConnected(true);
+      void reportPresence(true);
+    });
     source.addEventListener("update", (event) => {
       const data = JSON.parse((event as MessageEvent<string>).data) as {
         type?: string;
@@ -1345,6 +1576,7 @@ export function RoomView({ slug }: { slug: string }) {
           messageId?: string;
           roomId?: string;
           actorId?: string;
+          sessionId?: string;
           active?: boolean;
         };
       };
@@ -1374,6 +1606,41 @@ export function RoomView({ slug }: { slug: string }) {
         }
         return;
       }
+      if (
+        data.type === "room.presence" &&
+        data.data?.actorId &&
+        data.data.sessionId
+      ) {
+        const { actorId, sessionId } = data.data;
+        const existing = presenceTimersRef.current.get(sessionId);
+        if (existing) clearTimeout(existing);
+        if (data.data.active) {
+          setPresentSessions((current) =>
+            current.some((session) => session.sessionId === sessionId)
+              ? current.map((session) =>
+                  session.sessionId === sessionId
+                    ? { actorId, sessionId }
+                    : session,
+                )
+              : [...current, { actorId, sessionId }],
+          );
+          presenceTimersRef.current.set(
+            sessionId,
+            setTimeout(() => {
+              setPresentSessions((current) =>
+                current.filter((session) => session.sessionId !== sessionId),
+              );
+              presenceTimersRef.current.delete(sessionId);
+            }, 45_000),
+          );
+        } else {
+          setPresentSessions((current) =>
+            current.filter((session) => session.sessionId !== sessionId),
+          );
+          presenceTimersRef.current.delete(sessionId);
+        }
+        return;
+      }
       setLiveEvents((current) => [
         ...current.slice(-4),
         { id: browserUuid(), type: data.type ?? "update" },
@@ -1383,12 +1650,23 @@ export function RoomView({ slug }: { slug: string }) {
       }
     });
     source.onerror = () => setRealtimeConnected(false);
+    const heartbeat = setInterval(() => void reportPresence(true), 25_000);
     return () => {
+      void reportPresence(false);
       source.close();
+      clearInterval(heartbeat);
       for (const timer of typingTimersRef.current.values()) clearTimeout(timer);
       typingTimersRef.current.clear();
+      for (const timer of presenceTimersRef.current.values())
+        clearTimeout(timer);
+      presenceTimersRef.current.clear();
+      setPresentSessions([]);
     };
   }, [refreshMessages, roomId]);
+
+  const presentActorCount = new Set(
+    presentSessions.map((session) => session.actorId),
+  ).size;
 
   function changeMessage(message: RoomMessageRecord) {
     setMessages((current) =>
@@ -1608,6 +1886,14 @@ export function RoomView({ slug }: { slug: string }) {
             )}
             {realtimeConnected ? "Live" : "Reconnecting"}
           </span>
+          {realtimeConnected && (
+            <span
+              className="hidden text-xs text-muted-foreground tablet:inline"
+              data-testid="room-presence"
+            >
+              {presentActorCount} present
+            </span>
+          )}
           <Button
             variant="ghost"
             size="icon"

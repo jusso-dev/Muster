@@ -32,6 +32,9 @@ const allCapabilities = [
   "agents.invoke",
   "agents.manage",
   "agents.cancel",
+  "evidence.read",
+  "evidence.upload",
+  "evidence.export",
   "audit.read",
 ];
 

@@ -20,6 +20,7 @@
     "@muster/contracts": "workspace:*",
     "@muster/database": "workspace:*",
     "@muster/event-protocol": "workspace:*",
+    "@muster/evidence": "workspace:*",
     "@muster/investigations": "workspace:*",
     "@muster/rooms": "workspace:*",
     "@tailwindcss/postcss": "4.3.3",

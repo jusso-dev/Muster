@@ -76,6 +76,46 @@ describe("message document policy", () => {
     ).toThrow("Unsupported message document node");
   });
 
+  it("requires durable UUID references for evidence attachments", () => {
+    expect(
+      sanitiseMessageDocument({
+        type: "doc",
+        content: [
+          {
+            type: "attachment",
+            attrs: {
+              id: "018f55d8-c4c7-7c3e-88ef-000000000501",
+              label: "Synthetic evidence.txt",
+            },
+          },
+        ],
+      }),
+    ).toMatchObject({
+      content: [
+        {
+          type: "attachment",
+          attrs: {
+            id: "018f55d8-c4c7-7c3e-88ef-000000000501",
+          },
+        },
+      ],
+    });
+    expect(() =>
+      sanitiseMessageDocument({
+        type: "doc",
+        content: [
+          {
+            type: "attachment",
+            attrs: {
+              id: "../../untrusted",
+              label: "Unsafe",
+            },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("normalises plain text and requires durable idempotency", () => {
     const parsed = PostMessageSchema.parse({
       roomId: "018f55d8-c4c7-7c3e-88ef-000000000107",

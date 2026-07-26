@@ -292,6 +292,10 @@ export const roomMemberships = pgTable(
       .references(() => actors.id),
     membershipRole: text("membership_role").notNull(),
     notificationLevel: text("notification_level").notNull().default("all"),
+    notifyReplies: boolean("notify_replies").notNull().default(true),
+    notifyFollowedThreads: boolean("notify_followed_threads")
+      .notNull()
+      .default(true),
     joinedAt: timestamp("joined_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

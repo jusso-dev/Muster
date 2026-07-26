@@ -1,0 +1,2 @@
+ALTER TABLE "room_memberships" ADD COLUMN "notify_replies" boolean DEFAULT true NOT NULL;--> statement-breakpoint
+ALTER TABLE "room_memberships" ADD COLUMN "notify_followed_threads" boolean DEFAULT true NOT NULL;

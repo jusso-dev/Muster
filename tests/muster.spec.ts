@@ -286,6 +286,7 @@ test("task board manages durable agent work end to end", async ({
   ).toBeVisible();
 
   const taskTitle = `Review security signal ${testInfo.project.name} ${Date.now()}`;
+  const caseReference = `CASE-SYNTHETIC-${newId().slice(0, 8)}`;
   await page.getByRole("button", { name: "New task" }).click();
   await page.getByPlaceholder("What needs doing?").fill(taskTitle);
   await page
@@ -296,7 +297,7 @@ test("task board manages durable agent work end to end", async ({
   await page
     .getByLabel("Room", { exact: true })
     .selectOption({ label: "#soc-operations" });
-  await page.getByPlaceholder("Optional case ID").fill("CASE-SYNTHETIC-17");
+  await page.getByPlaceholder("Optional case ID").fill(caseReference);
   await page.getByRole("button", { name: "Create task", exact: true }).click();
   await expect(page.getByText(taskTitle)).toBeVisible();
 
@@ -324,7 +325,7 @@ test("task board manages durable agent work end to end", async ({
     .getByRole("heading", { name: "Ready" })
     .locator("xpath=ancestor::section");
   await expect(readyColumn.getByText(taskTitle)).toBeVisible();
-  await expect(readyColumn.getByText("Case CASE-SYNTHETIC-17")).toBeVisible();
+  await expect(readyColumn.getByText(`Case ${caseReference}`)).toBeVisible();
 
   taskCard = page.getByRole("article").filter({ hasText: taskTitle });
   await taskCard.getByRole("button", { name: "Delegate" }).click();

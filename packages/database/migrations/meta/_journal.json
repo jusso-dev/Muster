@@ -43,6 +43,13 @@
       "when": 1785077454480,
       "tag": "0005_elite_spacker_dave",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785082223811,
+      "tag": "0006_lazy_stature",
+      "breakpoints": true
     }
   ]
 }

@@ -171,6 +171,71 @@ describeIntegration("enterprise room messaging", () => {
   });
 
   it("persists reactions, edits, deletes, actions, and read state", async () => {
+    const evidenceId = newId();
+    await database()
+      .insert(schema.evidence)
+      .values({
+        id: evidenceId,
+        organisationId,
+        fileName: "synthetic-room-evidence.txt",
+        mimeType: "text/plain",
+        size: 28,
+        sha256: newId().replaceAll("-", "").padEnd(64, "0").slice(0, 64),
+        uploadedByActorId: actorId,
+        classification: "internal",
+        relatedRoomId: roomId,
+        source: "room-attachment",
+        storageKey: `synthetic/${evidenceId}`,
+        scanState: "pending",
+      });
+    const attachmentMessage = await service.postMessage(
+      subject,
+      {
+        roomId,
+        document: {
+          type: "doc",
+          content: [
+            {
+              type: "attachment",
+              attrs: {
+                id: evidenceId,
+                label: "synthetic-room-evidence.txt",
+              },
+            },
+          ],
+        },
+        plainText: "Evidence attachment: synthetic-room-evidence.txt",
+        dataClassification: "internal",
+        idempotencyKey: `attachment-${newId()}`,
+      },
+      `trace-${newId()}`,
+    );
+    expect(attachmentMessage.created).toBe(true);
+    await expect(
+      service.postMessage(
+        subject,
+        {
+          roomId,
+          document: {
+            type: "doc",
+            content: [
+              {
+                type: "attachment",
+                attrs: {
+                  id: newId(),
+                  label: "missing-evidence.txt",
+                },
+              },
+            ],
+          },
+          plainText: "Evidence attachment: missing-evidence.txt",
+          dataClassification: "internal",
+          idempotencyKey: `missing-attachment-${newId()}`,
+        },
+        `trace-${newId()}`,
+      ),
+    ).rejects.toThrow("Attachment unavailable in room");
+
     const created = await service.postMessage(
       subject,
       {
@@ -319,12 +384,16 @@ describeIntegration("enterprise room messaging", () => {
     });
     await service.updateRoomNotifications(subject, roomId, {
       notificationLevel: "mentions",
+      notifyReplies: false,
+      notifyFollowedThreads: true,
       muted: true,
     });
     await expect(
       service.getRoomNotifications(subject, roomId),
     ).resolves.toMatchObject({
       notificationLevel: "mentions",
+      notifyReplies: false,
+      notifyFollowedThreads: true,
       muted: true,
     });
     await service.markRoomRead(subject, roomId, { messageId });
