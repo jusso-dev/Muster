@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { RoomBrowserQuerySchema } from "./governance.ts";
 import { PostMessageSchema, sanitiseMessageDocument } from "./index.ts";
+
+describe("room browser query policy", () => {
+  it("parses explicit archived-room flags without truthy string coercion", () => {
+    expect(
+      RoomBrowserQuerySchema.parse({ includeArchived: "false" })
+        .includeArchived,
+    ).toBe(false);
+    expect(
+      RoomBrowserQuerySchema.parse({ includeArchived: "true" })
+        .includeArchived,
+    ).toBe(true);
+  });
+});
 
 describe("message document policy", () => {
   it("keeps supported formatting and safe links", () => {

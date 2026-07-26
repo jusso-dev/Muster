@@ -62,6 +62,12 @@ export const OrganisationRoomGovernanceSchema = z.object({
     .default("room_policy"),
 });
 
+const QueryBooleanSchema = z.preprocess((value) => {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return value;
+}, z.boolean());
+
 export const RoomBrowserQuerySchema = z.object({
   query: z.string().trim().max(200).default(""),
   visibility: z
@@ -69,7 +75,7 @@ export const RoomBrowserQuerySchema = z.object({
     .default("all"),
   roomType: RoomTypeSchema.optional(),
   membership: z.enum(["all", "joined", "available"]).default("all"),
-  includeArchived: z.coerce.boolean().default(false),
+  includeArchived: QueryBooleanSchema.default(false),
 });
 
 export const UpdateRoomSchema = z
