@@ -32,11 +32,58 @@ export function LoginForm() {
 
   return (
     <form onSubmit={submit} className="mt-6 space-y-4">
-      <label className="block"><span className="mb-1.5 block text-xs font-semibold">Email address</span><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} className="h-11 w-full rounded-md border bg-card px-3 text-sm outline-none" /></label>
-      <label className="block"><span className="mb-1.5 block text-xs font-semibold">Password</span><input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} className="h-11 w-full rounded-md border bg-card px-3 text-sm outline-none" /></label>
-      {error && <p role="alert" className="error-surface border border-[var(--color-error)] p-2 text-xs text-[var(--color-error)]">{error}</p>}
-      <Button type="submit" size="lg" className="w-full" disabled={!hydrated || loading}>{loading ? <LoaderCircle className="animate-spin" /> : <ShieldCheck />}{loading ? "Signing in…" : "Sign in securely"}</Button>
-      <Button type="button" size="lg" variant="outline" className="w-full"><KeyRound />Sign in with a passkey</Button>
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-semibold">
+          Email address
+        </span>
+        <input
+          type="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          className="h-11 w-full rounded-md border bg-card px-3 text-sm outline-none"
+        />
+      </label>
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-semibold">Password</span>
+        <input
+          type="password"
+          autoComplete="current-password"
+          required
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          className="h-11 w-full rounded-md border bg-card px-3 text-sm outline-none"
+        />
+      </label>
+      {error && (
+        <p
+          role="alert"
+          className="error-surface border border-[var(--color-error)] p-2 text-xs text-[var(--color-error)]"
+        >
+          {error}
+        </p>
+      )}
+      <Button
+        type="submit"
+        size="lg"
+        className="w-full"
+        disabled={!hydrated || loading}
+      >
+        {loading ? <LoaderCircle className="animate-spin" /> : <ShieldCheck />}
+        {loading ? "Signing in…" : "Sign in securely"}
+      </Button>
+      <Button
+        type="button"
+        size="lg"
+        variant="outline"
+        className="w-full"
+        disabled
+        title="Passkey sign-in is not configured"
+      >
+        <KeyRound />
+        Sign in with a passkey
+      </Button>
     </form>
   );
 }

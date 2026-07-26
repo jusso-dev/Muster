@@ -123,7 +123,9 @@ export function TasksView() {
   useEffect(() => {
     void loadTasks()
       .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : "Could not load tasks"),
+        setError(
+          reason instanceof Error ? reason.message : "Could not load tasks",
+        ),
       )
       .finally(() => setLoading(false));
   }, [loadTasks]);
@@ -146,9 +148,10 @@ export function TasksView() {
   const visibleTasks = useMemo(
     () =>
       tasks.filter((task) => {
-        const matchesText = `${task.title} ${task.description} ${task.assignee?.displayName ?? ""}`
-          .toLowerCase()
-          .includes(query.toLowerCase());
+        const matchesText =
+          `${task.title} ${task.description} ${task.assignee?.displayName ?? ""}`
+            .toLowerCase()
+            .includes(query.toLowerCase());
         const matchesActor =
           filter === "all" ||
           (filter === "agents" && task.assignee?.actorType === "agent") ||
@@ -194,7 +197,9 @@ export function TasksView() {
       setComposerOpen(false);
       await loadTasks();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Task creation failed");
+      setError(
+        reason instanceof Error ? reason.message : "Task creation failed",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -237,7 +242,10 @@ export function TasksView() {
             className="min-w-0 flex-1 bg-transparent text-xs outline-none"
           />
         </label>
-        <div className="flex items-center gap-1" aria-label="Task assignee filter">
+        <div
+          className="flex items-center gap-1"
+          aria-label="Task assignee filter"
+        >
           <Filter className="mx-1 size-3.5 text-muted-foreground" />
           {(["all", "agents", "humans"] as const).map((value) => (
             <Button
@@ -247,7 +255,13 @@ export function TasksView() {
               onClick={() => setFilter(value)}
               aria-pressed={filter === value}
             >
-              {value === "agents" ? <Bot /> : value === "humans" ? <UserRound /> : <ListTodo />}
+              {value === "agents" ? (
+                <Bot />
+              ) : value === "humans" ? (
+                <UserRound />
+              ) : (
+                <ListTodo />
+              )}
               <span className="capitalize">{value}</span>
             </Button>
           ))}
@@ -263,57 +277,93 @@ export function TasksView() {
           className="grid gap-3 border-b bg-card p-4 tablet:grid-cols-[minmax(16rem,1.5fr)_minmax(14rem,2fr)_10rem_14rem_auto]"
         >
           <label className="space-y-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Task</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Task
+            </span>
             <input
               autoFocus
               required
               maxLength={240}
               value={form.title}
-              onChange={(event) => setForm({ ...form, title: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, title: event.target.value })
+              }
               placeholder="What needs doing?"
               className="h-9 w-full rounded-md border bg-background px-3 text-xs outline-none"
             />
           </label>
           <label className="space-y-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Expected outcome</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Expected outcome
+            </span>
             <input
               maxLength={4_000}
               value={form.description}
-              onChange={(event) => setForm({ ...form, description: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, description: event.target.value })
+              }
               placeholder="Context, constraints, and deliverable"
               className="h-9 w-full rounded-md border bg-background px-3 text-xs outline-none"
             />
           </label>
           <label className="space-y-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Priority</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Priority
+            </span>
             <select
               value={form.priority}
-              onChange={(event) => setForm({ ...form, priority: event.target.value as TaskPriority })}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  priority: event.target.value as TaskPriority,
+                })
+              }
               className="h-9 w-full rounded-md border bg-background px-2 text-xs"
             >
-              {(["urgent", "high", "normal", "low"] as const).map((priority) => (
-                <option key={priority} value={priority}>{priority}</option>
-              ))}
+              {(["urgent", "high", "normal", "low"] as const).map(
+                (priority) => (
+                  <option key={priority} value={priority}>
+                    {priority}
+                  </option>
+                ),
+              )}
             </select>
           </label>
           <label className="space-y-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Assign to</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Assign to
+            </span>
             <select
               value={form.assignedActorId}
-              onChange={(event) => setForm({ ...form, assignedActorId: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, assignedActorId: event.target.value })
+              }
               className="h-9 w-full rounded-md border bg-background px-2 text-xs"
             >
               {assignees.map((actor) => (
-                <option key={actor.id} value={actor.id}>{actor.agent ? "Agent: " : "Person: "}{actor.name}</option>
+                <option key={actor.id} value={actor.id}>
+                  {actor.agent ? "Agent: " : "Person: "}
+                  {actor.name}
+                </option>
               ))}
             </select>
           </label>
           <div className="flex items-end gap-2">
             <Button type="submit" disabled={submitting}>
-              {submitting ? <LoaderCircle className="animate-spin" /> : <Check />}
+              {submitting ? (
+                <LoaderCircle className="animate-spin" />
+              ) : (
+                <Check />
+              )}
               Create
             </Button>
-            <Button type="button" variant="ghost" size="icon" aria-label="Cancel new task" onClick={() => setComposerOpen(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Cancel new task"
+              onClick={() => setComposerOpen(false)}
+            >
               <X />
             </Button>
           </div>
@@ -321,15 +371,22 @@ export function TasksView() {
             <input
               type="checkbox"
               checked={form.approvalRequired}
-              onChange={(event) => setForm({ ...form, approvalRequired: event.target.checked })}
+              onChange={(event) =>
+                setForm({ ...form, approvalRequired: event.target.checked })
+              }
             />
-            <span className="text-xs text-muted-foreground">Require human approval before any external action</span>
+            <span className="text-xs text-muted-foreground">
+              Require human approval before any external action
+            </span>
           </label>
         </form>
       )}
 
       {error && (
-        <div role="alert" className="error-surface border-b border-[var(--color-error)] px-4 py-2 text-xs text-[var(--color-error)]">
+        <div
+          role="alert"
+          className="error-surface border-b border-[var(--color-error)] px-4 py-2 text-xs text-[var(--color-error)]"
+        >
           {error}
         </div>
       )}
@@ -342,7 +399,9 @@ export function TasksView() {
         ) : (
           <div className="grid min-w-max grid-cols-5 gap-3">
             {columns.map((column, columnIndex) => {
-              const columnTasks = visibleTasks.filter((task) => task.status === column.id);
+              const columnTasks = visibleTasks.filter(
+                (task) => task.status === column.id,
+              );
               return (
                 <section
                   key={column.id}
@@ -358,14 +417,20 @@ export function TasksView() {
                     <CircleDot className="size-3.5 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
                       <h2 className="text-xs font-bold">{column.label}</h2>
-                      <p className="text-[10px] text-muted-foreground">{column.hint}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {column.hint}
+                      </p>
                     </div>
-                    <Badge className="bg-muted text-muted-foreground">{columnTasks.length}</Badge>
+                    <Badge className="bg-muted text-muted-foreground">
+                      {columnTasks.length}
+                    </Badge>
                   </header>
                   <div className="min-h-28 space-y-2 p-2">
                     {columnTasks.map((task) => {
                       const actor = task.assignee
-                        ? assignees.find((candidate) => candidate.id === task.assignee?.id)
+                        ? assignees.find(
+                            (candidate) => candidate.id === task.assignee?.id,
+                          )
                         : null;
                       const agent = task.assignee?.actorType === "agent";
                       return (
@@ -379,44 +444,92 @@ export function TasksView() {
                           className="group rounded-md border bg-card p-3 shadow-[0_1px_0_var(--shadow-hairline)] hover:border-[var(--color-rule-strong)]"
                         >
                           <div className="flex items-start gap-2">
-                            <GripVertical className="mt-0.5 size-3.5 cursor-grab text-muted-foreground opacity-50 group-hover:opacity-100" aria-hidden="true" />
+                            <GripVertical
+                              className="mt-0.5 size-3.5 cursor-grab text-muted-foreground opacity-50 group-hover:opacity-100"
+                              aria-hidden="true"
+                            />
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <Badge className={cn("capitalize", priorityClass(task.priority))}>{task.priority}</Badge>
+                                <Badge
+                                  className={cn(
+                                    "capitalize",
+                                    priorityClass(task.priority),
+                                  )}
+                                >
+                                  {task.priority}
+                                </Badge>
                                 {task.approvalRequired && (
                                   <Badge className="approval-surface text-[var(--color-warning)]">
                                     <ShieldCheck /> Approval
                                   </Badge>
                                 )}
                               </div>
-                              <h3 className="mt-2 text-[13px] font-bold leading-5">{task.title}</h3>
-                              <p className="mt-1 line-clamp-3 text-[11px] leading-4 text-muted-foreground">{task.description}</p>
+                              <h3 className="mt-2 text-sm font-bold leading-5">
+                                {task.title}
+                              </h3>
+                              <p className="mt-1 line-clamp-3 text-xs leading-4 text-muted-foreground">
+                                {task.description}
+                              </p>
                             </div>
                           </div>
 
                           <div className="mt-3 flex items-center gap-2 border-t pt-2.5">
                             <Avatar
-                              initials={actor?.initials ?? initials(task.assignee?.displayName ?? "Unassigned")}
+                              initials={
+                                actor?.initials ??
+                                initials(
+                                  task.assignee?.displayName ?? "Unassigned",
+                                )
+                              }
                               agent={agent}
                               size="sm"
                             />
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-[10px] font-semibold">{task.assignee?.displayName ?? "Unassigned"}</p>
-                              <p className="text-[9px] text-muted-foreground">{agent ? "Agent assignee" : "Human assignee"}</p>
+                              <p className="truncate text-xs font-semibold">
+                                {task.assignee?.displayName ?? "Unassigned"}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {agent ? "Agent assignee" : "Human assignee"}
+                              </p>
                             </div>
                             {task.room && (
-                              <span className="flex max-w-24 items-center gap-1 truncate text-[9px] text-muted-foreground">
-                                <Hash className="size-3" />{task.room.slug}
+                              <span className="flex max-w-24 items-center gap-1 truncate text-xs text-muted-foreground">
+                                <Hash className="size-3" />
+                                {task.room.slug}
                               </span>
                             )}
                           </div>
 
                           {(task.dueAt || task.agentRunStatus) && (
-                            <div className="mt-2 flex items-center gap-2 text-[9px] text-muted-foreground">
-                              {task.dueAt && <><CalendarClock className="size-3" /><span>{new Date(task.dueAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></>}
+                            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                              {task.dueAt && (
+                                <>
+                                  <CalendarClock className="size-3" />
+                                  <span>
+                                    {new Date(task.dueAt).toLocaleString(
+                                      "en-AU",
+                                      {
+                                        day: "numeric",
+                                        month: "short",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      },
+                                    )}
+                                  </span>
+                                </>
+                              )}
                               {task.agentRunStatus && (
-                                <Badge className={cn("ml-auto", task.agentRunStatus === "running" ? "agent-surface" : "success-surface text-[var(--color-success)]")}>
-                                  {task.agentRunStatus === "running" && <LoaderCircle className="animate-spin" />}
+                                <Badge
+                                  className={cn(
+                                    "ml-auto",
+                                    task.agentRunStatus === "running"
+                                      ? "agent-surface"
+                                      : "success-surface text-[var(--color-success)]",
+                                  )}
+                                >
+                                  {task.agentRunStatus === "running" && (
+                                    <LoaderCircle className="animate-spin" />
+                                  )}
                                   Agent {task.agentRunStatus}
                                 </Badge>
                               )}
@@ -430,7 +543,11 @@ export function TasksView() {
                               className="size-8 min-h-8 px-0"
                               disabled={columnIndex === 0}
                               aria-label={`Move ${task.title} left`}
-                              onClick={() => void updateTask(task.id, { status: columns[columnIndex - 1]?.id })}
+                              onClick={() =>
+                                void updateTask(task.id, {
+                                  status: columns[columnIndex - 1]?.id,
+                                })
+                              }
                             >
                               <ArrowLeft />
                             </Button>
@@ -440,21 +557,34 @@ export function TasksView() {
                               className="size-8 min-h-8 px-0"
                               disabled={columnIndex === columns.length - 1}
                               aria-label={`Move ${task.title} right`}
-                              onClick={() => void updateTask(task.id, { status: columns[columnIndex + 1]?.id })}
+                              onClick={() =>
+                                void updateTask(task.id, {
+                                  status: columns[columnIndex + 1]?.id,
+                                })
+                              }
                             >
                               <ArrowRight />
                             </Button>
-                            {agent && !task.agentRunId && task.status !== "done" && (
-                              <Button size="sm" className="ml-auto" onClick={() => void delegate(task)}>
-                                <Bot />{task.approvalRequired ? "Prepare draft" : "Delegate"}
-                              </Button>
-                            )}
+                            {agent &&
+                              !task.agentRunId &&
+                              task.status !== "done" && (
+                                <Button
+                                  size="sm"
+                                  className="ml-auto"
+                                  onClick={() => void delegate(task)}
+                                >
+                                  <Bot />
+                                  {task.approvalRequired
+                                    ? "Prepare draft"
+                                    : "Delegate"}
+                                </Button>
+                              )}
                           </div>
                         </article>
                       );
                     })}
                     {columnTasks.length === 0 && (
-                      <div className="grid min-h-24 place-items-center rounded-md border border-dashed px-4 text-center text-[10px] text-muted-foreground">
+                      <div className="grid min-h-24 place-items-center rounded-md border border-dashed px-4 text-center text-xs text-muted-foreground">
                         Drop tasks here
                       </div>
                     )}

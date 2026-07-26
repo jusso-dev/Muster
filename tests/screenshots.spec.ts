@@ -13,7 +13,9 @@ const captures = [
   ["settings", "/settings"],
 ] as const;
 
-test("generate deterministic product screenshots", async ({ page }, testInfo) => {
+test("generate deterministic product screenshots", async ({
+  page,
+}, testInfo) => {
   test.skip(testInfo.project.name !== "chromium");
   await mkdir("screenshots", { recursive: true });
   for (const [name, route] of captures) {
@@ -21,20 +23,37 @@ test("generate deterministic product screenshots", async ({ page }, testInfo) =>
     await page.addStyleTag({
       content: '[data-dynamic-message="true"] { display: none !important; }',
     });
-    await page.screenshot({ path: `screenshots/${name}.png`, fullPage: true });
+    await page.screenshot({
+      path: `screenshots/${name}.png`,
+      fullPage: true,
+      caret: "initial",
+    });
   }
 
-  await page.goto("/rooms/soc-operations");
-  await page.screenshot({ path: "screenshots/dark-mode-room.png", fullPage: true });
-  await page.getByRole("button", { name: "User menu and theme" }).click();
-  await page.screenshot({ path: "screenshots/light-mode-room.png", fullPage: true });
+  for (const width of [375, 768, 1280, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/rooms/soc-operations");
+    await page.addStyleTag({
+      content: '[data-dynamic-message="true"] { display: none !important; }',
+    });
+    await page.screenshot({
+      path: `screenshots/room-dark-${width}.png`,
+      fullPage: true,
+      caret: "initial",
+    });
+    await page.getByRole("button", { name: "User menu and theme" }).click();
+    await page.screenshot({
+      path: `screenshots/room-light-${width}.png`,
+      fullPage: true,
+      caret: "initial",
+    });
+  }
 
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/rooms/soc-operations");
-  await page.addStyleTag({
-    content: '[data-dynamic-message="true"] { display: none !important; }',
-  });
-  await page.screenshot({ path: "screenshots/mobile-room.png", fullPage: true });
+  await page.setViewportSize({ width: 375, height: 844 });
   await page.goto("/rooms/alerts");
-  await page.screenshot({ path: "screenshots/mobile-alerts-channel.png", fullPage: true });
+  await page.screenshot({
+    path: "screenshots/mobile-alerts-channel.png",
+    fullPage: true,
+    caret: "initial",
+  });
 });

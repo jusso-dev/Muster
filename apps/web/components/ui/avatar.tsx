@@ -19,8 +19,8 @@ export function Avatar({
         agent
           ? "agent-surface border-[var(--color-agent)]"
           : "border-border bg-[var(--color-raised)] text-foreground",
-        size === "sm" && "size-6 text-[9px]",
-        size === "md" && "size-8 text-[11px]",
+        size === "sm" && "size-6 text-xs",
+        size === "md" && "size-8 text-xs",
         size === "lg" && "size-10 text-xs",
         className,
       )}

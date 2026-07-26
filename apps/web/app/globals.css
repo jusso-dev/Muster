@@ -145,7 +145,6 @@ pre {
 
 .sidebar-active {
   background: var(--color-accent-soft);
-  box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
 .context-mobile-trigger,

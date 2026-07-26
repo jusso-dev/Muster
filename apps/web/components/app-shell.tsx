@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Bell,
@@ -33,13 +33,7 @@ import {
 } from "@/lib/demo-data";
 import { cn } from "@/lib/utils";
 
-function NavGroup({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+function NavGroup({ label, children }: { label: string; children: ReactNode }) {
   const [expanded, setExpanded] = useState(true);
   return (
     <section className="mb-3">
@@ -47,10 +41,13 @@ function NavGroup({
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((current) => !current)}
-        className="mb-1 flex min-h-7 w-full items-center gap-1 rounded px-2 text-left text-[11px] font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="mb-1 flex min-h-7 w-full items-center gap-1 rounded px-2 text-left text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
       >
         <ChevronDown
-          className={cn("size-3 transition-transform", !expanded && "-rotate-90")}
+          className={cn(
+            "size-3 transition-transform",
+            !expanded && "-rotate-90",
+          )}
           aria-hidden="true"
         />
         <span className="flex-1">{label}</span>
@@ -75,7 +72,7 @@ function ChannelLink({
       {...(onNavigate ? { onClick: onNavigate } : {})}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex min-h-7 items-center gap-1.5 rounded px-2 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground",
+        "flex min-h-7 items-center gap-1.5 rounded px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground",
         active && "sidebar-active font-semibold text-foreground",
         room.unread > 0 && !active && "font-semibold text-foreground",
       )}
@@ -108,7 +105,7 @@ function DirectLink({
       {...(onNavigate ? { onClick: onNavigate } : {})}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex min-h-8 items-center gap-2 rounded px-2 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground",
+        "flex min-h-8 items-center gap-2 rounded px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground",
         active && "sidebar-active font-semibold text-foreground",
       )}
     >
@@ -124,7 +121,9 @@ function DirectLink({
         />
       </span>
       <span className="min-w-0 flex-1 truncate">{room.name}</span>
-      {room.agent && <Badge className="agent-surface px-1 text-[9px]">Agent</Badge>}
+      {room.agent && (
+        <Badge className="agent-surface px-1 text-xs">Agent</Badge>
+      )}
     </Link>
   );
 }
@@ -146,7 +145,7 @@ function QuickLink({
     <Link
       href={href}
       {...(onNavigate ? { onClick: onNavigate } : {})}
-      className="flex min-h-8 items-center gap-2 rounded px-2 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground"
+      className="flex min-h-8 items-center gap-2 rounded px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
     >
       <Icon className="size-3.5" aria-hidden="true" />
       <span className="flex-1">{label}</span>
@@ -201,11 +200,11 @@ function MainNavigation({
         <button
           type="button"
           onClick={onOpenPalette}
-          className="flex min-h-8 w-full items-center gap-2 rounded px-2 text-left text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="flex min-h-8 w-full items-center gap-2 rounded px-2 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <Search className="size-3.5" />
           <span className="flex-1">Search</span>
-          <kbd className="rounded border px-1 text-[9px]">⌘K</kbd>
+          <kbd className="rounded border px-1 text-xs">⌘K</kbd>
         </button>
       </div>
 
@@ -235,6 +234,7 @@ export function AppShell({
   children: ReactNode;
   context?: ReactNode;
 }) {
+  const router = useRouter();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileContextOpen, setMobileContextOpen] = useState(false);
@@ -280,38 +280,59 @@ export function AppShell({
           <Menu />
         </Button>
         <div className="hidden items-center gap-1 desktop:flex">
-          <Button variant="ghost" size="icon" aria-label="Go back">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Go back"
+            onClick={() => router.back()}
+          >
             <ChevronLeft />
           </Button>
-          <Button variant="ghost" size="icon" aria-label="Go forward">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Go forward"
+            onClick={() => router.forward()}
+          >
             <ChevronRight />
           </Button>
         </div>
         <button
           type="button"
           onClick={openPalette}
-          className="mx-auto flex h-8 min-w-0 max-w-xl flex-1 items-center gap-2 rounded-md border bg-muted/70 px-3 text-left text-[11px] text-muted-foreground hover:border-[var(--color-rule-strong)]"
+          className="mx-auto flex h-8 min-w-0 max-w-xl flex-1 items-center gap-2 rounded-md border bg-muted/70 px-3 text-left text-xs text-muted-foreground hover:border-[var(--color-rule-strong)]"
         >
           <Search className="size-3.5" />
           <span className="min-w-0 flex-1 truncate">
             Search {demoOrganisation.name}
           </span>
-          <kbd className="hidden rounded border bg-background px-1.5 py-0.5 text-[9px] tablet:inline">
+          <kbd className="hidden rounded border bg-background px-1.5 py-0.5 text-xs tablet:inline">
             ⌘K
           </kbd>
         </button>
         <div className="flex items-center gap-1">
-          <span className="hidden items-center gap-1.5 text-[10px] text-[var(--color-success)] wide:flex">
+          <span className="hidden items-center gap-1.5 text-xs text-[var(--color-success)] wide:flex">
             <span className="size-1.5 rounded-full bg-[var(--color-success)]" />
             Connected
           </span>
-          <Button variant="ghost" size="icon" aria-label="Pending approvals">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Pending approvals"
+            onClick={() => router.push("/approvals")}
+          >
             <CircleCheck />
             <span className="sr-only">
               {demoMode ? "2 pending approvals" : "No pending approvals"}
             </span>
           </Button>
-          <Button variant="ghost" size="icon" aria-label="Notifications">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Notifications (coming soon)"
+            title="Notifications are not available yet"
+            disabled
+          >
             <Bell />
           </Button>
           {context && (
@@ -339,10 +360,17 @@ export function AppShell({
 
       <aside className="navigation-sidebar hidden min-h-0 border-r bg-[var(--color-paper-2)] desktop:flex desktop:flex-col">
         <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-          <Image src="/muster-logo.png" alt="" width={30} height={30} className="rounded-md" aria-hidden="true" />
+          <Image
+            src="/muster-logo.png"
+            alt=""
+            width={30}
+            height={30}
+            className="rounded-md"
+            aria-hidden="true"
+          />
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-bold">Muster</p>
-            <p className="truncate text-[9px] text-muted-foreground">
+            <p className="truncate text-xs text-muted-foreground">
               {demoOrganisation.name}
             </p>
           </div>
@@ -362,10 +390,10 @@ export function AppShell({
         <div className="flex items-center gap-2 border-t p-2">
           <Avatar initials={demoMode ? "JB" : "MA"} size="sm" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[11px] font-semibold">
+            <p className="truncate text-xs font-semibold">
               {demoMode ? "Jordan Blake" : "Muster Administrator"}
             </p>
-            <p className="truncate text-[9px] text-muted-foreground">
+            <p className="truncate text-xs text-muted-foreground">
               {demoMode ? "Security Lead" : "Administrator"}
             </p>
           </div>

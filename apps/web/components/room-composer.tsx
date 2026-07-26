@@ -42,6 +42,13 @@ export function RoomComposer({
         placeholder: `Message ${roomLabel ?? `#${roomSlug}`} or type / for commands`,
       }),
     ],
+    editorProps: {
+      attributes: {
+        "aria-label": `Message ${roomLabel ?? `#${roomSlug}`}`,
+        "aria-multiline": "true",
+        role: "textbox",
+      },
+    },
     immediatelyRender: false,
     onUpdate({ editor: current }) {
       localStorage.setItem(storageKey, JSON.stringify(current.getJSON()));
@@ -111,35 +118,84 @@ export function RoomComposer({
           editor={editor}
           className="px-3 py-1.5 text-sm"
           onKeyDown={handleKeyDown}
-          aria-label={`Message ${roomLabel ?? `#${roomSlug}`}`}
         />
         <div className="flex flex-wrap items-center justify-between gap-2 border-t px-2 py-1.5">
           <div className="flex items-center">
-            <Button size="icon" variant="ghost" aria-label="Attach evidence">
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Attach evidence (coming soon)"
+              title="Evidence attachments are not available yet"
+              disabled
+            >
               <FileUp />
             </Button>
-            <Button size="icon" variant="ghost" aria-label="Mention person">
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Mention person (coming soon)"
+              title="Person mentions are not available yet"
+              disabled
+            >
               <AtSign />
             </Button>
-            <Button size="icon" variant="ghost" aria-label="Mention agent">
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Mention agent (coming soon)"
+              title="Agent mentions are not available yet"
+              disabled
+            >
               <Bot />
             </Button>
-            <Button size="icon" variant="ghost" aria-label="Link alert">
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Link alert (coming soon)"
+              title="Alert linking is not available yet"
+              disabled
+            >
               <Link2 />
             </Button>
-            <Button size="icon" variant="ghost" aria-label="Record decision">
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Record decision (coming soon)"
+              title="Decision recording is not available yet"
+              disabled
+            >
               <ShieldCheck />
             </Button>
-            <Button size="icon" variant="ghost" aria-label="Start workflow">
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Start workflow (coming soon)"
+              title="Workflow starts are not available yet"
+              disabled
+            >
               <ListChecks />
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <span className="hidden text-[10px] text-muted-foreground tablet:inline">
+            <span className="hidden text-xs text-muted-foreground tablet:inline">
               Enter to send · Shift+Enter for new line
             </span>
-            {state === "error" && <span role="alert" className="text-[11px] text-[var(--color-error)]">Message failed. Draft preserved.</span>}
-            <Button onClick={() => void send()} disabled={state === "sending"} state={state === "sending" ? "loading" : state === "error" ? "error" : "default"}>
+            {state === "error" && (
+              <span role="alert" className="text-xs text-[var(--color-error)]">
+                Message failed. Draft preserved.
+              </span>
+            )}
+            <Button
+              onClick={() => void send()}
+              disabled={state === "sending"}
+              state={
+                state === "sending"
+                  ? "loading"
+                  : state === "error"
+                    ? "error"
+                    : "default"
+              }
+            >
               {state === "sending" ? "Sending…" : "Send"} <Send />
             </Button>
           </div>

@@ -14,7 +14,6 @@
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.2.7",
     "@fontsource-variable/jetbrains-mono": "^5.2.7",
-    "@monaco-editor/react": "4.7.0",
     "@muster/auth": "workspace:*",
     "@muster/authz": "workspace:*",
     "@muster/contracts": "workspace:*",
