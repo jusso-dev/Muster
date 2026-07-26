@@ -14,7 +14,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "BETTER_AUTH_SECRET=muster-playwright-secret-at-least-32-characters AUTH_RATE_LIMIT_MAX=10000 DATABASE_URL=postgresql://muster:muster@localhost:5432/muster REDIS_URL=redis://localhost:6379 pnpm --dir apps/web dev",
+    command: "MUSTER_DEMO_MODE=true NEXT_PUBLIC_MUSTER_DEMO_MODE=true BETTER_AUTH_SECRET=muster-playwright-secret-at-least-32-characters AUTH_RATE_LIMIT_MAX=10000 DATABASE_URL=postgresql://muster:muster@localhost:5432/muster REDIS_URL=redis://localhost:6379 pnpm --dir apps/web dev",
     url: "http://127.0.0.1:3000/api/v1/health",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

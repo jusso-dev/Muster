@@ -1,5 +1,9 @@
 import { redirect } from "next/navigation";
 
 export default function AlertsPage() {
-  redirect("/rooms/alerts");
+  redirect(
+    process.env.MUSTER_DEMO_MODE === "true"
+      ? "/rooms/alerts"
+      : "/rooms/soc-operations",
+  );
 }

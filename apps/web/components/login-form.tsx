@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 
 export function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("justin.middler@yuma.example");
-  const [password, setPassword] = useState("MusterDemo!2026");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [hydrated, setHydrated] = useState(false);

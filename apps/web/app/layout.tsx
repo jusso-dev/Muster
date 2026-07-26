@@ -12,6 +12,10 @@ export const metadata: Metadata = {
   description:
     "Muster is the shared workspace for human and agent-driven security operations.",
   applicationName: "Muster",
+  icons: {
+    icon: "/muster-logo.png",
+    apple: "/muster-logo.png",
+  },
   appleWebApp: {
     capable: true,
     title: "Muster",

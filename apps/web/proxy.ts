@@ -7,7 +7,7 @@ const publicPrefixes = [
   "/api/v1/health",
   "/api/v1/ready",
   "/api/v1/metrics",
-  "/icon.svg",
+  "/muster-logo.png",
   "/sw.js",
   "/manifest.webmanifest",
 ];

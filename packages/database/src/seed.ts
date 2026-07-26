@@ -1,25 +1,34 @@
 import { database, closeDatabase, schema } from "./index.ts";
 import { demoIds } from "./seed-data.ts";
+import { sql } from "drizzle-orm";
 
 const db = database();
-const allCapabilities = ["administration.manage", "rooms.read", "rooms.create", "rooms.manage", "messages.create", "alerts.read", "alerts.acknowledge", "alerts.promote", "investigations.read", "investigations.create", "investigations.update", "investigations.promote", "workflows.approve", "agents.invoke", "audit.read"];
+const allCapabilities = ["administration.manage", "rooms.read", "rooms.create", "rooms.manage", "messages.create", "alerts.read", "alerts.acknowledge", "alerts.promote", "investigations.read", "investigations.create", "investigations.update", "investigations.promote", "tasks.read", "tasks.create", "tasks.update", "tasks.assign", "workflows.approve", "agents.invoke", "audit.read"];
 
 await db.insert(schema.organisations).values({
   id: demoIds.organisation,
-  name: "Yuma Security Operations",
-  slug: "yuma-security",
+  name: "Muster Demo Workspace",
+  slug: "muster-demo",
   dataRegion: "australia",
   defaultTimezone: "Australia/Sydney",
   retentionPolicy: { messagesDays: 365, auditDays: 2555 },
   authenticationPolicy: { requireMfaForPrivilegedRoles: true },
-}).onConflictDoNothing();
+}).onConflictDoUpdate({
+  target: schema.organisations.id,
+  set: {
+    name: "Muster Demo Workspace",
+    slug: "muster-demo",
+    dataRegion: "australia",
+    defaultTimezone: "Australia/Sydney",
+  },
+});
 
 await db.insert(schema.actors).values([
-  { id: demoIds.actors.justin, organisationId: demoIds.organisation, actorType: "human", displayName: "Justin Middler", identityReference: "justin.middler@yuma.example", capabilityAssignments: allCapabilities },
-  { id: demoIds.actors.maya, organisationId: demoIds.organisation, actorType: "human", displayName: "Maya Chen", identityReference: "maya.chen@yuma.example", capabilityAssignments: ["rooms.read","messages.create","alerts.read","alerts.acknowledge","alerts.promote","investigations.read","investigations.create","investigations.update","investigations.promote","workflows.approve","agents.invoke"] },
-  { id: demoIds.actors.daniel, organisationId: demoIds.organisation, actorType: "human", displayName: "Daniel Brooks", identityReference: "daniel.brooks@yuma.example", capabilityAssignments: ["rooms.read","messages.create","alerts.read","investigations.read","sentinel.rules.publish","bower.policy.propose"] },
-  { id: demoIds.actors.priya, organisationId: demoIds.organisation, actorType: "human", displayName: "Priya Nair", identityReference: "priya.nair@yuma.example", capabilityAssignments: ["rooms.read","messages.create","alerts.read","investigations.read","investigations.update","workflows.approve","tawny.response.isolate_host"] },
-  { id: demoIds.actors.alex, organisationId: demoIds.organisation, actorType: "human", displayName: "Alex Morgan", identityReference: "alex.morgan@yuma.example", capabilityAssignments: ["rooms.read","alerts.read","investigations.read","audit.read"] },
+  { id: demoIds.actors.jordan, organisationId: demoIds.organisation, actorType: "human", displayName: "Jordan Blake", identityReference: "admin@muster.local", capabilityAssignments: allCapabilities },
+  { id: demoIds.actors.maya, organisationId: demoIds.organisation, actorType: "human", displayName: "Maya Chen", identityReference: "maya.chen@example.invalid", capabilityAssignments: ["rooms.read","messages.create","alerts.read","alerts.acknowledge","alerts.promote","investigations.read","investigations.create","investigations.update","investigations.promote","tasks.read","tasks.create","tasks.update","tasks.assign","workflows.approve","agents.invoke"] },
+  { id: demoIds.actors.daniel, organisationId: demoIds.organisation, actorType: "human", displayName: "Daniel Brooks", identityReference: "daniel.brooks@example.invalid", capabilityAssignments: ["rooms.read","messages.create","alerts.read","investigations.read","tasks.read","tasks.create","tasks.update","tasks.assign","sentinel.rules.publish","bower.policy.propose"] },
+  { id: demoIds.actors.priya, organisationId: demoIds.organisation, actorType: "human", displayName: "Priya Nair", identityReference: "priya.nair@example.invalid", capabilityAssignments: ["rooms.read","messages.create","alerts.read","investigations.read","investigations.update","tasks.read","tasks.create","tasks.update","tasks.assign","workflows.approve","tawny.response.isolate_host"] },
+  { id: demoIds.actors.alex, organisationId: demoIds.organisation, actorType: "human", displayName: "Alex Morgan", identityReference: "alex.morgan@example.invalid", capabilityAssignments: ["rooms.read","alerts.read","investigations.read","tasks.read","audit.read"] },
   { id: demoIds.actors.triage, organisationId: demoIds.organisation, actorType: "agent", displayName: "Triage Agent", identityReference: "agent:triage", capabilityAssignments: ["alerts.read","investigations.read","investigations.update"] },
   { id: demoIds.actors.tawnyHunt, organisationId: demoIds.organisation, actorType: "agent", displayName: "Tawny Hunt Agent", identityReference: "agent:tawny-hunt", capabilityAssignments: ["tawny.telemetry.read","tawny.hunts.execute"] },
   { id: demoIds.actors.bowerHealth, organisationId: demoIds.organisation, actorType: "agent", displayName: "Bower Health Agent", identityReference: "agent:bower-health", capabilityAssignments: ["bower.fleet.read","bower.policy.read"] },
@@ -27,7 +36,14 @@ await db.insert(schema.actors).values([
   { id: demoIds.actors.sentinelQuery, organisationId: demoIds.organisation, actorType: "agent", displayName: "Sentinel Query Agent", identityReference: "agent:sentinel-query", capabilityAssignments: ["sentinel.query.execute","sentinel.rules.read"] },
   { id: demoIds.actors.threatIntel, organisationId: demoIds.organisation, actorType: "agent", displayName: "Threat Intelligence Agent", identityReference: "agent:threat-intel", capabilityAssignments: ["alerts.read"] },
   { id: demoIds.actors.system, organisationId: demoIds.organisation, actorType: "system", displayName: "Muster", identityReference: "system:muster", capabilityAssignments: [] },
-]).onConflictDoNothing();
+]).onConflictDoUpdate({
+  target: schema.actors.id,
+  set: {
+    displayName: sql`excluded.display_name`,
+    identityReference: sql`excluded.identity_reference`,
+    capabilityAssignments: sql`excluded.capability_assignments`,
+  },
+});
 
 const channelRoomRows = [
   [demoIds.rooms.soc, "soc-operations", "SOC operations", "operations"],
@@ -49,14 +65,14 @@ const roomRows = [...channelRoomRows, ...directRoomRows] as const;
 await db.insert(schema.rooms).values(roomRows.map(([id, slug, displayName, roomType]) => ({
   id, organisationId: demoIds.organisation, name: slug, slug, displayName,
   description: "Synthetic demonstration room", roomType,
-  createdByActorId: demoIds.actors.justin,
+  createdByActorId: demoIds.actors.jordan,
   linkedKelpieCaseId: slug.startsWith("incident-") ? "KP-2026-0042" : null,
   defaultSeverity: slug.includes("incident") || slug.includes("investigation") ? "critical" as const : null,
 }))).onConflictDoNothing();
 await db.insert(schema.roomMemberships).values(
   channelRoomRows.flatMap(([roomId]) =>
     [
-      demoIds.actors.justin,
+      demoIds.actors.jordan,
       demoIds.actors.maya,
       demoIds.actors.priya,
       demoIds.actors.triage,
@@ -65,7 +81,7 @@ await db.insert(schema.roomMemberships).values(
       organisationId: demoIds.organisation,
       roomId,
       actorId,
-      membershipRole: actorId === demoIds.actors.justin
+      membershipRole: actorId === demoIds.actors.jordan
         ? "owner" as const
         : actorId === demoIds.actors.triage || actorId === demoIds.actors.tawnyHunt
           ? "agent_member" as const
@@ -74,19 +90,19 @@ await db.insert(schema.roomMemberships).values(
   ),
 ).onConflictDoNothing();
 await db.insert(schema.roomMemberships).values([
-  ...[demoIds.actors.justin, demoIds.actors.maya].map((actorId) => ({
+  ...[demoIds.actors.jordan, demoIds.actors.maya].map((actorId) => ({
     organisationId: demoIds.organisation,
     roomId: demoIds.rooms.mayaDirect,
     actorId,
-    membershipRole: actorId === demoIds.actors.justin ? "owner" as const : "member" as const,
+    membershipRole: actorId === demoIds.actors.jordan ? "owner" as const : "member" as const,
   })),
-  ...[demoIds.actors.justin, demoIds.actors.triage].map((actorId) => ({
+  ...[demoIds.actors.jordan, demoIds.actors.triage].map((actorId) => ({
     organisationId: demoIds.organisation,
     roomId: demoIds.rooms.triageDirect,
     actorId,
     membershipRole: actorId === demoIds.actors.triage ? "agent_member" as const : "owner" as const,
   })),
-  ...[demoIds.actors.justin, demoIds.actors.tawnyHunt].map((actorId) => ({
+  ...[demoIds.actors.jordan, demoIds.actors.tawnyHunt].map((actorId) => ({
     organisationId: demoIds.organisation,
     roomId: demoIds.rooms.tawnyDirect,
     actorId,
@@ -142,7 +158,7 @@ await db.insert(schema.messages).values([
     organisationId: demoIds.organisation,
     roomId: demoIds.rooms.investigation,
     threadParentId: demoIds.messages.mayaParent,
-    authorActorId: demoIds.actors.justin,
+    authorActorId: demoIds.actors.jordan,
     messageType: "text",
     plainText: "Proceed to approval once the volatile capture is confirmed.",
     document: textDocument("Proceed to approval once the volatile capture is confirmed."),
@@ -164,10 +180,10 @@ await db.insert(schema.messages).values([
   },
 ]).onConflictDoNothing();
 await db.insert(schema.reactions).values([
-  { organisationId: demoIds.organisation, messageId: demoIds.messages.mayaParent, actorId: demoIds.actors.justin, emoji: "eyes" },
+  { organisationId: demoIds.organisation, messageId: demoIds.messages.mayaParent, actorId: demoIds.actors.jordan, emoji: "eyes" },
   { organisationId: demoIds.organisation, messageId: demoIds.messages.mayaParent, actorId: demoIds.actors.priya, emoji: "eyes" },
   { organisationId: demoIds.organisation, messageId: demoIds.messages.mayaParent, actorId: demoIds.actors.triage, emoji: "eyes" },
-  { organisationId: demoIds.organisation, messageId: demoIds.messages.priyaParent, actorId: demoIds.actors.justin, emoji: "check" },
+  { organisationId: demoIds.organisation, messageId: demoIds.messages.priyaParent, actorId: demoIds.actors.jordan, emoji: "check" },
   { organisationId: demoIds.organisation, messageId: demoIds.messages.priyaParent, actorId: demoIds.actors.maya, emoji: "check" },
 ]).onConflictDoNothing();
 
@@ -229,5 +245,60 @@ await db.insert(schema.integrationRecords).values([
   { id: "018f55d8-c4c7-7c3e-88ef-000000000603", organisationId: demoIds.organisation, product: "bower", instanceId: "bower-mock-au-01", displayName: "Bower local mock", status: "degraded", mock: true, health: { staleCollectors: 1 } },
 ]).onConflictDoNothing();
 
-process.stdout.write("Seeded Yuma Security Operations with synthetic demonstration data.\n");
+await db.insert(schema.tasks).values([
+  {
+    id: demoIds.tasks.threatHunt,
+    organisationId: demoIds.organisation,
+    title: "Threat hunt the unusual authentication alert",
+    description: "Review the earlier identity alert, then hunt the linked endpoint and source IP for related activity.",
+    status: "ready",
+    priority: "high",
+    assignedActorId: demoIds.actors.tawnyHunt,
+    createdByActorId: demoIds.actors.jordan,
+    roomId: demoIds.rooms.investigation,
+    investigationId: demoIds.investigation,
+    dueAt: new Date("2026-07-26T09:30:00Z"),
+  },
+  {
+    id: demoIds.tasks.incidentEmail,
+    organisationId: demoIds.organisation,
+    title: "Prepare incident update email",
+    description: "Draft a concise update for the incident stakeholders. Sending remains human-approved.",
+    status: "backlog",
+    priority: "normal",
+    assignedActorId: demoIds.actors.kelpieCase,
+    createdByActorId: demoIds.actors.jordan,
+    roomId: demoIds.rooms.incident,
+    investigationId: demoIds.investigation,
+    approvalRequired: true,
+  },
+  {
+    id: demoIds.tasks.executiveUpdate,
+    organisationId: demoIds.organisation,
+    title: "Prepare executive incident update",
+    description: "Summarise impact, containment, decisions, and next update time without exposing restricted evidence.",
+    status: "in_progress",
+    priority: "urgent",
+    assignedActorId: demoIds.actors.triage,
+    createdByActorId: demoIds.actors.maya,
+    roomId: demoIds.rooms.incident,
+    investigationId: demoIds.investigation,
+    agentRunStatus: "running",
+  },
+  {
+    id: demoIds.tasks.monthlyLandscape,
+    organisationId: demoIds.organisation,
+    title: "Monthly threat landscape and SOC MTTR",
+    description: "Analyse the prior month of incidents, recurring techniques, MTTA, and MTTR. Produce an evidence-linked review draft.",
+    status: "review",
+    priority: "normal",
+    assignedActorId: demoIds.actors.threatIntel,
+    createdByActorId: demoIds.actors.jordan,
+    roomId: demoIds.rooms.soc,
+    investigationId: demoIds.investigation,
+    agentRunStatus: "completed",
+  },
+]).onConflictDoNothing();
+
+process.stdout.write("Seeded Muster Demo Workspace with synthetic demonstration data.\n");
 await closeDatabase();

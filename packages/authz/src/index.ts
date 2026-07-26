@@ -4,6 +4,10 @@ export const capabilities = [
   "rooms.manage",
   "messages.create",
   "messages.moderate",
+  "tasks.read",
+  "tasks.create",
+  "tasks.update",
+  "tasks.assign",
   "alerts.read",
   "alerts.acknowledge",
   "alerts.dismiss",
@@ -57,6 +61,7 @@ export type StarterRole =
 
 const readCapabilities: Capability[] = [
   "rooms.read",
+  "tasks.read",
   "alerts.read",
   "investigations.read",
   "kelpie.cases.read",
@@ -75,6 +80,9 @@ export const starterRoleCapabilities: Record<StarterRole, readonly Capability[]>
   incident_commander: [
     ...readCapabilities,
     "messages.create",
+    "tasks.create",
+    "tasks.update",
+    "tasks.assign",
     "alerts.acknowledge",
     "alerts.promote",
     "investigations.create",
@@ -95,6 +103,9 @@ export const starterRoleCapabilities: Record<StarterRole, readonly Capability[]>
   senior_analyst: [
     ...readCapabilities,
     "messages.create",
+    "tasks.create",
+    "tasks.update",
+    "tasks.assign",
     "alerts.acknowledge",
     "alerts.dismiss",
     "alerts.promote",
@@ -114,6 +125,9 @@ export const starterRoleCapabilities: Record<StarterRole, readonly Capability[]>
   analyst: [
     ...readCapabilities,
     "messages.create",
+    "tasks.create",
+    "tasks.update",
+    "tasks.assign",
     "alerts.acknowledge",
     "alerts.dismiss",
     "investigations.create",
@@ -127,6 +141,9 @@ export const starterRoleCapabilities: Record<StarterRole, readonly Capability[]>
   detection_engineer: [
     ...readCapabilities,
     "messages.create",
+    "tasks.create",
+    "tasks.update",
+    "tasks.assign",
     "investigations.create",
     "investigations.update",
     "sentinel.query.execute",
@@ -139,6 +156,9 @@ export const starterRoleCapabilities: Record<StarterRole, readonly Capability[]>
   threat_hunter: [
     ...readCapabilities,
     "messages.create",
+    "tasks.create",
+    "tasks.update",
+    "tasks.assign",
     "investigations.create",
     "investigations.update",
     "tawny.telemetry.read",

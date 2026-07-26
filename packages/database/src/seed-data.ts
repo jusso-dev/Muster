@@ -1,7 +1,7 @@
 export const demoIds = {
   organisation: "018f55d8-c4c7-7c3e-88ef-000000000001",
   actors: {
-    justin: "018f55d8-c4c7-7c3e-88ef-000000000010",
+    jordan: "018f55d8-c4c7-7c3e-88ef-000000000010",
     maya: "018f55d8-c4c7-7c3e-88ef-000000000011",
     daniel: "018f55d8-c4c7-7c3e-88ef-000000000012",
     priya: "018f55d8-c4c7-7c3e-88ef-000000000013",
@@ -27,6 +27,7 @@ export const demoIds = {
     mayaDirect: "018f55d8-c4c7-7c3e-88ef-000000000109",
     triageDirect: "018f55d8-c4c7-7c3e-88ef-000000000110",
     tawnyDirect: "018f55d8-c4c7-7c3e-88ef-000000000111",
+    parkerDirect: "018f55d8-c4c7-7c3e-88ef-000000000112",
   },
   investigation: "018f55d8-c4c7-7c3e-88ef-000000000200",
   alerts: {
@@ -34,6 +35,12 @@ export const demoIds = {
     bower: "018f55d8-c4c7-7c3e-88ef-000000000302",
   },
   approval: "018f55d8-c4c7-7c3e-88ef-000000000401",
+  tasks: {
+    threatHunt: "018f55d8-c4c7-7c3e-88ef-000000000801",
+    incidentEmail: "018f55d8-c4c7-7c3e-88ef-000000000802",
+    executiveUpdate: "018f55d8-c4c7-7c3e-88ef-000000000803",
+    monthlyLandscape: "018f55d8-c4c7-7c3e-88ef-000000000804",
+  },
   messages: {
     mayaParent: "018f55d8-c4c7-7c3e-88ef-000000000701",
     priyaReply: "018f55d8-c4c7-7c3e-88ef-000000000702",

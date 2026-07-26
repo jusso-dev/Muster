@@ -35,7 +35,7 @@ done
 
 curl --fail --silent \
   -H "content-type: application/json" \
-  -d "{\"name\":\"Justin Middler\",\"email\":\"${MUSTER_LOCAL_ADMIN_EMAIL}\",\"password\":\"${MUSTER_LOCAL_ADMIN_PASSWORD}\"}" \
+  -d "{\"name\":\"Muster Administrator\",\"email\":\"${MUSTER_LOCAL_ADMIN_EMAIL}\",\"password\":\"${MUSTER_LOCAL_ADMIN_PASSWORD}\"}" \
   http://localhost:3000/api/auth/sign-up/email >/dev/null || true
 
 printf '%s\n' \

@@ -1,2 +1,7 @@
 import { ApprovalView } from "@/components/approval-view";
-export default function ApprovalsPage() { return <ApprovalView />; }
+import { redirect } from "next/navigation";
+
+export default function ApprovalsPage() {
+  if (process.env.MUSTER_DEMO_MODE !== "true") redirect("/tasks");
+  return <ApprovalView />;
+}

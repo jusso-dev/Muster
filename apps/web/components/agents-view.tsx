@@ -12,14 +12,13 @@ import {
   FileDiff,
   Search,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { demoAgents } from "@/lib/demo-data";
+import { demoAgents, demoMode } from "@/lib/demo-data";
 
 export function AgentsView() {
   const [query, setQuery] = useState("");
@@ -57,16 +56,56 @@ export function AgentsView() {
 const agentTabs = ["Overview", "Instructions", "Tools", "Permissions", "Rooms", "Runs", "Learning", "Evaluations", "Versions", "Audit"];
 
 export function AgentDetailView({ tab = "overview" }: { tab?: string }) {
-  const agent = demoAgents[0];
+  const agent = demoAgents[0]!;
   return (
     <AppShell>
-      <PageHeader eyebrow="Agent" title={agent.name} description={`${agent.runtime} · ${agent.model} · owned by ${agent.owner}`} actions={<><Button variant="outline"><CircleStop />Cancel active run</Button><Button><Bot />Invoke</Button></>} />
-      <div className="flex items-center gap-3 border-b bg-[var(--color-paper-2)] px-4 py-3"><Avatar initials={agent.initials} agent size="lg" /><Badge className="agent-surface">Agent</Badge><Badge className="success-surface text-[var(--color-success)]">Active</Badge><span className="text-xs text-muted-foreground">{agent.successRate} success · last run {agent.lastRun}</span><Badge className="ml-auto bg-muted text-muted-foreground">Kill switch off</Badge></div>
+      <PageHeader eyebrow="Agent" title={agent.name} description={`${agent.runtime} · ${agent.model} · owned by ${agent.owner}`} actions={<>{demoMode && <Button variant="outline"><CircleStop />Cancel active run</Button>}<Button><Bot />Invoke</Button></>} />
+      <div className="flex items-center gap-3 border-b bg-[var(--color-paper-2)] px-4 py-3"><Avatar initials={agent.initials} agent size="lg" /><Badge className="agent-surface">Agent</Badge><Badge className="success-surface text-[var(--color-success)]">Active</Badge><span className="text-xs text-muted-foreground">{demoMode ? `${agent.successRate} success · last run ${agent.lastRun}` : "No runs yet"}</span><Badge className="ml-auto bg-muted text-muted-foreground">Kill switch off</Badge></div>
       <nav className="scroll-region flex overflow-x-auto border-b px-3">{agentTabs.map((item) => <Link key={item} href={item === "Overview" ? `/agents/${agent.id}` : `/agents/${agent.id}/${item.toLowerCase()}`} className={`shrink-0 border-b-2 px-3 py-2.5 text-xs font-semibold ${tab === item.toLowerCase() ? "border-[var(--color-agent)] text-foreground" : "border-transparent text-muted-foreground"}`}>{item}</Link>)}</nav>
       <div className="scroll-region min-h-0 flex-1 overflow-y-auto p-3 tablet:p-5">
-        <div className="mx-auto max-w-6xl">{tab === "learning" ? <LearningPanel /> : <AgentOverview />}</div>
+        <div className="mx-auto max-w-6xl">{demoMode ? (tab === "learning" ? <LearningPanel /> : <AgentOverview />) : (tab === "learning" ? <CleanLearningPanel /> : <CleanAgentOverview purpose={agent.purpose} />)}</div>
       </div>
     </AppShell>
+  );
+}
+
+function CleanAgentOverview({ purpose }: { purpose: string }) {
+  return (
+    <div className="grid gap-4 tablet:grid-cols-[minmax(0,1fr)_20rem]">
+      <section className="border bg-card p-4">
+        <h2 className="font-display text-sm font-bold">Purpose</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{purpose}</p>
+        <div className="mt-6 border border-dashed p-8 text-center">
+          <Activity className="mx-auto size-5 text-muted-foreground" />
+          <h3 className="mt-3 text-sm font-bold">No runs yet</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Assign a task or invoke this agent to create the first audited run.
+          </p>
+        </div>
+      </section>
+      <aside className="border bg-card p-3">
+        <h2 className="font-display text-sm font-bold">Boundaries</h2>
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+          Tools are capability-scoped. External actions require the configured
+          human approval policy.
+        </p>
+      </aside>
+    </div>
+  );
+}
+
+function CleanLearningPanel() {
+  return (
+    <div className="border bg-card p-8 text-center">
+      <BrainCircuit className="mx-auto size-6 text-[var(--color-agent)]" />
+      <h2 className="mt-3 font-display text-sm font-bold">
+        No learning proposals yet
+      </h2>
+      <p className="mx-auto mt-1 max-w-xl text-xs leading-5 text-muted-foreground">
+        Evidence-linked notes and skill proposals appear after reviewed runs.
+        Publication always requires evaluation and human approval.
+      </p>
+    </div>
   );
 }
 

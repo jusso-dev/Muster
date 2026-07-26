@@ -30,6 +30,7 @@ import {
   activeInvestigation,
   demoAgents,
   demoDirectRooms,
+  demoMode,
   demoPeople,
   demoRooms,
   roomIdBySlug,
@@ -248,6 +249,37 @@ function RoomDetailsPanel({ slug }: { slug: string }) {
     );
   }
 
+  if (!demoMode) {
+    const members = [demoPeople[0], ...demoAgents].flatMap((member) =>
+      member ? [member] : [],
+    );
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex h-12 items-center border-b px-3">
+          <h2 className="text-xs font-bold">Room details</h2>
+        </div>
+        <div className="p-4 text-xs">
+          <p className="font-bold">Members</p>
+          <div className="mt-3 space-y-2">
+            {members.map((member) => (
+              <div key={member.id} className="flex items-center gap-2">
+                <Avatar
+                  initials={member.initials}
+                  agent={"runtime" in member}
+                  size="sm"
+                />
+                <span>{member.name}</span>
+                {"runtime" in member && (
+                  <Badge className="agent-surface ml-auto">Agent</Badge>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-12 items-center border-b px-3">
@@ -300,7 +332,7 @@ function RoomDetailsPanel({ slug }: { slug: string }) {
             <span className="text-muted-foreground">18</span>
           </div>
           <div className="space-y-2">
-            {[demoPeople[1], demoPeople[0], demoAgents[0], demoAgents[1]].map(
+            {[demoPeople[1]!, demoPeople[0]!, demoAgents[0]!, demoAgents[1]!].map(
               (member) => (
                 <div key={member.id} className="flex items-center gap-2">
                   <Avatar
@@ -397,8 +429,8 @@ function ThreadPanel({
         </div>
         {replies.map((message) => {
           const actor = actorIdentity[message.authorActorId] ?? {
-            name: "Justin Middler",
-            initials: "JM",
+            name: "Jordan Blake",
+            initials: "JB",
             agent: false,
           };
           return (
@@ -440,8 +472,8 @@ function ThreadPanel({
 
 export function RoomView({ slug }: { slug: string }) {
   const [threadOpen, setThreadOpen] = useState(false);
-  const [threadParent, setThreadParent] = useState<TimelineItem>(
-    roomTimeline[1]!,
+  const [threadParent, setThreadParent] = useState<TimelineItem | null>(
+    roomTimeline[1] ?? null,
   );
   const [messages, setMessages] = useState<RoomMessageRecord[]>([]);
   const [reactionCounts, setReactionCounts] = useState<Record<string, number>>(
@@ -472,7 +504,7 @@ export function RoomView({ slug }: { slug: string }) {
       const data = JSON.parse((event as MessageEvent<string>).data) as { type?: string; data?: { messageId?: string } };
       setLiveEvents((current) => [
         ...current,
-        { id: data.data?.messageId ?? crypto.randomUUID(), type: data.type ?? "update" },
+        { id: crypto.randomUUID(), type: data.type ?? "update" },
       ]);
     });
     return () => source.close();
@@ -526,7 +558,7 @@ export function RoomView({ slug }: { slug: string }) {
   return (
     <AppShell
       context={
-        threadOpen ? (
+        threadOpen && threadParent ? (
           <ThreadPanel
             parent={threadParent}
             messages={messages}
@@ -565,7 +597,7 @@ export function RoomView({ slug }: { slug: string }) {
             </p>
           </div>
           <div className="hidden -space-x-1 tablet:flex">
-            {["MC", "PN", "JM", "TH"].map((initials) => (
+            {(demoMode ? ["MC", "PN", "JB", "TH"] : ["MA", "AL", "JE", "PA"]).map((initials) => (
               <Avatar
                 key={initials}
                 initials={initials}
@@ -575,7 +607,9 @@ export function RoomView({ slug }: { slug: string }) {
               />
             ))}
           </div>
-          <Badge className="hidden tablet:inline-flex">18</Badge>
+          <Badge className="hidden tablet:inline-flex">
+            {demoMode ? 18 : 4}
+          </Badge>
           <Button variant="ghost" size="icon" aria-label="Search room">
             <Search />
           </Button>
@@ -647,9 +681,11 @@ export function RoomView({ slug }: { slug: string }) {
         className="scroll-region min-h-0 flex-1 overflow-y-auto"
       >
         <div className="mx-auto max-w-5xl py-3">
-          <div className="mb-2 flex items-center gap-2 px-4 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            <Clock3 className="size-3" /> Today · 26 July 2026
-          </div>
+          {(roomTimeline.length > 0 || newRootMessages.length > 0) && (
+            <div className="mb-2 flex items-center gap-2 px-4 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              <Clock3 className="size-3" /> Today
+            </div>
+          )}
           {roomTimeline.map((item) => (
             <TimelineEntry
               key={item.id}
@@ -669,12 +705,14 @@ export function RoomView({ slug }: { slug: string }) {
               className="group relative flex gap-3 px-4 py-3 hover:bg-muted/50"
               data-dynamic-message="true"
             >
-              <Avatar initials="JM" />
+              <Avatar initials={demoMode ? "JB" : "MA"} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
-                  <h3 className="text-sm font-bold">Justin Middler</h3>
+                  <h3 className="text-sm font-bold">
+                    {demoMode ? "Jordan Blake" : "Muster Administrator"}
+                  </h3>
                   <span className="text-[11px] text-muted-foreground">
-                    Security Lead · {new Date(message.createdAt).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: false })}
+                    {demoMode ? "Security Lead" : "Administrator"} · {new Date(message.createdAt).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: false })}
                   </span>
                 </div>
                 <p className="message-prose mt-1 whitespace-pre-wrap text-sm leading-5 text-[var(--color-ink-2)]">{message.plainText}</p>
@@ -688,11 +726,27 @@ export function RoomView({ slug }: { slug: string }) {
               <span className="mono text-muted-foreground">{event.type}</span>
             </div>
           ))}
-          <div className="mx-4 mt-3 flex items-center gap-2 rounded border border-[var(--color-accent)] bg-[var(--color-accent-soft)] p-2 text-xs">
-            <Bot className="size-4 text-[var(--color-agent)]" />
-            <span className="flex-1"><strong>Detection Engineering Agent</strong> is drafting Sigma and KQL proposals…</span>
-            <Badge className="agent-surface">Running · 01:18</Badge>
-          </div>
+          {!demoMode &&
+            roomTimeline.length === 0 &&
+            newRootMessages.length === 0 && (
+              <div className="mx-auto mt-16 max-w-md px-6 text-center">
+                <Hash className="mx-auto size-7 text-muted-foreground" />
+                <h2 className="mt-3 text-sm font-bold">
+                  Start the conversation
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Messages, agent work, decisions, and security events posted
+                  here become the durable room history.
+                </p>
+              </div>
+            )}
+          {demoMode && (
+            <div className="mx-4 mt-3 flex items-center gap-2 rounded border border-[var(--color-accent)] bg-[var(--color-accent-soft)] p-2 text-xs">
+              <Bot className="size-4 text-[var(--color-agent)]" />
+              <span className="flex-1"><strong>Detection Engineering Agent</strong> is drafting Sigma and KQL proposals…</span>
+              <Badge className="agent-surface">Running · 01:18</Badge>
+            </div>
+          )}
         </div>
       </div>
       <RoomComposer

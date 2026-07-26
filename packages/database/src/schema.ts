@@ -22,6 +22,8 @@ import {
   messageTypeValues,
   roomTypeValues,
   severityValues,
+  taskPriorityValues,
+  taskStatusValues,
 } from "@muster/contracts";
 
 const timestamps = {
@@ -39,6 +41,8 @@ export const investigationStatusEnum = pgEnum(
   investigationStatusValues,
 );
 export const approvalStatusEnum = pgEnum("approval_status", approvalStatusValues);
+export const taskStatusEnum = pgEnum("task_status", taskStatusValues);
+export const taskPriorityEnum = pgEnum("task_priority", taskPriorityValues);
 
 export const organisations = pgTable(
   "organisations",
@@ -951,6 +955,44 @@ export const notifications = pgTable(
       table.actorId,
       table.readAt,
       table.createdAt,
+    ),
+  ],
+);
+
+export const tasks = pgTable(
+  "tasks",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    status: taskStatusEnum("status").notNull().default("backlog"),
+    priority: taskPriorityEnum("priority").notNull().default("normal"),
+    assignedActorId: uuid("assigned_actor_id").references(() => actors.id),
+    createdByActorId: uuid("created_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    roomId: uuid("room_id").references(() => rooms.id),
+    investigationId: uuid("investigation_id").references(() => investigations.id),
+    approvalRequired: boolean("approval_required").notNull().default(false),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    agentRunId: text("agent_run_id"),
+    agentRunStatus: text("agent_run_status"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    index("tasks_org_status_idx").on(
+      table.organisationId,
+      table.status,
+      table.updatedAt,
+    ),
+    index("tasks_org_assignee_idx").on(
+      table.organisationId,
+      table.assignedActorId,
+      table.status,
     ),
   ],
 );

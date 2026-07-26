@@ -10,9 +10,21 @@ Muster connects application telemetry, endpoint detections, security investigati
 
 Muster is a self-hosted workspace where analysts, responders, engineers, security products, and permission-scoped agents work in persistent security rooms. Signals, investigations, approvals, response actions, and linked cases arrive as channel activity instead of separate operational dashboards. Muster complements—not replaces—SIEM, EDR, SOAR, or formal case-management systems.
 
+## Connected security stack
+
+Muster is most useful alongside:
+
+- [Kelpie](https://github.com/jusso-dev/Kelpie) for authoritative incident response and formal security case management
+- [Tawny](https://github.com/jusso-dev/tawny) for endpoint telemetry, detections, hunting, and bounded response actions
+- [Bower](https://github.com/jusso-dev/bower) for trusted application and legacy-system telemetry delivery health
+
+Muster links their signals and actions into rooms without duplicating their
+authoritative data models.
+
 ## What works
 
 - Slack-familiar security rooms with channels, direct messages, threads, reactions, mentions, structured event cards, drafts, SSE updates, and responsive navigation
+- A durable task board for assigning bounded work to analysts or permission-scoped Codex agents, with human review and approval gates for external actions
 - Alert, investigation, approval, response, evidence, and linked-case activity rendered directly into durable room timelines
 - Kelpie case, Tawny endpoint, and Bower telemetry-health adapters with explicit mock mode
 - Versioned MSEP contracts, signed ingestion, replay protection, JSON Schema generation, and typed client primitives
@@ -65,13 +77,20 @@ For a single-node homelab installation that pulls the public image:
 ./scripts/install-homelab.sh
 ```
 
+The homelab example listens on port `3004` and trusts both
+`http://192.168.1.19:3004` and `http://homelab:3004`.
+
 Open:
 
 - Muster: http://localhost:3000
 - Mailpit: http://localhost:8025
 - MinIO console: http://localhost:9001
 
-The bootstrap prints generated local credentials. All demo records are synthetic. Kelpie, Tawny, and Bower display a visible `Mock` state locally; mock success is never represented as production delivery.
+The bootstrap prints generated local credentials. New installations contain only
+the workspace administrator, empty starter rooms, and permission-scoped agent
+definitions—no synthetic operational activity. Demonstration data is opt-in and
+reserved for tests and screenshot generation. Mock integrations remain visibly
+labelled; mock success is never represented as production delivery.
 
 ## Architecture
 
@@ -100,8 +119,14 @@ See [architecture](docs/architecture/README.md), [current upstream contracts](do
 ```bash
 pnpm install
 pnpm db:migrate
-pnpm db:seed
+pnpm db:bootstrap
 pnpm dev
+```
+
+To populate a disposable database for screenshots or tests only:
+
+```bash
+MUSTER_DEMO_MODE=true NEXT_PUBLIC_MUSTER_DEMO_MODE=true pnpm db:seed
 ```
 
 Quality gates:

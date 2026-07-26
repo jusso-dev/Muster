@@ -27,6 +27,7 @@
     "test": "vitest run",
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
+    "bootstrap": "tsx src/bootstrap.ts",
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {

@@ -5,8 +5,8 @@ cd "$(dirname "$0")/.."
 
 env_file=".env.homelab"
 compose_file="deploy/docker/docker-compose.homelab.yml"
-requested_public_url="${MUSTER_PUBLIC_URL:-http://192.168.1.19:3000}"
-requested_http_port="${MUSTER_HTTP_PORT:-3000}"
+requested_public_url="${MUSTER_PUBLIC_URL:-http://192.168.1.19:3004}"
+requested_http_port="${MUSTER_HTTP_PORT:-3004}"
 
 if [[ ! -f "$env_file" ]]; then
   cp deploy/docker/.env.homelab.example "$env_file"
@@ -18,6 +18,7 @@ if [[ ! -f "$env_file" ]]; then
   sed -i.bak \
     -e "s|MUSTER_PUBLIC_URL=.*|MUSTER_PUBLIC_URL=${requested_public_url}|" \
     -e "s|MUSTER_HTTP_PORT=.*|MUSTER_HTTP_PORT=${requested_http_port}|" \
+    -e "s|AUTH_TRUSTED_ORIGINS=.*|AUTH_TRUSTED_ORIGINS=${AUTH_TRUSTED_ORIGINS:-${requested_public_url},http://homelab:${requested_http_port}}|" \
     -e "s|generate-postgres-password|${postgres_password}|" \
     -e "s|generate-better-auth-secret|${auth_secret}|" \
     -e "s|generate-object-storage-secret|${storage_secret}|" \
@@ -25,10 +26,15 @@ if [[ ! -f "$env_file" ]]; then
   rm "$env_file.bak"
   {
     printf 'MUSTER_LOCAL_ADMIN_EMAIL=%s\n' \
-      "${MUSTER_LOCAL_ADMIN_EMAIL:-justin.middler@yuma.example}"
+      "${MUSTER_LOCAL_ADMIN_EMAIL:-admin@muster.local}"
     printf 'MUSTER_LOCAL_ADMIN_PASSWORD=%s\n' "$admin_password"
   } >> "$env_file"
   chmod 600 "$env_file"
+fi
+
+if ! grep -q '^AUTH_TRUSTED_ORIGINS=' "$env_file"; then
+  printf 'AUTH_TRUSTED_ORIGINS=%s,http://homelab:%s\n' \
+    "$requested_public_url" "$requested_http_port" >> "$env_file"
 fi
 
 set -a
@@ -38,7 +44,7 @@ set +a
 docker compose --env-file "$env_file" -f "$compose_file" pull
 docker compose --env-file "$env_file" -f "$compose_file" up -d
 
-health_url="http://127.0.0.1:${MUSTER_HTTP_PORT:-3000}/api/v1/health"
+health_url="http://127.0.0.1:${MUSTER_HTTP_PORT:-3004}/api/v1/health"
 for attempt in $(seq 1 60); do
   if curl --fail --silent "$health_url" >/dev/null; then
     break
@@ -55,8 +61,8 @@ signup_status="$(
     --output /dev/null \
     --write-out '%{http_code}' \
     -H "content-type: application/json" \
-    -d "{\"name\":\"Justin Middler\",\"email\":\"${MUSTER_LOCAL_ADMIN_EMAIL}\",\"password\":\"${MUSTER_LOCAL_ADMIN_PASSWORD}\"}" \
-    "http://127.0.0.1:${MUSTER_HTTP_PORT:-3000}/api/auth/sign-up/email"
+    -d "{\"name\":\"Muster Administrator\",\"email\":\"${MUSTER_LOCAL_ADMIN_EMAIL}\",\"password\":\"${MUSTER_LOCAL_ADMIN_PASSWORD}\"}" \
+    "http://127.0.0.1:${MUSTER_HTTP_PORT:-3004}/api/auth/sign-up/email"
 )"
 if [[ "$signup_status" != "200" && "$signup_status" != "201" && "$signup_status" != "422" ]]; then
   printf 'Administrator creation failed with HTTP %s.\n' "$signup_status" >&2

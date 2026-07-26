@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 await import("/app/database/dist/migrate.js");
-await import("/app/database/dist/seed.js");
+await import("/app/database/dist/bootstrap.js");
 
 const next = spawn(process.execPath, ["/app/web/apps/web/server.js"], {
   cwd: "/app/web/apps/web",

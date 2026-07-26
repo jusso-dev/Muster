@@ -5,19 +5,24 @@ import { useRouter } from "next/navigation";
 import {
   Bot,
   Hash,
+  ListTodo,
   MessageSquare,
   Moon,
   Search,
   Sun,
 } from "lucide-react";
-import { demoDirectRooms, demoRooms } from "@/lib/demo-data";
+import { demoDirectRooms, demoMode, demoRooms } from "@/lib/demo-data";
 import { cn } from "@/lib/utils";
 
 const baseCommands = [
   { label: "Search messages and security memory", href: "/search", icon: Search, hint: "S" },
-  { label: "Open #alerts", href: "/rooms/alerts", icon: Hash, hint: "A" },
-  { label: "Open #active-incidents", href: "/rooms/active-incidents", icon: Hash, hint: "I" },
-  { label: "Message Triage Agent", href: "/rooms/dm-triage-agent", icon: Bot, hint: "G" },
+  { label: "Open task board", href: "/tasks", icon: ListTodo, hint: "T" },
+  ...(demoMode
+    ? [
+        { label: "Open #alerts", href: "/rooms/alerts", icon: Hash, hint: "A" },
+        { label: "Open #active-incidents", href: "/rooms/active-incidents", icon: Hash, hint: "I" },
+      ]
+    : []),
 ] as const;
 
 export function CommandPalette({
@@ -29,12 +34,16 @@ export function CommandPalette({
 }) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      inputRef.current?.focus();
+    }
     if (!open && dialog.open) dialog.close();
   }, [open]);
 
@@ -79,7 +88,7 @@ export function CommandPalette({
       <div className="flex items-center gap-3 border-b px-4">
         <Search className="size-4 text-muted-foreground" aria-hidden="true" />
         <input
-          autoFocus
+          ref={inputRef}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Type a command or search rooms"

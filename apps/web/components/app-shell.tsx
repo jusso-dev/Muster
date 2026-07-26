@@ -13,6 +13,7 @@ import {
   CircleCheck,
   Hash,
   House,
+  ListTodo,
   Menu,
   PanelRightOpen,
   Search,
@@ -26,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
 import {
   demoDirectRooms,
+  demoMode,
   demoOrganisation,
   demoRooms,
 } from "@/lib/demo-data";
@@ -177,10 +179,17 @@ function MainNavigation({
           onNavigate={onNavigate}
         />
         <QuickLink
+          href="/tasks"
+          label="Tasks"
+          icon={ListTodo}
+          {...(demoMode ? { badge: "4" } : {})}
+          onNavigate={onNavigate}
+        />
+        <QuickLink
           href="/search"
           label="Mentions"
           icon={Bell}
-          badge="12"
+          {...(demoMode ? { badge: "12" } : {})}
           onNavigate={onNavigate}
         />
         <QuickLink
@@ -298,7 +307,9 @@ export function AppShell({
           </span>
           <Button variant="ghost" size="icon" aria-label="Pending approvals">
             <CircleCheck />
-            <span className="sr-only">2 pending approvals</span>
+            <span className="sr-only">
+              {demoMode ? "2 pending approvals" : "No pending approvals"}
+            </span>
           </Button>
           <Button variant="ghost" size="icon" aria-label="Notifications">
             <Bell />
@@ -321,18 +332,18 @@ export function AppShell({
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             title="Toggle theme"
           >
-            <Avatar initials="JM" />
+            <Avatar initials={demoMode ? "JB" : "MA"} />
           </button>
         </div>
       </header>
 
       <aside className="navigation-sidebar hidden min-h-0 border-r bg-[var(--color-paper-2)] desktop:flex desktop:flex-col">
         <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-          <Image src="/icon.svg" alt="" width={28} height={28} aria-hidden="true" />
+          <Image src="/muster-logo.png" alt="" width={30} height={30} className="rounded-md" aria-hidden="true" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-bold">Muster</p>
             <p className="truncate text-[9px] text-muted-foreground">
-              Yuma Security Operations
+              {demoOrganisation.name}
             </p>
           </div>
           <Button
@@ -349,11 +360,13 @@ export function AppShell({
           <MainNavigation onOpenPalette={openPalette} />
         </div>
         <div className="flex items-center gap-2 border-t p-2">
-          <Avatar initials="JM" size="sm" />
+          <Avatar initials={demoMode ? "JB" : "MA"} size="sm" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[11px] font-semibold">Justin Middler</p>
+            <p className="truncate text-[11px] font-semibold">
+              {demoMode ? "Jordan Blake" : "Muster Administrator"}
+            </p>
             <p className="truncate text-[9px] text-muted-foreground">
-              Security Lead
+              {demoMode ? "Security Lead" : "Administrator"}
             </p>
           </div>
           <Link

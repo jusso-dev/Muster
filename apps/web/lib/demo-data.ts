@@ -1,16 +1,25 @@
 export type Severity = "critical" | "high" | "medium" | "low" | "informational";
 
-export const demoOrganisation = {
-  id: "018f55d8-c4c7-7c3e-88ef-000000000001",
-  name: "Yuma Security Operations",
-  slug: "yuma-security",
-};
+export const demoMode =
+  process.env.NEXT_PUBLIC_MUSTER_DEMO_MODE === "true";
 
-export const demoPeople = [
+export const demoOrganisation = demoMode
+  ? {
+      id: "018f55d8-c4c7-7c3e-88ef-000000000001",
+      name: "Muster Demo Workspace",
+      slug: "muster-demo",
+    }
+  : {
+      id: "018f55d8-c4c7-7c3e-88ef-000000000001",
+      name: "Muster Workspace",
+      slug: "muster",
+    };
+
+const demoPeopleRows = [
   {
     id: "018f55d8-c4c7-7c3e-88ef-000000000010",
-    name: "Justin Middler",
-    initials: "JM",
+    name: "Jordan Blake",
+    initials: "JB",
     role: "Security Lead",
     presence: "online",
     type: "human",
@@ -49,16 +58,29 @@ export const demoPeople = [
   },
 ] as const;
 
-export const demoAgents = [
+export const demoPeople = demoMode
+  ? demoPeopleRows
+  : ([
+      {
+        id: "018f55d8-c4c7-7c3e-88ef-000000000010",
+        name: "Muster Administrator",
+        initials: "MA",
+        role: "Administrator",
+        presence: "online",
+        type: "human",
+      },
+    ] as const);
+
+const starterAgents = [
   {
     id: "018f55d8-c4c7-7c3e-88ef-000000000020",
     name: "Triage Agent",
     initials: "TA",
     purpose: "Correlates alerts and recommends disposition.",
-    runtime: "Codex runtime",
-    model: "gpt-5.4",
+    runtime: "Codex subscription",
+    model: "Configured Codex model",
     status: "active",
-    owner: "Justin Middler",
+    owner: "Jordan Blake",
     tools: ["alerts.read", "investigations.update", "knowledge.search"],
     rooms: 4,
     lastRun: "3 min ago",
@@ -70,8 +92,8 @@ export const demoAgents = [
     name: "Tawny Hunt Agent",
     initials: "TH",
     purpose: "Runs bounded endpoint telemetry hunts.",
-    runtime: "ACP sandbox",
-    model: "claude-sonnet",
+    runtime: "Codex subscription",
+    model: "Configured Codex model",
     status: "running",
     owner: "Priya Nair",
     tools: ["tawny.telemetry.read", "tawny.hunts.execute"],
@@ -85,8 +107,8 @@ export const demoAgents = [
     name: "Bower Health Agent",
     initials: "BH",
     purpose: "Explains collector gaps and delivery posture.",
-    runtime: "Hosted model API",
-    model: "gpt-5-mini",
+    runtime: "Codex subscription",
+    model: "Configured Codex model",
     status: "active",
     owner: "Daniel Brooks",
     tools: ["bower.fleet.read", "bower.policy.read"],
@@ -100,10 +122,10 @@ export const demoAgents = [
     name: "Kelpie Case Agent",
     initials: "KC",
     purpose: "Drafts and synchronises formal case context.",
-    runtime: "Codex runtime",
-    model: "gpt-5.4",
+    runtime: "Codex subscription",
+    model: "Configured Codex model",
     status: "active",
-    owner: "Justin Middler",
+    owner: "Jordan Blake",
     tools: ["kelpie.cases.read", "kelpie.cases.create"],
     rooms: 2,
     lastRun: "18 min ago",
@@ -115,8 +137,8 @@ export const demoAgents = [
     name: "Sentinel Query Agent",
     initials: "SQ",
     purpose: "Builds and runs bounded KQL queries.",
-    runtime: "ACP sandbox",
-    model: "gpt-5.4",
+    runtime: "Codex subscription",
+    model: "Configured Codex model",
     status: "active",
     owner: "Daniel Brooks",
     tools: ["sentinel.query.execute", "sentinel.rules.read"],
@@ -130,8 +152,8 @@ export const demoAgents = [
     name: "Threat Intelligence Agent",
     initials: "TI",
     purpose: "Enriches indicators using approved sources.",
-    runtime: "Hosted model API",
-    model: "gpt-5-mini",
+    runtime: "Codex subscription",
+    model: "Configured Codex model",
     status: "active",
     owner: "Maya Chen",
     tools: ["threat-intel.lookup", "knowledge.search"],
@@ -142,7 +164,64 @@ export const demoAgents = [
   },
 ] as const;
 
-export const demoRooms = [
+export const demoAgents = demoMode
+  ? starterAgents
+  : [
+      {
+        id: "018f55d8-c4c7-7c3e-88ef-000000000020",
+        name: "Alfie",
+        initials: "AL",
+        purpose:
+          "Researches threat news, vendor developments, and security platform changes.",
+        runtime: "Codex subscription",
+        model: "Configured Codex model",
+        status: "active",
+        owner: "Muster Administrator",
+        tools: ["alerts.read", "kelpie.cases.read", "sentinel.rules.read"],
+        rooms: 2,
+        lastRun: "Never",
+        successRate: "—",
+        killSwitch: false,
+      },
+      {
+        id: "018f55d8-c4c7-7c3e-88ef-000000000021",
+        name: "Jessie",
+        initials: "JE",
+        purpose:
+          "Runs bounded threat hunts, maps IoCs to TTPs, and guides analysts.",
+        runtime: "Codex subscription",
+        model: "Configured Codex model",
+        status: "active",
+        owner: "Muster Administrator",
+        tools: [
+          "tawny.telemetry.read",
+          "tawny.hunts.execute",
+          "sentinel.query.execute",
+        ],
+        rooms: 2,
+        lastRun: "Never",
+        successRate: "—",
+        killSwitch: false,
+      },
+      {
+        id: "018f55d8-c4c7-7c3e-88ef-000000000025",
+        name: "Parker",
+        initials: "PA",
+        purpose:
+          "Produces evidence-linked operational reports and executive briefings.",
+        runtime: "Codex subscription",
+        model: "Configured Codex model",
+        status: "active",
+        owner: "Muster Administrator",
+        tools: ["investigations.read", "kelpie.cases.read", "audit.read"],
+        rooms: 2,
+        lastRun: "Never",
+        successRate: "—",
+        killSwitch: false,
+      },
+    ] as const;
+
+const demoRoomRows = [
   { slug: "soc-operations", name: "soc-operations", topic: "Daily coordination, shift handover and operational updates", unread: 8, mentions: 2, type: "operations", favourite: true },
   { slug: "alerts", name: "alerts", topic: "Incoming security signals and triage discussion", unread: 12, mentions: 3, type: "system", favourite: true },
   { slug: "active-incidents", name: "active-incidents", topic: "Coordination for active security incidents", unread: 4, mentions: 1, type: "incident", favourite: true },
@@ -154,7 +233,21 @@ export const demoRooms = [
   { slug: "investigation-suspicious-powershell", name: "investigation-suspicious-powershell", topic: "Correlating Bower identity signals with Tawny endpoint activity", unread: 5, mentions: 1, type: "investigation", favourite: true },
 ] as const;
 
-export const demoDirectRooms = [
+export const demoRooms = demoMode
+  ? demoRoomRows
+  : ([
+      {
+        slug: "soc-operations",
+        name: "soc-operations",
+        topic: "Security operations coordination",
+        unread: 0,
+        mentions: 0,
+        type: "operations",
+        favourite: true,
+      },
+    ] as const);
+
+const demoDirectRoomRows = [
   {
     slug: "dm-maya-chen",
     name: "Maya Chen",
@@ -181,6 +274,35 @@ export const demoDirectRooms = [
   },
 ] as const;
 
+export const demoDirectRooms = demoMode
+  ? demoDirectRoomRows
+  : ([
+      {
+        slug: "dm-alfie",
+        name: "Alfie",
+        topic: "Threat and technology research",
+        initials: "AL",
+        presence: "online",
+        agent: true,
+      },
+      {
+        slug: "dm-jessie",
+        name: "Jessie",
+        topic: "Threat hunting, enrichment, and analyst guidance",
+        initials: "JE",
+        presence: "online",
+        agent: true,
+      },
+      {
+        slug: "dm-parker",
+        name: "Parker",
+        topic: "Operational reports and executive briefings",
+        initials: "PA",
+        presence: "online",
+        agent: true,
+      },
+    ] as const);
+
 export const roomIdBySlug: Record<string, string> = {
   "soc-operations": "018f55d8-c4c7-7c3e-88ef-000000000100",
   "active-incidents": "018f55d8-c4c7-7c3e-88ef-000000000101",
@@ -194,9 +316,12 @@ export const roomIdBySlug: Record<string, string> = {
   "dm-maya-chen": "018f55d8-c4c7-7c3e-88ef-000000000109",
   "dm-triage-agent": "018f55d8-c4c7-7c3e-88ef-000000000110",
   "dm-tawny-hunt-agent": "018f55d8-c4c7-7c3e-88ef-000000000111",
+  "dm-alfie": "018f55d8-c4c7-7c3e-88ef-000000000110",
+  "dm-jessie": "018f55d8-c4c7-7c3e-88ef-000000000111",
+  "dm-parker": "018f55d8-c4c7-7c3e-88ef-000000000112",
 };
 
-export const demoAlerts = [
+const demoAlertRows = [
   {
     id: "ALT-2026-1042",
     severity: "critical" as Severity,
@@ -229,7 +354,7 @@ export const demoAlerts = [
     title: "Impossible travel between Sydney and Frankfurt",
     source: "Sentinel",
     rule: "Identity impossible travel",
-    entity: "a.romero@yuma.example",
+    entity: "a.romero@example.invalid",
     occurred: "15:57:12",
     received: "15:59:02",
     status: "new",
@@ -263,6 +388,8 @@ export const demoAlerts = [
     correlations: 1,
   },
 ] as const;
+
+export const demoAlerts = demoMode ? demoAlertRows : [];
 
 export const activeInvestigation = {
   id: "018f55d8-c4c7-7c3e-88ef-000000000200",
@@ -326,7 +453,7 @@ export const activeInvestigation = {
       confidence: 94,
       author: "Tawny Hunt Agent",
       authorType: "agent",
-      runtime: "ACP sandbox · claude-sonnet",
+      runtime: "Codex subscription · configured model",
       reviewed: true,
       evidence: 5,
       summary:
@@ -353,7 +480,7 @@ export const activeInvestigation = {
       confidence: 71,
       author: "Threat Intelligence Agent",
       authorType: "agent",
-      runtime: "Hosted model API · gpt-5-mini",
+      runtime: "Codex subscription · configured model",
       reviewed: false,
       evidence: 4,
       summary:
@@ -363,7 +490,7 @@ export const activeInvestigation = {
   ],
 } as const;
 
-export const roomTimeline = [
+const demoRoomTimeline = [
   {
     id: "msg-1",
     type: "system",
@@ -396,7 +523,7 @@ export const roomTimeline = [
     type: "agent",
     author: "Tawny Hunt Agent",
     initials: "TH",
-    role: "Agent · ACP sandbox",
+    role: "Agent · Codex subscription",
     time: "16:27",
     body: "Hunt completed. Found a PowerShell process tree, two outbound connections, and one file write matching the investigation window.",
     status: "completed",
@@ -447,6 +574,8 @@ export const roomTimeline = [
   },
 ] as const;
 
+export const roomTimeline = demoMode ? demoRoomTimeline : [];
+
 export const needsAttention = [
   {
     severity: "critical" as Severity,
@@ -462,7 +591,7 @@ export const needsAttention = [
     severity: "high" as Severity,
     title: "Endpoint isolation awaiting approval",
     source: "Muster",
-    owner: "Justin Middler",
+    owner: "Jordan Blake",
     age: "9 min",
     state: "Pending",
     action: "Review",
@@ -507,7 +636,7 @@ export const activeIncidents = [
     title: "Exposed cloud service principal",
     severity: "high" as Severity,
     state: "Investigation",
-    commander: "Justin Middler",
+    commander: "Jordan Blake",
     age: "3 h",
     activity: "14 min ago",
     room: "active-incidents",
@@ -602,7 +731,7 @@ export const workflows = [
     trigger: "manual",
     status: "draft",
     enabled: false,
-    owner: "Justin Middler",
+    owner: "Jordan Blake",
     lastRun: "Never",
     successRate: "—",
     steps: 8,
@@ -702,14 +831,14 @@ export const integrationData = {
     ],
     rows: [
       ["KP-2026-0042", "Credential access and endpoint execution", "Containment", "Critical", "Priya Nair", "2 min ago"],
-      ["KP-2026-0039", "Exposed cloud service principal", "Investigation", "High", "Justin Middler", "14 min ago"],
+      ["KP-2026-0039", "Exposed cloud service principal", "Investigation", "High", "Jordan Blake", "14 min ago"],
       ["KP-2026-0037", "Suspicious mailbox forwarding rule", "Monitoring", "Medium", "Maya Chen", "1 h ago"],
       ["KP-2026-0033", "Public storage container", "Resolved", "Low", "Daniel Brooks", "Yesterday"],
     ],
   },
 } as const;
 
-export const searchResults = [
+const demoSearchResults = [
   {
     group: "Messages",
     title: "Encoded PowerShell retrieved second-stage content",
@@ -747,3 +876,5 @@ export const searchResults = [
     snippet: "Tawny endpoint evidence · scan clean · object lock enabled.",
   },
 ] as const;
+
+export const searchResults = demoMode ? demoSearchResults : [];

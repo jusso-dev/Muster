@@ -5,10 +5,14 @@ x-muster-environment: &muster-environment
   DATABASE_URL: postgresql://muster:${POSTGRES_PASSWORD}@postgres:5432/muster
   REDIS_URL: redis://redis:6379
   BETTER_AUTH_URL: ${MUSTER_PUBLIC_URL}
-  AUTH_TRUSTED_ORIGINS: ${MUSTER_PUBLIC_URL}
+  AUTH_TRUSTED_ORIGINS: ${AUTH_TRUSTED_ORIGINS}
   BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
   AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
   AUTH_SECURE_COOKIES: ${AUTH_SECURE_COOKIES:-false}
+  MUSTER_LOCAL_ADMIN_EMAIL: ${MUSTER_LOCAL_ADMIN_EMAIL:-admin@muster.local}
+  MUSTER_ORGANISATION_NAME: ${MUSTER_ORGANISATION_NAME:-Muster Workspace}
+  MUSTER_ORGANISATION_SLUG: ${MUSTER_ORGANISATION_SLUG:-muster}
+  MUSTER_DEFAULT_TIMEZONE: ${MUSTER_DEFAULT_TIMEZONE:-UTC}
   OBJECT_STORAGE_ENDPOINT: http://minio:9000
   OBJECT_STORAGE_REGION: us-east-1
   OBJECT_STORAGE_BUCKET: muster-evidence
@@ -24,6 +28,7 @@ x-muster-environment: &muster-environment
   BOWER_API_TOKEN: ${BOWER_API_TOKEN}
   MUSTER_MOCK_INTEGRATIONS: "true"
   MUSTER_AGENT_RUNTIME: ${MUSTER_AGENT_RUNTIME:-codex}
+  AGENT_GATEWAY_URL: http://agent-gateway:3002
   CODEX_HOME: /var/lib/muster/codex
 
 x-muster-service: &muster-service
@@ -103,7 +108,7 @@ services:
       <<: *muster-environment
       MUSTER_HEALTHCHECK_URL: http://localhost:3000/api/v1/health
     ports:
-      - "${MUSTER_HTTP_PORT:-3000}:3000"
+      - "${MUSTER_HTTP_PORT:-3004}:3000"
     depends_on:
       postgres:
         condition: service_healthy

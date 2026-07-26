@@ -59,6 +59,14 @@ export const approvalStatusValues = [
   "executed",
   "failed",
 ] as const;
+export const taskStatusValues = [
+  "backlog",
+  "ready",
+  "in_progress",
+  "review",
+  "done",
+] as const;
+export const taskPriorityValues = ["urgent", "high", "normal", "low"] as const;
 
 export const SeveritySchema = z.enum(severityValues);
 export const TlpSchema = z.enum(tlpValues);
@@ -69,6 +77,8 @@ export const MessageTypeSchema = z.enum(messageTypeValues);
 export const AlertStatusSchema = z.enum(alertStatusValues);
 export const InvestigationStatusSchema = z.enum(investigationStatusValues);
 export const ApprovalStatusSchema = z.enum(approvalStatusValues);
+export const TaskStatusSchema = z.enum(taskStatusValues);
+export const TaskPrioritySchema = z.enum(taskPriorityValues);
 
 export const msepEventTypes = [
   "telemetry.candidate.received",
@@ -193,7 +203,7 @@ export const ProblemSchema = z.object({
 
 export const AgentInvestigationJobSchema = z.object({
   organisationId: z.string().uuid(),
-  investigationId: z.string().uuid(),
+  investigationId: z.string().uuid().nullable(),
   agentId: z.string().uuid(),
   requestedByActorId: z.string().uuid(),
   traceId: z.string().min(8),

@@ -6,16 +6,16 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", "http://mock");
   if (url.pathname === "/health") return json(response, 200, { product: "Tawny", mock: true, status: "healthy" });
   if (request.method === "POST" && url.pathname === "/api/hunts/run") return json(response, 200, {
-    matchCount: 4,
+    match_count: 4,
     matches: [
-      { eventId: "evt-process-1", agentId: "agent-ws-1042", hostname: "WS-1042", eventType: "process", occurredAt: "2026-07-26T06:21:08Z", receivedAt: "2026-07-26T06:21:11Z", payload: { image: "powershell.exe", encoded: true } },
-      { eventId: "evt-network-1", agentId: "agent-ws-1042", hostname: "WS-1042", eventType: "network", occurredAt: "2026-07-26T06:21:19Z", receivedAt: "2026-07-26T06:21:22Z", payload: { destination: "203.0.113.44" } },
-      { eventId: "evt-file-1", agentId: "agent-ws-1042", hostname: "WS-1042", eventType: "file", occurredAt: "2026-07-26T06:21:26Z", receivedAt: "2026-07-26T06:21:29Z", payload: { path: "C:\\Users\\jsmith\\update.dat" } },
-      { eventId: "evt-session-1", agentId: "agent-ws-1042", hostname: "WS-1042", eventType: "session", occurredAt: "2026-07-26T06:17:40Z", receivedAt: "2026-07-26T06:17:42Z", payload: { user: "jsmith" } },
+      { event_id: 1, agent_id: "agent-ws-1042", hostname: "WS-1042", event_type: "process", occurred_at: "2026-07-26T06:21:08Z", received_at: "2026-07-26T06:21:11Z", payload: { image: "powershell.exe", encoded: true } },
+      { event_id: 2, agent_id: "agent-ws-1042", hostname: "WS-1042", event_type: "network", occurred_at: "2026-07-26T06:21:19Z", received_at: "2026-07-26T06:21:22Z", payload: { destination: "203.0.113.44" } },
+      { event_id: 3, agent_id: "agent-ws-1042", hostname: "WS-1042", event_type: "file", occurred_at: "2026-07-26T06:21:26Z", received_at: "2026-07-26T06:21:29Z", payload: { path: "C:\\Users\\jsmith\\update.dat" } },
+      { event_id: 4, agent_id: "agent-ws-1042", hostname: "WS-1042", event_type: "session", occurred_at: "2026-07-26T06:17:40Z", received_at: "2026-07-26T06:17:42Z", payload: { user: "jsmith" } },
     ],
     warnings: ["Synthetic local mock result"],
   });
-  if (request.method === "POST" && /^\/api\/agents\/[^/]+\/actions$/.test(url.pathname)) return json(response, 202, { id: randomUUID(), agentId: "agent-ws-1042", actionType: "isolate_host", status: "queued", mock: true, contractNote: "Real inspected Tawny currently requires web-user Admin authentication for action creation." });
+  if (request.method === "POST" && /^\/api\/agents\/[^/]+\/actions$/.test(url.pathname)) return json(response, 202, { id: randomUUID(), agent_id: "agent-ws-1042", action_type: "isolate_host", status: "queued", mock: true, contract_note: "Real inspected Tawny currently requires web-user Admin authentication for action creation." });
   return json(response, 404, { error: "Tawny mock route not found", mock: true });
 });
 server.listen(Number(process.env.PORT ?? 4012), "0.0.0.0");

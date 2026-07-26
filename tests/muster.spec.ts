@@ -6,11 +6,13 @@ test("local administrator can sign in", async ({ page }) => {
   await login(page);
 });
 
-test("room workspace and command palette are keyboard accessible", async ({ page }) => {
+test("room workspace and command palette are accessible", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveURL(/\/rooms\/soc-operations$/);
   await expect(page.getByRole("heading", { name: "soc-operations" })).toBeVisible();
-  await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
+  await page
+    .getByRole("button", { name: /Search Muster Demo Workspace/ })
+    .click();
   await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
   await page.getByPlaceholder("Type a command or search rooms").fill("open #alerts");
   await page.getByRole("button", { name: /Open #alerts/ }).click();
@@ -71,6 +73,37 @@ test("agent learning is evidence-backed and approval gated", async ({ page }) =>
   await expect(page.getByText("Evaluation + human approval")).toBeVisible();
   await expect(page.getByText("Never self-authorised")).toBeVisible();
   await expect(page.getByRole("button", { name: /Review and publish/ })).toBeVisible();
+});
+
+test("task board creates and moves durable agent work", async ({ page }, testInfo) => {
+  await page.goto("/tasks");
+  await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+  await expect(
+    page.getByText("Threat hunt the unusual authentication alert"),
+  ).toBeVisible();
+
+  const taskTitle = `Review security signal ${testInfo.project.name} ${Date.now()}`;
+  await page.getByRole("button", { name: "New task" }).click();
+  await page.getByPlaceholder("What needs doing?").fill(taskTitle);
+  await page
+    .getByPlaceholder("Context, constraints, and deliverable")
+    .fill("Correlate the signal and return an evidence-linked review draft.");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByText(taskTitle)).toBeVisible();
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        response.url().includes("/api/v1/tasks/"),
+    ),
+    page.getByRole("button", { name: `Move ${taskTitle} right` }).click(),
+  ]);
+
+  await page.reload();
+  const readyColumn = page
+    .getByRole("heading", { name: "Ready" })
+    .locator("xpath=ancestor::section");
+  await expect(readyColumn.getByText(taskTitle)).toBeVisible();
 });
 
 test("workflow YAML editor, integrations, search, and approvals render", async ({ page }) => {
