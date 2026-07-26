@@ -2,6 +2,15 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  outputFileTracingIncludes: {
+    "/*": [
+      "node_modules/sharp/**/*",
+      "node_modules/@img/sharp-*/**/*",
+      "node_modules/@img/sharp-libvips-*/**/*",
+      "../../node_modules/.pnpm/@img+sharp-*/node_modules/@img/sharp-*/**/*",
+      "../../node_modules/.pnpm/@img+sharp-libvips-*/node_modules/@img/sharp-libvips-*/**/*",
+    ],
+  },
   reactStrictMode: true,
   poweredByHeader: false,
   allowedDevOrigins: ["127.0.0.1"],
