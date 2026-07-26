@@ -402,7 +402,7 @@ test("mobile room work uses explicit send and survives reload", async ({
 
   await page.goto("/");
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.locator('a[href="/rooms/soc-operations"]').first().click();
+  await page.getByRole("link", { name: /soc(?: |-)operations/i }).click();
   const message = `Synthetic mobile critical ${Date.now()}`;
   const composer = page.locator(".tiptap");
   await composer.fill(message);
