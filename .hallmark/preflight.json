@@ -1,0 +1,13 @@
+{
+  "date": "2026-07-26",
+  "task": "Room-first Slack-shaped product redesign",
+  "stack": "Next.js 16, React 19, Tailwind CSS 4",
+  "typography": {
+    "ui": "IBM Plex Sans Variable",
+    "technical": "JetBrains Mono Variable"
+  },
+  "motion": "Token-based micro-transitions with reduced-motion override",
+  "spacing": "Four-pixel-derived central token scale",
+  "theme": "Dark-first carbon surfaces with signal amber and teal agent identity",
+  "reference": "User-supplied Muster room-workspace composition"
+}

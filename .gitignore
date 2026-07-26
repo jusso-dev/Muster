@@ -1,0 +1,16 @@
+node_modules
+.next
+dist
+coverage
+playwright-report
+test-results
+.turbo
+.env
+.env.homelab
+.playwright
+.DS_Store
+*.log
+*.tsbuildinfo
+packages/contracts/generated
+docs/screenshots/*.png
+!.gitkeep

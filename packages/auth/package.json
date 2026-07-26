@@ -1,0 +1,28 @@
+{
+  "name": "@muster/auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@better-auth/drizzle-adapter": "1.6.25",
+    "@better-auth/passkey": "1.6.25",
+    "@muster/database": "workspace:*",
+    "better-auth": "1.6.25",
+    "nodemailer": "^7.0.6"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^7.0.1",
+    "typescript": "catalog:",
+    "vitest": "4.1.10"
+  }
+}

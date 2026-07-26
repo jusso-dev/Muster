@@ -1,0 +1,233 @@
+import { database, closeDatabase, schema } from "./index.ts";
+import { demoIds } from "./seed-data.ts";
+
+const db = database();
+const allCapabilities = ["administration.manage", "rooms.read", "rooms.create", "rooms.manage", "messages.create", "alerts.read", "alerts.acknowledge", "alerts.promote", "investigations.read", "investigations.create", "investigations.update", "investigations.promote", "workflows.approve", "agents.invoke", "audit.read"];
+
+await db.insert(schema.organisations).values({
+  id: demoIds.organisation,
+  name: "Yuma Security Operations",
+  slug: "yuma-security",
+  dataRegion: "australia",
+  defaultTimezone: "Australia/Sydney",
+  retentionPolicy: { messagesDays: 365, auditDays: 2555 },
+  authenticationPolicy: { requireMfaForPrivilegedRoles: true },
+}).onConflictDoNothing();
+
+await db.insert(schema.actors).values([
+  { id: demoIds.actors.justin, organisationId: demoIds.organisation, actorType: "human", displayName: "Justin Middler", identityReference: "justin.middler@yuma.example", capabilityAssignments: allCapabilities },
+  { id: demoIds.actors.maya, organisationId: demoIds.organisation, actorType: "human", displayName: "Maya Chen", identityReference: "maya.chen@yuma.example", capabilityAssignments: ["rooms.read","messages.create","alerts.read","alerts.acknowledge","alerts.promote","investigations.read","investigations.create","investigations.update","investigations.promote","workflows.approve","agents.invoke"] },
+  { id: demoIds.actors.daniel, organisationId: demoIds.organisation, actorType: "human", displayName: "Daniel Brooks", identityReference: "daniel.brooks@yuma.example", capabilityAssignments: ["rooms.read","messages.create","alerts.read","investigations.read","sentinel.rules.publish","bower.policy.propose"] },
+  { id: demoIds.actors.priya, organisationId: demoIds.organisation, actorType: "human", displayName: "Priya Nair", identityReference: "priya.nair@yuma.example", capabilityAssignments: ["rooms.read","messages.create","alerts.read","investigations.read","investigations.update","workflows.approve","tawny.response.isolate_host"] },
+  { id: demoIds.actors.alex, organisationId: demoIds.organisation, actorType: "human", displayName: "Alex Morgan", identityReference: "alex.morgan@yuma.example", capabilityAssignments: ["rooms.read","alerts.read","investigations.read","audit.read"] },
+  { id: demoIds.actors.triage, organisationId: demoIds.organisation, actorType: "agent", displayName: "Triage Agent", identityReference: "agent:triage", capabilityAssignments: ["alerts.read","investigations.read","investigations.update"] },
+  { id: demoIds.actors.tawnyHunt, organisationId: demoIds.organisation, actorType: "agent", displayName: "Tawny Hunt Agent", identityReference: "agent:tawny-hunt", capabilityAssignments: ["tawny.telemetry.read","tawny.hunts.execute"] },
+  { id: demoIds.actors.bowerHealth, organisationId: demoIds.organisation, actorType: "agent", displayName: "Bower Health Agent", identityReference: "agent:bower-health", capabilityAssignments: ["bower.fleet.read","bower.policy.read"] },
+  { id: demoIds.actors.kelpieCase, organisationId: demoIds.organisation, actorType: "agent", displayName: "Kelpie Case Agent", identityReference: "agent:kelpie-case", capabilityAssignments: ["kelpie.cases.read","kelpie.cases.create"] },
+  { id: demoIds.actors.sentinelQuery, organisationId: demoIds.organisation, actorType: "agent", displayName: "Sentinel Query Agent", identityReference: "agent:sentinel-query", capabilityAssignments: ["sentinel.query.execute","sentinel.rules.read"] },
+  { id: demoIds.actors.threatIntel, organisationId: demoIds.organisation, actorType: "agent", displayName: "Threat Intelligence Agent", identityReference: "agent:threat-intel", capabilityAssignments: ["alerts.read"] },
+  { id: demoIds.actors.system, organisationId: demoIds.organisation, actorType: "system", displayName: "Muster", identityReference: "system:muster", capabilityAssignments: [] },
+]).onConflictDoNothing();
+
+const channelRoomRows = [
+  [demoIds.rooms.soc, "soc-operations", "SOC operations", "operations"],
+  [demoIds.rooms.alerts, "alerts", "Alerts", "system"],
+  [demoIds.rooms.activeIncidents, "active-incidents", "Active incidents", "incident"],
+  [demoIds.rooms.threatIntel, "threat-intelligence", "Threat intelligence", "operations"],
+  [demoIds.rooms.detection, "detection-engineering", "Detection engineering", "engineering"],
+  [demoIds.rooms.endpoint, "endpoint-security", "Endpoint security", "operations"],
+  [demoIds.rooms.bower, "bower-telemetry-health", "Bower telemetry health", "system"],
+  [demoIds.rooms.incident, "incident-KP-2026-0042", "KP-2026-0042", "incident"],
+  [demoIds.rooms.investigation, "investigation-suspicious-powershell", "Suspicious PowerShell", "investigation"],
+] as const;
+const directRoomRows = [
+  [demoIds.rooms.mayaDirect, "dm-maya-chen", "Maya Chen", "direct"],
+  [demoIds.rooms.triageDirect, "dm-triage-agent", "Triage Agent", "direct"],
+  [demoIds.rooms.tawnyDirect, "dm-tawny-hunt-agent", "Tawny Hunt Agent", "direct"],
+] as const;
+const roomRows = [...channelRoomRows, ...directRoomRows] as const;
+await db.insert(schema.rooms).values(roomRows.map(([id, slug, displayName, roomType]) => ({
+  id, organisationId: demoIds.organisation, name: slug, slug, displayName,
+  description: "Synthetic demonstration room", roomType,
+  createdByActorId: demoIds.actors.justin,
+  linkedKelpieCaseId: slug.startsWith("incident-") ? "KP-2026-0042" : null,
+  defaultSeverity: slug.includes("incident") || slug.includes("investigation") ? "critical" as const : null,
+}))).onConflictDoNothing();
+await db.insert(schema.roomMemberships).values(
+  channelRoomRows.flatMap(([roomId]) =>
+    [
+      demoIds.actors.justin,
+      demoIds.actors.maya,
+      demoIds.actors.priya,
+      demoIds.actors.triage,
+      demoIds.actors.tawnyHunt,
+    ].map((actorId) => ({
+      organisationId: demoIds.organisation,
+      roomId,
+      actorId,
+      membershipRole: actorId === demoIds.actors.justin
+        ? "owner" as const
+        : actorId === demoIds.actors.triage || actorId === demoIds.actors.tawnyHunt
+          ? "agent_member" as const
+          : "member" as const,
+    })),
+  ),
+).onConflictDoNothing();
+await db.insert(schema.roomMemberships).values([
+  ...[demoIds.actors.justin, demoIds.actors.maya].map((actorId) => ({
+    organisationId: demoIds.organisation,
+    roomId: demoIds.rooms.mayaDirect,
+    actorId,
+    membershipRole: actorId === demoIds.actors.justin ? "owner" as const : "member" as const,
+  })),
+  ...[demoIds.actors.justin, demoIds.actors.triage].map((actorId) => ({
+    organisationId: demoIds.organisation,
+    roomId: demoIds.rooms.triageDirect,
+    actorId,
+    membershipRole: actorId === demoIds.actors.triage ? "agent_member" as const : "owner" as const,
+  })),
+  ...[demoIds.actors.justin, demoIds.actors.tawnyHunt].map((actorId) => ({
+    organisationId: demoIds.organisation,
+    roomId: demoIds.rooms.tawnyDirect,
+    actorId,
+    membershipRole: actorId === demoIds.actors.tawnyHunt ? "agent_member" as const : "owner" as const,
+  })),
+]).onConflictDoNothing();
+
+const textDocument = (text: string) => ({
+  type: "doc",
+  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+});
+await db.insert(schema.messages).values([
+  {
+    id: demoIds.messages.mayaParent,
+    organisationId: demoIds.organisation,
+    roomId: demoIds.rooms.investigation,
+    authorActorId: demoIds.actors.maya,
+    messageType: "text",
+    plainText: "The Bower and Tawny events share the same user and source IP. Starting with endpoint activity from 16:10 to 16:30.",
+    document: textDocument("The Bower and Tawny events share the same user and source IP. Starting with endpoint activity from 16:10 to 16:30."),
+    createdAt: new Date("2026-07-26T06:24:00Z"),
+    dataClassification: "internal",
+    idempotencyKey: "demo:message:maya-parent",
+  },
+  {
+    id: demoIds.messages.priyaReply,
+    organisationId: demoIds.organisation,
+    roomId: demoIds.rooms.investigation,
+    threadParentId: demoIds.messages.mayaParent,
+    authorActorId: demoIds.actors.priya,
+    messageType: "text",
+    plainText: "I have endpoint volatile collection running before containment.",
+    document: textDocument("I have endpoint volatile collection running before containment."),
+    createdAt: new Date("2026-07-26T06:28:00Z"),
+    dataClassification: "internal",
+    idempotencyKey: "demo:message:priya-reply",
+  },
+  {
+    id: demoIds.messages.tawnyReply,
+    organisationId: demoIds.organisation,
+    roomId: demoIds.rooms.investigation,
+    threadParentId: demoIds.messages.mayaParent,
+    authorActorId: demoIds.actors.tawnyHunt,
+    messageType: "text",
+    plainText: "Process tree and network connections are ready. Five evidence references attached.",
+    document: textDocument("Process tree and network connections are ready. Five evidence references attached."),
+    createdAt: new Date("2026-07-26T06:30:00Z"),
+    dataClassification: "internal",
+    idempotencyKey: "demo:message:tawny-reply",
+  },
+  {
+    id: demoIds.messages.justinReply,
+    organisationId: demoIds.organisation,
+    roomId: demoIds.rooms.investigation,
+    threadParentId: demoIds.messages.mayaParent,
+    authorActorId: demoIds.actors.justin,
+    messageType: "text",
+    plainText: "Proceed to approval once the volatile capture is confirmed.",
+    document: textDocument("Proceed to approval once the volatile capture is confirmed."),
+    createdAt: new Date("2026-07-26T06:32:00Z"),
+    dataClassification: "internal",
+    idempotencyKey: "demo:message:justin-reply",
+  },
+  {
+    id: demoIds.messages.priyaParent,
+    organisationId: demoIds.organisation,
+    roomId: demoIds.rooms.investigation,
+    authorActorId: demoIds.actors.priya,
+    messageType: "text",
+    plainText: "Endpoint is still online. I support isolation, but preserve current sessions and memory acquisition status first.",
+    document: textDocument("Endpoint is still online. I support isolation, but preserve current sessions and memory acquisition status first."),
+    createdAt: new Date("2026-07-26T06:31:00Z"),
+    dataClassification: "internal",
+    idempotencyKey: "demo:message:priya-parent",
+  },
+]).onConflictDoNothing();
+await db.insert(schema.reactions).values([
+  { organisationId: demoIds.organisation, messageId: demoIds.messages.mayaParent, actorId: demoIds.actors.justin, emoji: "eyes" },
+  { organisationId: demoIds.organisation, messageId: demoIds.messages.mayaParent, actorId: demoIds.actors.priya, emoji: "eyes" },
+  { organisationId: demoIds.organisation, messageId: demoIds.messages.mayaParent, actorId: demoIds.actors.triage, emoji: "eyes" },
+  { organisationId: demoIds.organisation, messageId: demoIds.messages.priyaParent, actorId: demoIds.actors.justin, emoji: "check" },
+  { organisationId: demoIds.organisation, messageId: demoIds.messages.priyaParent, actorId: demoIds.actors.maya, emoji: "check" },
+]).onConflictDoNothing();
+
+await db.insert(schema.investigations).values({
+  id: demoIds.investigation,
+  organisationId: demoIds.organisation,
+  investigationNumber: "INV-2026-0178",
+  title: "Legacy portal credential access and suspicious PowerShell",
+  summary: "Bower authentication failures correlate with Tawny endpoint activity for jsmith, WS-1042, and 203.0.113.44.",
+  status: "awaiting_approval",
+  severity: "critical",
+  leadActorId: demoIds.actors.maya,
+  roomId: demoIds.rooms.investigation,
+  recommendation: "Promote to Kelpie and isolate WS-1042 after approval.",
+  linkedKelpieCaseId: "KP-2026-0042",
+}).onConflictDoNothing();
+await db.update(schema.rooms).set({ linkedInvestigationId: demoIds.investigation }).where(
+  (await import("drizzle-orm")).eq(schema.rooms.id, demoIds.rooms.investigation),
+);
+
+await db.insert(schema.alerts).values([
+  { id: demoIds.alerts.bower, organisationId: demoIds.organisation, sourceProduct: "bower", sourceInstance: "bower-mock-au-01", externalReference: "ALT-2026-1041", title: "Repeated authentication failures from legacy portal", description: "Twelve failures and one successful sign-in for jsmith.", severity: "high", status: "promoted", ruleName: "Authentication failure burst", ruleId: "bower-auth-burst", occurredAt: new Date("2026-07-26T06:18:39Z"), assignedActorId: demoIds.actors.maya, entities: [{ type: "identity", value: "jsmith" }], observables: [{ type: "ip", value: "203.0.113.44" }], investigationId: demoIds.investigation, kelpieCaseId: "KP-2026-0042", roomId: demoIds.rooms.investigation, dedupeKey: "bower:ALT-2026-1041", correlationKey: "jsmith:203.0.113.44" },
+  { id: demoIds.alerts.tawny, organisationId: demoIds.organisation, sourceProduct: "tawny", sourceInstance: "tawny-mock-au-01", externalReference: "ALT-2026-1042", title: "Suspicious PowerShell with encoded command", description: "Encoded PowerShell execution on WS-1042.", severity: "critical", status: "investigating", ruleName: "Suspicious PowerShell execution", ruleId: "sigma-123", occurredAt: new Date("2026-07-26T06:21:08Z"), assignedActorId: demoIds.actors.maya, entities: [{ type: "endpoint", value: "WS-1042" }, { type: "identity", value: "jsmith" }], observables: [{ type: "ip", value: "203.0.113.44" }], investigationId: demoIds.investigation, kelpieCaseId: "KP-2026-0042", roomId: demoIds.rooms.investigation, dedupeKey: "tawny:ALT-2026-1042", correlationKey: "jsmith:203.0.113.44" },
+]).onConflictDoNothing();
+
+await db.insert(schema.findings).values({
+  id: "018f55d8-c4c7-7c3e-88ef-000000000501",
+  organisationId: demoIds.organisation,
+  investigationId: demoIds.investigation,
+  createdByActorId: demoIds.actors.tawnyHunt,
+  title: "Encoded PowerShell retrieved second-stage content",
+  summary: "Process, network, and file telemetry support malicious execution.",
+  confidence: 94,
+  severity: "critical",
+  supportingEvidence: ["evidence:WS-1042-process-tree"],
+  relatedEntities: ["WS-1042", "jsmith"],
+  relatedObservables: ["203.0.113.44", "cdn-auth-check.example"],
+  recommendedAction: "Isolate WS-1042 and preserve volatile endpoint evidence.",
+  agentProvenance: { runtime: "mock-acp", model: "synthetic", toolCalls: ["tawny.hunt"], evidenceUsed: 5 },
+  humanReviewedAt: new Date("2026-07-26T06:32:00Z"),
+}).onConflictDoNothing();
+
+await db.insert(schema.approvals).values({
+  id: demoIds.approval,
+  organisationId: demoIds.organisation,
+  requestingActorId: demoIds.actors.triage,
+  actionType: "isolate_endpoint",
+  target: { endpointId: "WS-1042", integration: "tawny-mock-au-01" },
+  riskSummary: "Stops network activity on a production finance endpoint.",
+  expiresAt: new Date("2026-07-26T07:00:00Z"),
+  requiredCapability: "tawny.response.isolate_host",
+  status: "pending",
+  idempotencyKey: "demo:isolate:WS-1042",
+}).onConflictDoNothing();
+
+await db.insert(schema.integrationRecords).values([
+  { id: "018f55d8-c4c7-7c3e-88ef-000000000601", organisationId: demoIds.organisation, product: "kelpie", instanceId: "kelpie-mock-au-01", displayName: "Kelpie local mock", status: "healthy", mock: true },
+  { id: "018f55d8-c4c7-7c3e-88ef-000000000602", organisationId: demoIds.organisation, product: "tawny", instanceId: "tawny-mock-au-01", displayName: "Tawny local mock", status: "healthy", mock: true },
+  { id: "018f55d8-c4c7-7c3e-88ef-000000000603", organisationId: demoIds.organisation, product: "bower", instanceId: "bower-mock-au-01", displayName: "Bower local mock", status: "degraded", mock: true, health: { staleCollectors: 1 } },
+]).onConflictDoNothing();
+
+process.stdout.write("Seeded Yuma Security Operations with synthetic demonstration data.\n");
+await closeDatabase();

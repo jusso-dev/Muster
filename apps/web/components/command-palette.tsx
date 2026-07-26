@@ -1,0 +1,121 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Bot,
+  Hash,
+  MessageSquare,
+  Moon,
+  Search,
+  Sun,
+} from "lucide-react";
+import { demoDirectRooms, demoRooms } from "@/lib/demo-data";
+import { cn } from "@/lib/utils";
+
+const baseCommands = [
+  { label: "Search messages and security memory", href: "/search", icon: Search, hint: "S" },
+  { label: "Open #alerts", href: "/rooms/alerts", icon: Hash, hint: "A" },
+  { label: "Open #active-incidents", href: "/rooms/active-incidents", icon: Hash, hint: "I" },
+  { label: "Message Triage Agent", href: "/rooms/dm-triage-agent", icon: Bot, hint: "G" },
+] as const;
+
+export function CommandPalette({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const router = useRouter();
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
+  }, [open]);
+
+  const commands = useMemo(
+    () =>
+      [
+        ...baseCommands,
+        ...demoRooms.map((room) => ({
+          label: `# ${room.name}`,
+          href: `/rooms/${room.slug}`,
+          icon: Hash,
+          hint: "Room",
+        })),
+        ...demoDirectRooms.map((room) => ({
+          label: `Message ${room.name}`,
+          href: `/rooms/${room.slug}`,
+          icon: room.agent ? Bot : MessageSquare,
+          hint: room.agent ? "Agent" : "DM",
+        })),
+      ].filter((command) =>
+        command.label.toLowerCase().includes(query.toLowerCase()),
+      ),
+    [query],
+  );
+
+  function choose(href: string) {
+    onOpenChange(false);
+    setQuery("");
+    router.push(href);
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-label="Command palette"
+      onClose={() => onOpenChange(false)}
+      onClick={(event) => {
+        if (event.target === dialogRef.current) dialogRef.current.close();
+      }}
+      className="m-auto w-[min(42rem,calc(100%-2rem))] rounded-lg border border-border bg-popover p-0 text-popover-foreground shadow-2xl backdrop:bg-[var(--color-overlay)]"
+    >
+      <div className="flex items-center gap-3 border-b px-4">
+        <Search className="size-4 text-muted-foreground" aria-hidden="true" />
+        <input
+          autoFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Type a command or search rooms"
+          className="h-13 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        />
+        <kbd className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          Esc
+        </kbd>
+      </div>
+      <div className="max-h-[24rem] overflow-y-auto p-2">
+        {commands.map((command, index) => (
+          <button
+            key={`${command.href}-${command.label}`}
+            onClick={() => choose(command.href)}
+            className={cn(
+              "flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm hover:bg-muted",
+              index === 0 && "bg-muted",
+            )}
+          >
+            <command.icon className="size-4 text-muted-foreground" aria-hidden="true" />
+            <span className="flex-1">{command.label}</span>
+            <span className="text-xs text-muted-foreground">{command.hint}</span>
+          </button>
+        ))}
+        {commands.length === 0 && (
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            No matching commands.
+          </p>
+        )}
+      </div>
+      <div className="flex items-center justify-between border-t px-4 py-2 text-[11px] text-muted-foreground">
+        <span>Results filtered by your capabilities</span>
+        <span className="flex items-center gap-2">
+          <Sun className="size-3" /> / <Moon className="size-3" /> theme in settings
+        </span>
+      </div>
+    </dialog>
+  );
+}

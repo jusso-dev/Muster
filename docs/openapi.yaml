@@ -1,0 +1,266 @@
+openapi: 3.1.0
+info:
+  title: Muster API
+  version: 0.1.0
+  description: Organisation-scoped API for the shared workspace for human and agent-driven security operations.
+servers:
+  - url: /api/v1
+security:
+  - sessionCookie: []
+paths:
+  /health:
+    get:
+      security: []
+      operationId: getHealth
+      responses:
+        "200":
+          description: Process health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /ready:
+    get:
+      security: []
+      operationId: getReadiness
+      responses:
+        "200":
+          description: Dependencies ready
+        "503":
+          description: Dependency unavailable
+  /metrics:
+    get:
+      security: []
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus text format
+          content:
+            text/plain:
+              schema: { type: string }
+  /rooms:
+    get:
+      operationId: listRooms
+      responses:
+        "200":
+          description: Permission-filtered rooms
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Room" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: createRoom
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, roomType]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 80 }
+                description: { type: string, maxLength: 1000 }
+                roomType:
+                  enum: [operations, incident, investigation, hunt, engineering, private, direct, system]
+      responses:
+        "201":
+          description: Room created with audit and outbox event
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Room" }
+        default: { $ref: "#/components/responses/Problem" }
+  /rooms/{roomId}/messages:
+    parameters:
+      - name: roomId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listRoomMessages
+      responses:
+        "200":
+          description: Room timeline messages
+    post:
+      operationId: postRoomMessage
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [document]
+              properties:
+                document: { type: object, additionalProperties: true }
+                plainText: { type: string, maxLength: 50000 }
+                threadParentId: { type: [string, "null"], format: uuid }
+                messageType:
+                  enum: [text, system, alert, finding, decision, approval, workflow, agent-status, query-result, evidence, case-event, response-action]
+      responses:
+        "201":
+          description: Durable message created
+        default: { $ref: "#/components/responses/Problem" }
+  /messages/{messageId}/reactions:
+    parameters:
+      - name: messageId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: toggleMessageReaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [emoji]
+              properties:
+                emoji: { enum: [eyes, check, thumbsup] }
+      responses:
+        "200":
+          description: Reaction toggled and current count returned
+        default: { $ref: "#/components/responses/Problem" }
+  /alerts:
+    get:
+      operationId: listAlerts
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: severity, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: source, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Permission-filtered alerts
+        default: { $ref: "#/components/responses/Problem" }
+  /search:
+    get:
+      operationId: searchOrganisation
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: type
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Organisation and capability-filtered search groups
+        default: { $ref: "#/components/responses/Problem" }
+  /events/ingest:
+    post:
+      security: []
+      operationId: ingestMsepEvent
+      parameters:
+        - name: x-muster-signature
+          in: header
+          required: true
+          schema: { type: string }
+        - name: x-muster-timestamp
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MsepEnvelope" }
+      responses:
+        "202":
+          description: Event accepted idempotently
+        default: { $ref: "#/components/responses/Problem" }
+  /events/stream:
+    get:
+      operationId: streamEvents
+      responses:
+        "200":
+          description: Organisation-scoped Server-Sent Events stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: muster.session_token
+  parameters:
+    IdempotencyKey:
+      name: idempotency-key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 200 }
+  responses:
+    Problem:
+      description: RFC 9457-style problem
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    Health:
+      type: object
+      required: [status, product, version, timestamp]
+      properties:
+        status: { const: healthy }
+        product: { const: Muster }
+        version: { type: string }
+        timestamp: { type: string, format: date-time }
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string }
+        traceId: { type: string }
+    Room:
+      type: object
+      required: [id, organisationId, name, slug, roomType]
+      properties:
+        id: { type: string, format: uuid }
+        organisationId: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        roomType: { type: string }
+        tlp: { type: [string, "null"] }
+    MsepEnvelope:
+      type: object
+      required: [specVersion, id, type, source, subject, occurredAt, receivedAt, classification, correlation, data, evidence, integrity]
+      properties:
+        specVersion: { const: muster.security/v1 }
+        id: { type: string }
+        type: { type: string }
+        source:
+          type: object
+          required: [product, instanceId, organisationId]
+          properties:
+            product: { type: string }
+            instanceId: { type: string }
+            organisationId: { type: string }
+        subject:
+          type: object
+          required: [type, id]
+          properties:
+            type: { type: string }
+            id: { type: string }
+        occurredAt: { type: string, format: date-time }
+        receivedAt: { type: string, format: date-time }
+        classification: { type: object, additionalProperties: true }
+        correlation: { type: object, additionalProperties: true }
+        data: { type: object, additionalProperties: true }
+        evidence:
+          type: array
+          items: { type: object, additionalProperties: true }
+        integrity: { type: object, additionalProperties: true }

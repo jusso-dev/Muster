@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CI: "true"
+  DATABASE_URL: postgresql://muster:muster@127.0.0.1:5432/muster
+  REDIS_URL: redis://127.0.0.1:6379
+  BETTER_AUTH_SECRET: muster-ci-only-secret-at-least-32-characters
+  BETTER_AUTH_URL: http://127.0.0.1:3000
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17.6-bookworm
+        env:
+          POSTGRES_USER: muster
+          POSTGRES_PASSWORD: muster
+          POSTGRES_DB: muster
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U muster -d muster"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:8.2.1-bookworm
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.17.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - run: pnpm db:seed
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test:unit
+      - run: pnpm contracts:generate
+      - name: Verify committed migrations
+        run: |
+          pnpm db:generate
+          git diff --exit-code -- packages/database/migrations
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright test tests/muster.spec.ts --project=chromium
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report
+          if-no-files-found: ignore
+          retention-days: 14
+
+  container:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate image tags and OCI labels
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=sha
+          labels: |
+            org.opencontainers.image.title=Muster
+            org.opencontainers.image.description=Shared workspace for human and agent-driven security operations
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        id: build
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Verify container starts
+        if: github.event_name == 'pull_request'
+        run: docker image inspect "${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA::7}"
+      - name: Attest published image
+        if: github.event_name == 'push'
+        uses: actions/attest@36051bcae73b7c2a8a6945a48cbf80953c6baa35 # v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Verify anonymous public pull
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          public_image="${REGISTRY}/${IMAGE_NAME,,}:sha-${GITHUB_SHA::7}"
+          docker logout "$REGISTRY"
+          docker pull "$public_image"
+      - name: Publication summary
+        if: github.event_name == 'push'
+        run: |
+          echo "### Published container" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`${REGISTRY}/${IMAGE_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "The workflow verified an anonymous pull after publication. GHCR visibility is configured once at the package level and retained by subsequent releases." >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,9 @@
+.git
+.next
+.turbo
+node_modules
+test-results
+playwright-report
+screenshots
+.env
+*.log

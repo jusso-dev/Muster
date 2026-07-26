@@ -1,0 +1,180 @@
+name: muster
+
+x-muster-environment: &muster-environment
+  NODE_ENV: production
+  DATABASE_URL: postgresql://muster:${POSTGRES_PASSWORD}@postgres:5432/muster
+  REDIS_URL: redis://redis:6379
+  BETTER_AUTH_URL: ${MUSTER_PUBLIC_URL}
+  AUTH_TRUSTED_ORIGINS: ${MUSTER_PUBLIC_URL}
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+  AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
+  AUTH_SECURE_COOKIES: ${AUTH_SECURE_COOKIES:-false}
+  OBJECT_STORAGE_ENDPOINT: http://minio:9000
+  OBJECT_STORAGE_REGION: us-east-1
+  OBJECT_STORAGE_BUCKET: muster-evidence
+  OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY}
+  OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY}
+  SMTP_HOST: mailpit
+  SMTP_PORT: 1025
+  KELPIE_BASE_URL: http://mock-kelpie:4011
+  KELPIE_API_TOKEN: ${KELPIE_API_TOKEN}
+  TAWNY_BASE_URL: http://mock-tawny:4012
+  TAWNY_API_TOKEN: ${TAWNY_API_TOKEN}
+  BOWER_BASE_URL: http://mock-bower:4013
+  BOWER_API_TOKEN: ${BOWER_API_TOKEN}
+  MUSTER_MOCK_INTEGRATIONS: "true"
+
+x-muster-service: &muster-service
+  image: ghcr.io/jusso-dev/muster:${MUSTER_VERSION:-latest}
+  pull_policy: always
+  restart: unless-stopped
+  environment: *muster-environment
+
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: muster
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: muster
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U muster -d muster"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8.2.1-bookworm
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
+        mc mb --ignore-existing local/muster-evidence &&
+        mc version enable local/muster-evidence &&
+        mc anonymous set none local/muster-evidence
+
+  mailpit:
+    image: axllent/mailpit:v1.27.8
+    restart: unless-stopped
+
+  web:
+    <<: *muster-service
+    command:
+      - sh
+      - -c
+      - pnpm --dir packages/database migrate && pnpm --dir packages/database seed && pnpm --dir apps/web start
+    ports:
+      - "${MUSTER_HTTP_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  worker:
+    <<: *muster-service
+    command: ["node", "apps/worker/dist/index.js"]
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  agent-gateway:
+    <<: *muster-service
+    command: ["node", "apps/agent-gateway/dist/index.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  mock-kelpie:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    working_dir: /mock
+    command: ["node", "mock.mjs"]
+    environment:
+      PORT: 4011
+      MOCK_PRODUCT: Kelpie
+    volumes:
+      - ../../integrations/kelpie/mock.mjs:/mock/mock.mjs:ro
+
+  mock-tawny:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    working_dir: /mock
+    command: ["node", "mock.mjs"]
+    environment:
+      PORT: 4012
+      MOCK_PRODUCT: Tawny
+    volumes:
+      - ../../integrations/tawny/mock.mjs:/mock/mock.mjs:ro
+
+  mock-bower:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    working_dir: /mock
+    command: ["node", "mock.mjs"]
+    environment:
+      PORT: 4013
+      MOCK_PRODUCT: Bower
+    volumes:
+      - ../../integrations/bower/mock.mjs:/mock/mock.mjs:ro
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
