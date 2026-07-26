@@ -5,6 +5,8 @@ cd "$(dirname "$0")/.."
 
 env_file=".env.homelab"
 compose_file="deploy/docker/docker-compose.homelab.yml"
+requested_public_url="${MUSTER_PUBLIC_URL:-http://192.168.1.19:3000}"
+requested_http_port="${MUSTER_HTTP_PORT:-3000}"
 
 if [[ ! -f "$env_file" ]]; then
   cp deploy/docker/.env.homelab.example "$env_file"
@@ -12,10 +14,10 @@ if [[ ! -f "$env_file" ]]; then
   auth_secret="$(openssl rand -hex 32)"
   storage_secret="$(openssl rand -hex 24)"
   admin_password="Muster!$(openssl rand -hex 12)"
-  public_url="${MUSTER_PUBLIC_URL:-http://192.168.1.19:3000}"
 
   sed -i.bak \
-    -e "s|MUSTER_PUBLIC_URL=.*|MUSTER_PUBLIC_URL=${public_url}|" \
+    -e "s|MUSTER_PUBLIC_URL=.*|MUSTER_PUBLIC_URL=${requested_public_url}|" \
+    -e "s|MUSTER_HTTP_PORT=.*|MUSTER_HTTP_PORT=${requested_http_port}|" \
     -e "s|generate-postgres-password|${postgres_password}|" \
     -e "s|generate-better-auth-secret|${auth_secret}|" \
     -e "s|generate-object-storage-secret|${storage_secret}|" \
