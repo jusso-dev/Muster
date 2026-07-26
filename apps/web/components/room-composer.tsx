@@ -1,41 +1,106 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { EditorContent, useEditor } from "@tiptap/react";
 import Placeholder from "@tiptap/extension-placeholder";
+import StarterKit from "@tiptap/starter-kit";
 import {
   AtSign,
+  Bold,
   Bot,
+  Code2,
   FileUp,
+  Italic,
   Link2,
   ListChecks,
+  RefreshCw,
   Send,
   ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { roomIdBySlug } from "@/lib/demo-data";
 import { browserUuid } from "@/lib/browser-uuid";
+import { roomIdBySlug } from "@/lib/demo-data";
 
 export type RoomMessageRecord = {
   id: string;
+  roomId?: string;
   threadParentId: string | null;
   authorActorId: string;
+  authorName?: string;
+  authorType?: "human" | "agent" | "product" | "service" | "system";
+  messageType?: string;
+  dataClassification?: string;
+  document?: Record<string, unknown>;
   plainText: string;
   createdAt: string;
+  editedAt?: string | null;
+  deletedAt?: string | null;
+  reactions?: Array<{
+    emoji: string;
+    count: number;
+    reactedByMe: boolean;
+  }>;
+  replyCount?: number;
+  participantActorIds?: string[];
+  pinned?: boolean;
+  saved?: boolean;
+  following?: boolean;
+  canEdit?: boolean;
+  canPin?: boolean;
+  unread?: boolean;
+  relatedAlertId?: string | null;
+  relatedInvestigationId?: string | null;
+  relatedCaseId?: string | null;
+  relatedAgentRunId?: string | null;
+  relatedWorkflowRunId?: string | null;
+  clientId?: string;
+  idempotencyKey?: string;
+  deliveryState?: "pending" | "delivered" | "failed";
+};
+
+type SendPayload = {
+  document: Record<string, unknown>;
+  plainText: string;
+  messageType: "text";
+  dataClassification: "internal";
+  idempotencyKey: string;
 };
 
 export function RoomComposer({
   roomSlug,
   roomLabel,
-  onSent,
+  onDeliveryChange,
 }: {
   roomSlug: string;
   roomLabel?: string;
-  onSent?: (message: RoomMessageRecord) => void;
+  onDeliveryChange?: (message: RoomMessageRecord) => void;
 }) {
   const [state, setState] = useState<"idle" | "sending" | "error">("idle");
+  const [editorReady, setEditorReady] = useState(false);
+  const stateRef = useRef(state);
+  const idempotencyKeyRef = useRef(browserUuid());
+  const lastSubmittedRef = useRef<SendPayload | null>(null);
+  const typingStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTypingAtRef = useRef(0);
   const storageKey = `muster:draft:${roomSlug}`;
+  const roomId =
+    roomIdBySlug[roomSlug] ??
+    roomIdBySlug["investigation-suspicious-powershell"];
+
+  function updateState(next: "idle" | "sending" | "error") {
+    stateRef.current = next;
+    setState(next);
+  }
+
+  function reportTyping(active: boolean) {
+    if (!roomId) return;
+    void fetch(`/api/v1/rooms/${roomId}/typing`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ active }),
+    }).catch(() => undefined);
+  }
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -52,51 +117,118 @@ export function RoomComposer({
     },
     immediatelyRender: false,
     onUpdate({ editor: current }) {
-      localStorage.setItem(storageKey, JSON.stringify(current.getJSON()));
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          document: current.getJSON(),
+          idempotencyKey: idempotencyKeyRef.current,
+        }),
+      );
+      const now = Date.now();
+      if (now - lastTypingAtRef.current > 1_500) {
+        lastTypingAtRef.current = now;
+        reportTyping(true);
+      }
+      if (typingStopRef.current) clearTimeout(typingStopRef.current);
+      typingStopRef.current = setTimeout(() => reportTyping(false), 2_500);
     },
   });
 
   useEffect(() => {
     if (!editor) return;
     const draft = localStorage.getItem(storageKey);
-    if (!draft) return;
+    if (!draft) {
+      setEditorReady(true);
+      return;
+    }
     try {
-      editor.commands.setContent(JSON.parse(draft));
+      const parsed = JSON.parse(draft) as {
+        document?: Record<string, unknown>;
+        idempotencyKey?: string;
+        type?: string;
+      };
+      if (parsed.document) {
+        editor.commands.setContent(parsed.document);
+        if (parsed.idempotencyKey) {
+          idempotencyKeyRef.current = parsed.idempotencyKey;
+        }
+      } else if (parsed.type === "doc") {
+        editor.commands.setContent(parsed);
+      }
     } catch {
       localStorage.removeItem(storageKey);
+    } finally {
+      setEditorReady(true);
     }
   }, [editor, storageKey]);
 
-  async function send() {
-    if (!editor || editor.isEmpty || state === "sending") return;
-    const roomId =
-      roomIdBySlug[roomSlug] ??
-      roomIdBySlug["investigation-suspicious-powershell"];
-    if (!roomId) return;
-    setState("sending");
+  useEffect(
+    () => () => {
+      if (typingStopRef.current) clearTimeout(typingStopRef.current);
+      reportTyping(false);
+    },
+    [roomId],
+  );
+
+  async function send(retry = false) {
+    if (!editor || stateRef.current === "sending" || !roomId) return;
+    const payload =
+      retry && lastSubmittedRef.current
+        ? lastSubmittedRef.current
+        : {
+            document: editor.getJSON(),
+            plainText: editor.getText().trim(),
+            messageType: "text" as const,
+            dataClassification: "internal" as const,
+            idempotencyKey: idempotencyKeyRef.current,
+          };
+    if (!payload.plainText) return;
+    lastSubmittedRef.current = payload;
+    const clientId = `client:${payload.idempotencyKey}`;
+    updateState("sending");
+    reportTyping(false);
+    onDeliveryChange?.({
+      id: clientId,
+      clientId,
+      threadParentId: null,
+      authorActorId: "",
+      plainText: payload.plainText,
+      createdAt: new Date().toISOString(),
+      idempotencyKey: payload.idempotencyKey,
+      deliveryState: "pending",
+    });
     try {
       const response = await fetch(`/api/v1/rooms/${roomId}/messages`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          document: editor.getJSON(),
-          plainText: editor.getText(),
-          messageType: "text",
-          dataClassification: "internal",
-          idempotencyKey: browserUuid(),
-        }),
+        body: JSON.stringify(payload),
       });
-      if (!response.ok) {
-        setState("error");
-        return;
-      }
-      const payload = (await response.json()) as { data: RoomMessageRecord };
+      if (!response.ok)
+        throw new Error(`Message send failed (${response.status})`);
+      const result = (await response.json()) as { data: RoomMessageRecord };
+      onDeliveryChange?.({
+        ...result.data,
+        clientId,
+        idempotencyKey: payload.idempotencyKey,
+        deliveryState: "delivered",
+      });
       editor.commands.clearContent();
       localStorage.removeItem(storageKey);
-      setState("idle");
-      onSent?.(payload.data);
+      idempotencyKeyRef.current = browserUuid();
+      lastSubmittedRef.current = null;
+      updateState("idle");
     } catch {
-      setState("error");
+      updateState("error");
+      onDeliveryChange?.({
+        id: clientId,
+        clientId,
+        threadParentId: null,
+        authorActorId: "",
+        plainText: payload.plainText,
+        createdAt: new Date().toISOString(),
+        idempotencyKey: payload.idempotencyKey,
+        deliveryState: "failed",
+      });
     }
   }
 
@@ -104,7 +236,8 @@ export function RoomComposer({
     if (
       event.key !== "Enter" ||
       event.shiftKey ||
-      event.nativeEvent.isComposing
+      event.nativeEvent.isComposing ||
+      window.matchMedia("(pointer: coarse)").matches
     ) {
       return;
     }
@@ -125,8 +258,35 @@ export function RoomComposer({
             <Button
               size="icon"
               variant="ghost"
-              aria-label="Attach evidence (coming soon)"
-              title="Evidence attachments are not available yet"
+              aria-label="Bold"
+              aria-pressed={editor?.isActive("bold") ?? false}
+              onClick={() => editor?.chain().focus().toggleBold().run()}
+            >
+              <Bold />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Italic"
+              aria-pressed={editor?.isActive("italic") ?? false}
+              onClick={() => editor?.chain().focus().toggleItalic().run()}
+            >
+              <Italic />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Inline code"
+              aria-pressed={editor?.isActive("code") ?? false}
+              onClick={() => editor?.chain().focus().toggleCode().run()}
+            >
+              <Code2 />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Attach evidence (policy check required)"
+              title="Evidence uploads require a governed evidence record"
               disabled
             >
               <FileUp />
@@ -134,45 +294,51 @@ export function RoomComposer({
             <Button
               size="icon"
               variant="ghost"
-              aria-label="Mention person (coming soon)"
-              title="Person mentions are not available yet"
-              disabled
+              aria-label="Mention a person or agent"
+              title="Type @name in the composer"
+              onClick={() => editor?.chain().focus().insertContent("@").run()}
             >
               <AtSign />
             </Button>
             <Button
               size="icon"
               variant="ghost"
-              aria-label="Mention agent (coming soon)"
-              title="Agent mentions are not available yet"
-              disabled
+              aria-label="Mention agent"
+              title="Type an agent name after @"
+              onClick={() => editor?.chain().focus().insertContent("@").run()}
             >
               <Bot />
             </Button>
             <Button
               size="icon"
               variant="ghost"
-              aria-label="Link alert (coming soon)"
-              title="Alert linking is not available yet"
-              disabled
+              aria-label="Link security reference"
+              title="Paste an authorised Muster reference"
+              onClick={() =>
+                editor?.chain().focus().insertContent("/reference ").run()
+              }
             >
               <Link2 />
             </Button>
             <Button
               size="icon"
               variant="ghost"
-              aria-label="Record decision (coming soon)"
-              title="Decision recording is not available yet"
-              disabled
+              aria-label="Record decision"
+              title="Insert the decision slash command"
+              onClick={() =>
+                editor?.chain().focus().insertContent("/decision ").run()
+              }
             >
               <ShieldCheck />
             </Button>
             <Button
               size="icon"
               variant="ghost"
-              aria-label="Start workflow (coming soon)"
-              title="Workflow starts are not available yet"
-              disabled
+              aria-label="Start workflow"
+              title="Insert the workflow slash command"
+              onClick={() =>
+                editor?.chain().focus().insertContent("/workflow ").run()
+              }
             >
               <ListChecks />
             </Button>
@@ -181,14 +347,36 @@ export function RoomComposer({
             <span className="hidden text-xs text-muted-foreground tablet:inline">
               Enter to send · Shift+Enter for new line
             </span>
+            <span className="sr-only" aria-live="polite">
+              {state === "sending"
+                ? "Sending message"
+                : state === "error"
+                  ? "Message failed. Draft preserved."
+                  : "Composer ready"}
+            </span>
             {state === "error" && (
-              <span role="alert" className="text-xs text-[var(--color-error)]">
-                Message failed. Draft preserved.
-              </span>
+              <>
+                <span
+                  role="alert"
+                  className="text-xs text-[var(--color-error)]"
+                >
+                  Message failed. Draft preserved.
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void send(true)}
+                >
+                  <RefreshCw /> Retry
+                </Button>
+              </>
             )}
             <Button
               onClick={() => void send()}
-              disabled={state === "sending"}
+              autoComplete="off"
+              disabled={
+                state === "sending" || !editorReady || !editor || editor.isEmpty
+              }
               state={
                 state === "sending"
                   ? "loading"

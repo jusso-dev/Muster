@@ -27,8 +27,12 @@ import {
 } from "@muster/contracts";
 
 const timestamps = {
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 };
 
 export const actorTypeEnum = pgEnum("actor_type", actorTypeValues);
@@ -40,7 +44,10 @@ export const investigationStatusEnum = pgEnum(
   "investigation_status",
   investigationStatusValues,
 );
-export const approvalStatusEnum = pgEnum("approval_status", approvalStatusValues);
+export const approvalStatusEnum = pgEnum(
+  "approval_status",
+  approvalStatusValues,
+);
 export const taskStatusEnum = pgEnum("task_status", taskStatusValues);
 export const taskPriorityEnum = pgEnum("task_priority", taskPriorityValues);
 
@@ -51,15 +58,22 @@ export const organisations = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     dataRegion: text("data_region").notNull().default("australia"),
-    defaultTimezone: text("default_timezone").notNull().default("Australia/Sydney"),
+    defaultTimezone: text("default_timezone")
+      .notNull()
+      .default("Australia/Sydney"),
     retentionPolicy: jsonb("retention_policy").notNull().default({}),
     authenticationPolicy: jsonb("authentication_policy").notNull().default({}),
     status: text("status").notNull().default("active"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     uniqueIndex("organisations_slug_unique").on(table.slug),
-    check("organisations_status_check", sql`${table.status} in ('active','suspended')`),
+    check(
+      "organisations_status_check",
+      sql`${table.status} in ('active','suspended')`,
+    ),
   ],
 );
 
@@ -102,7 +116,9 @@ export const authAccounts = pgTable(
     accessToken: text("access_token"),
     refreshToken: text("refresh_token"),
     idToken: text("id_token"),
-    accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", {
+      withTimezone: true,
+    }),
     refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
       withTimezone: true,
     }),
@@ -161,7 +177,9 @@ export const authPasskeys = pgTable(
     deviceType: text("device_type").notNull(),
     backedUp: boolean("backed_up").notNull(),
     transports: text("transports"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     aaguid: text("aaguid"),
   },
   (table) => [index("auth_passkey_user_idx").on(table.userId)],
@@ -184,8 +202,12 @@ export const users = pgTable(
     team: text("team"),
     presenceState: text("presence_state").notNull().default("offline"),
     timezone: text("timezone").notNull().default("Australia/Sydney"),
-    notificationPreferences: jsonb("notification_preferences").notNull().default({}),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    notificationPreferences: jsonb("notification_preferences")
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
   },
   (table) => [
@@ -208,8 +230,12 @@ export const actors = pgTable(
     icon: text("icon"),
     status: text("status").notNull().default("active"),
     identityReference: text("identity_reference"),
-    capabilityAssignments: jsonb("capability_assignments").notNull().default([]),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    capabilityAssignments: jsonb("capability_assignments")
+      .notNull()
+      .default([]),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("actors_org_type_idx").on(table.organisationId, table.actorType),
@@ -236,7 +262,9 @@ export const rooms = pgTable(
     createdByActorId: uuid("created_by_actor_id")
       .notNull()
       .references(() => actors.id),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     linkedInvestigationId: uuid("linked_investigation_id"),
     linkedKelpieCaseId: text("linked_kelpie_case_id"),
@@ -264,7 +292,9 @@ export const roomMemberships = pgTable(
       .references(() => actors.id),
     membershipRole: text("membership_role").notNull(),
     notificationLevel: text("notification_level").notNull().default("all"),
-    joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
+    joinedAt: timestamp("joined_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     lastReadEventId: uuid("last_read_event_id"),
     muted: boolean("muted").notNull().default(false),
   },
@@ -298,7 +328,9 @@ export const alerts = pgTable(
     ruleName: text("rule_name"),
     ruleId: text("rule_id"),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
-    receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     assignedActorId: uuid("assigned_actor_id").references(() => actors.id),
     entities: jsonb("entities").notNull().default([]),
     observables: jsonb("observables").notNull().default([]),
@@ -348,7 +380,9 @@ export const investigations = pgTable(
     severity: severityEnum("severity").notNull(),
     leadActorId: uuid("lead_actor_id").references(() => actors.id),
     roomId: uuid("room_id").references(() => rooms.id),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -394,10 +428,14 @@ export const messages = pgTable(
     messageType: messageTypeEnum("message_type").notNull(),
     document: jsonb("document").notNull(),
     plainText: text("plain_text").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     editedAt: timestamp("edited_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
-    dataClassification: text("data_classification").notNull().default("internal"),
+    dataClassification: text("data_classification")
+      .notNull()
+      .default("internal"),
     relatedAlertId: uuid("related_alert_id").references(() => alerts.id),
     relatedInvestigationId: uuid("related_investigation_id").references(
       () => investigations.id,
@@ -437,10 +475,198 @@ export const reactions = pgTable(
       .notNull()
       .references(() => actors.id),
     emoji: text("emoji").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.messageId, table.actorId, table.emoji] }),
+  ],
+);
+
+export const reactionOperations = pgTable(
+  "reaction_operations",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id),
+    actorId: uuid("actor_id")
+      .notNull()
+      .references(() => actors.id),
+    emoji: text("emoji").notNull(),
+    active: boolean("active").notNull(),
+    resultCount: integer("result_count").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("reaction_operations_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
+    ),
+    index("reaction_operations_org_message_idx").on(
+      table.organisationId,
+      table.messageId,
+    ),
+  ],
+);
+
+export const messageRevisions = pgTable(
+  "message_revisions",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id),
+    actorId: uuid("actor_id")
+      .notNull()
+      .references(() => actors.id),
+    revisionType: text("revision_type").notNull(),
+    previousDocument: jsonb("previous_document").notNull(),
+    previousPlainText: text("previous_plain_text").notNull(),
+    nextDocument: jsonb("next_document"),
+    nextPlainText: text("next_plain_text"),
+    reason: text("reason"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("message_revisions_org_message_idx").on(
+      table.organisationId,
+      table.messageId,
+      table.createdAt,
+    ),
+    check(
+      "message_revision_type_check",
+      sql`${table.revisionType} in ('edit','delete')`,
+    ),
+    uniqueIndex("message_revisions_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
+    ),
+  ],
+);
+
+export const messagePins = pgTable(
+  "message_pins",
+  {
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    roomId: uuid("room_id")
+      .notNull()
+      .references(() => rooms.id),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id),
+    pinnedByActorId: uuid("pinned_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.roomId, table.messageId] }),
+    index("message_pins_org_room_idx").on(
+      table.organisationId,
+      table.roomId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const messageSaves = pgTable(
+  "message_saves",
+  {
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id),
+    actorId: uuid("actor_id")
+      .notNull()
+      .references(() => actors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.messageId, table.actorId] }),
+    index("message_saves_org_actor_idx").on(
+      table.organisationId,
+      table.actorId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const threadFollows = pgTable(
+  "thread_follows",
+  {
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    rootMessageId: uuid("root_message_id")
+      .notNull()
+      .references(() => messages.id),
+    actorId: uuid("actor_id")
+      .notNull()
+      .references(() => actors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.rootMessageId, table.actorId] }),
+    index("thread_follows_org_actor_idx").on(
+      table.organisationId,
+      table.actorId,
+    ),
+  ],
+);
+
+export const messageMentions = pgTable(
+  "message_mentions",
+  {
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id),
+    mentionedActorId: uuid("mentioned_actor_id").references(() => actors.id),
+    mentionType: text("mention_type").notNull(),
+    mentionKey: text("mention_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.messageId, table.mentionType, table.mentionKey],
+    }),
+    index("message_mentions_org_actor_idx").on(
+      table.organisationId,
+      table.mentionedActorId,
+      table.createdAt,
+    ),
+    check(
+      "message_mention_type_check",
+      sql`${table.mentionType} in ('actor','room','everyone')`,
+    ),
   ],
 );
 
@@ -461,11 +687,20 @@ export const hypotheses = pgTable(
       .notNull()
       .references(() => actors.id),
     supportingFindingIds: jsonb("supporting_finding_ids").notNull().default([]),
-    contradictingFindingIds: jsonb("contradicting_finding_ids").notNull().default([]),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    contradictingFindingIds: jsonb("contradicting_finding_ids")
+      .notNull()
+      .default([]),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   },
-  (table) => [index("hypotheses_org_investigation_idx").on(table.organisationId, table.investigationId)],
+  (table) => [
+    index("hypotheses_org_investigation_idx").on(
+      table.organisationId,
+      table.investigationId,
+    ),
+  ],
 );
 
 export const findings = pgTable(
@@ -491,7 +726,9 @@ export const findings = pgTable(
     recommendedAction: text("recommended_action"),
     agentProvenance: jsonb("agent_provenance"),
     humanReviewedAt: timestamp("human_reviewed_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     supersededAt: timestamp("superseded_at", { withTimezone: true }),
   },
   (table) => [
@@ -519,7 +756,9 @@ export const decisions = pgTable(
     decisionMakerActorId: uuid("decision_maker_actor_id")
       .notNull()
       .references(() => actors.id),
-    alternativesConsidered: jsonb("alternatives_considered").notNull().default([]),
+    alternativesConsidered: jsonb("alternatives_considered")
+      .notNull()
+      .default([]),
     evidenceReferences: jsonb("evidence_references").notNull().default([]),
     relatedInvestigationId: uuid("related_investigation_id").references(
       () => investigations.id,
@@ -527,9 +766,16 @@ export const decisions = pgTable(
     relatedCaseId: text("related_case_id"),
     relatedWorkflowRunId: uuid("related_workflow_run_id"),
     approvalId: uuid("approval_id"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("decisions_org_investigation_idx").on(table.organisationId, table.relatedInvestigationId)],
+  (table) => [
+    index("decisions_org_investigation_idx").on(
+      table.organisationId,
+      table.relatedInvestigationId,
+    ),
+  ],
 );
 
 export const approvals = pgTable(
@@ -545,10 +791,14 @@ export const approvals = pgTable(
     actionType: text("action_type").notNull(),
     target: jsonb("target").notNull(),
     riskSummary: text("risk_summary").notNull(),
-    requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
+    requestedAt: timestamp("requested_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     requiredCapability: text("required_capability").notNull(),
-    requiredApprovalCount: integer("required_approval_count").notNull().default(1),
+    requiredApprovalCount: integer("required_approval_count")
+      .notNull()
+      .default(1),
     status: approvalStatusEnum("status").notNull().default("pending"),
     decisions: jsonb("decisions").notNull().default([]),
     decisionAt: timestamp("decision_at", { withTimezone: true }),
@@ -588,9 +838,15 @@ export const agentDefinitions = pgTable(
     systemPromptVersion: text("system_prompt_version").notNull(),
     allowedTools: jsonb("allowed_tools").notNull().default([]),
     allowedRooms: jsonb("allowed_rooms").notNull().default([]),
-    capabilityRequirements: jsonb("capability_requirements").notNull().default([]),
-    maximumRuntimeSeconds: integer("maximum_runtime_seconds").notNull().default(300),
-    maximumTokenBudget: integer("maximum_token_budget").notNull().default(20_000),
+    capabilityRequirements: jsonb("capability_requirements")
+      .notNull()
+      .default([]),
+    maximumRuntimeSeconds: integer("maximum_runtime_seconds")
+      .notNull()
+      .default(300),
+    maximumTokenBudget: integer("maximum_token_budget")
+      .notNull()
+      .default(20_000),
     maximumCostCents: integer("maximum_cost_cents").notNull().default(500),
     dataClassificationAllowance: jsonb("data_classification_allowance")
       .notNull()
@@ -618,7 +874,9 @@ export const agentRuns = pgTable(
       .notNull()
       .references(() => organisations.id),
     roomId: uuid("room_id").references(() => rooms.id),
-    investigationId: uuid("investigation_id").references(() => investigations.id),
+    investigationId: uuid("investigation_id").references(
+      () => investigations.id,
+    ),
     workflowRunId: uuid("workflow_run_id"),
     requestedByActorId: uuid("requested_by_actor_id")
       .notNull()
@@ -644,8 +902,12 @@ export const agentRuns = pgTable(
     promptVersion: text("prompt_version").notNull(),
     runtime: text("runtime").notNull(),
     model: text("model").notNull(),
-    maximumRuntimeSeconds: integer("maximum_runtime_seconds").notNull().default(300),
-    maximumTokenBudget: integer("maximum_token_budget").notNull().default(20_000),
+    maximumRuntimeSeconds: integer("maximum_runtime_seconds")
+      .notNull()
+      .default(300),
+    maximumTokenBudget: integer("maximum_token_budget")
+      .notNull()
+      .default(20_000),
     maximumCostCents: integer("maximum_cost_cents").notNull().default(500),
     tokenUsage: jsonb("token_usage").notNull().default({}),
     estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
@@ -688,7 +950,9 @@ export const agentRunEvents = pgTable(
     eventType: text("event_type").notNull(),
     message: text("message").notNull(),
     payload: jsonb("payload").notNull().default({}),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("agent_run_events_org_run_idx").on(
@@ -714,7 +978,9 @@ export const agentRunSources = pgTable(
     contentHash: text("content_hash").notNull(),
     classification: text("classification").notNull().default("internal"),
     metadata: jsonb("metadata").notNull().default({}),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     uniqueIndex("agent_run_sources_org_run_unique").on(
@@ -749,7 +1015,9 @@ export const agentToolCalls = pgTable(
     approvalId: uuid("approval_id").references(() => approvals.id),
     status: text("status").notNull(),
     error: text("error"),
-    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
@@ -787,7 +1055,9 @@ export const agentMemories = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     reviewedByActorId: uuid("reviewed_by_actor_id").references(() => actors.id),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("agent_memories_org_agent_idx").on(
@@ -867,7 +1137,9 @@ export const agentSkillVersions = pgTable(
     state: text("state").notNull().default("proposed"),
     approvedByActorId: uuid("approved_by_actor_id").references(() => actors.id),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     uniqueIndex("agent_skill_versions_skill_version_unique").on(
@@ -904,7 +1176,9 @@ export const agentSkillEvaluations = pgTable(
     baselineScore: integer("baseline_score"),
     regressions: jsonb("regressions").notNull().default([]),
     result: jsonb("result").notNull().default({}),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("agent_skill_evaluations_version_idx").on(
@@ -960,8 +1234,12 @@ export const workflowRuns = pgTable(
     status: text("status").notNull().default("queued"),
     triggerEventId: text("trigger_event_id"),
     roomId: uuid("room_id").references(() => rooms.id),
-    investigationId: uuid("investigation_id").references(() => investigations.id),
-    requestedByActorId: uuid("requested_by_actor_id").references(() => actors.id),
+    investigationId: uuid("investigation_id").references(
+      () => investigations.id,
+    ),
+    requestedByActorId: uuid("requested_by_actor_id").references(
+      () => actors.id,
+    ),
     state: jsonb("state").notNull().default({}),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -990,7 +1268,9 @@ export const evidence = pgTable(
     uploadedByActorId: uuid("uploaded_by_actor_id")
       .notNull()
       .references(() => actors.id),
-    uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     classification: text("classification").notNull(),
     relatedRoomId: uuid("related_room_id").references(() => rooms.id),
     relatedInvestigationId: uuid("related_investigation_id").references(
@@ -1006,7 +1286,10 @@ export const evidence = pgTable(
     objectLockMetadata: jsonb("object_lock_metadata").notNull().default({}),
   },
   (table) => [
-    uniqueIndex("evidence_org_hash_unique").on(table.organisationId, table.sha256),
+    uniqueIndex("evidence_org_hash_unique").on(
+      table.organisationId,
+      table.sha256,
+    ),
     index("evidence_search_idx").using(
       "gin",
       sql`to_tsvector('english', ${table.fileName} || ' ' || ${table.source})`,
@@ -1021,7 +1304,9 @@ export const timelineEvents = pgTable(
     organisationId: uuid("organisation_id")
       .notNull()
       .references(() => organisations.id),
-    investigationId: uuid("investigation_id").references(() => investigations.id),
+    investigationId: uuid("investigation_id").references(
+      () => investigations.id,
+    ),
     roomId: uuid("room_id").references(() => rooms.id),
     externalCaseId: text("external_case_id"),
     actorId: uuid("actor_id").references(() => actors.id),
@@ -1029,7 +1314,9 @@ export const timelineEvents = pgTable(
     summary: text("summary").notNull(),
     payload: jsonb("payload").notNull().default({}),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("timeline_org_investigation_time_idx").on(
@@ -1055,7 +1342,9 @@ export const notifications = pgTable(
     safePreview: text("safe_preview"),
     target: jsonb("target").notNull(),
     readAt: timestamp("read_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("notifications_org_actor_read_idx").on(
@@ -1083,7 +1372,9 @@ export const tasks = pgTable(
       .notNull()
       .references(() => actors.id),
     roomId: uuid("room_id").references(() => rooms.id),
-    investigationId: uuid("investigation_id").references(() => investigations.id),
+    investigationId: uuid("investigation_id").references(
+      () => investigations.id,
+    ),
     relatedCaseId: text("related_case_id"),
     approvalRequired: boolean("approval_required").notNull().default(false),
     dueAt: timestamp("due_at", { withTimezone: true }),
@@ -1200,7 +1491,9 @@ export const idempotencyRecords = pgTable(
     requestHash: text("request_hash").notNull(),
     responseStatus: integer("response_status"),
     responseBody: jsonb("response_body"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => [
@@ -1224,10 +1517,14 @@ export const outboxEvents = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     traceId: text("trace_id").notNull(),
     attempts: integer("attempts").notNull().default(0),
-    availableAt: timestamp("available_at", { withTimezone: true }).defaultNow().notNull(),
+    availableAt: timestamp("available_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
     lastError: text("last_error"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     uniqueIndex("outbox_idempotency_unique").on(table.idempotencyKey),
@@ -1258,14 +1555,19 @@ export const auditEvents = pgTable(
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
     traceId: text("trace_id").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     uniqueIndex("audit_org_sequence_unique").on(
       table.organisationId,
       table.sequence,
     ),
-    uniqueIndex("audit_org_hash_unique").on(table.organisationId, table.eventHash),
+    uniqueIndex("audit_org_hash_unique").on(
+      table.organisationId,
+      table.eventHash,
+    ),
     index("audit_org_target_idx").on(
       table.organisationId,
       table.targetType,

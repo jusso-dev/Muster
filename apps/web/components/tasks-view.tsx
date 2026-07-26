@@ -486,11 +486,12 @@ export function TasksView() {
               ))}
             </select>
           </label>
-          <label className="space-y-1 desktop:col-span-2">
+          <div className="space-y-1 desktop:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Room
+              <label htmlFor="task-room">Room</label>
             </span>
             <select
+              id="task-room"
               value={form.roomId}
               onChange={(event) =>
                 setForm({ ...form, roomId: event.target.value })
@@ -504,7 +505,7 @@ export function TasksView() {
                 </option>
               ))}
             </select>
-          </label>
+          </div>
           <label className="space-y-1">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Case reference

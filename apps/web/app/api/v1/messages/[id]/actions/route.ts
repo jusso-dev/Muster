@@ -1,4 +1,4 @@
-import { RoomService, ToggleReactionSchema } from "@muster/rooms";
+import { MessageActionSchema, RoomService } from "@muster/rooms";
 import { apiSubject, problemResponse, requestTraceId } from "@/lib/api-context";
 import { enforceApiRateLimit } from "@/lib/api-rate-limit";
 import { publishRealtime } from "@/lib/realtime";
@@ -11,25 +11,25 @@ export async function POST(
   try {
     const subject = await apiSubject(request);
     await enforceApiRateLimit(
-      `${subject.organisationId}:${subject.actorId}:messages:react`,
+      `${subject.organisationId}:${subject.actorId}:messages:action`,
       120,
       60,
     );
     const { id } = await params;
-    const input = ToggleReactionSchema.parse(await request.json());
-    const reaction = await new RoomService().toggleReaction(
+    const input = MessageActionSchema.parse(await request.json());
+    const result = await new RoomService().setMessageAction(
       subject,
       id,
       input,
       traceId,
     );
     const realtimeDelivered = await publishRealtime(subject.organisationId, {
-      type: reaction.active ? "room.reaction.created" : "room.reaction.removed",
-      data: reaction,
+      type: `room.message.${input.action}`,
+      data: result,
       traceId,
     });
     return Response.json({
-      data: reaction,
+      data: result,
       realtimeDegraded: !realtimeDelivered,
       traceId,
     });

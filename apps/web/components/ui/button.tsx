@@ -33,9 +33,11 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   state?: "default" | "loading" | "error" | "success";
+  autoComplete?: "on" | "off";
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(

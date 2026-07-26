@@ -109,7 +109,11 @@ test("room posts a durable message and receives its SSE update", async ({
   await page.keyboard.press("Shift+Enter");
   await page.keyboard.type("Second line preserved");
   await expect(composer).toContainText("Second line preserved");
-  await page.keyboard.press("Enter");
+  if (testInfo.project.name === "mobile") {
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+  } else {
+    await page.keyboard.press("Enter");
+  }
   await expect(page.getByTestId("live-event")).toContainText(
     "room.message.created",
   );
@@ -136,10 +140,13 @@ test("room reactions toggle and thread replies persist", async ({
   const replyText = `Persistent thread reply from ${testInfo.project.name} ${Date.now()}`;
   await page.getByRole("button", { name: "3 replies" }).click();
   await page.getByLabel("Reply to thread").fill(replyText);
-  await page.keyboard.press("Enter");
+  if (testInfo.project.name === "mobile") {
+    await page.getByRole("button", { name: "Reply", exact: true }).click();
+  } else {
+    await page.keyboard.press("Enter");
+  }
   await expect(page.getByText(replyText)).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "3 replies" }).click();
   await expect(page.getByText(replyText)).toBeVisible();
 });
 
@@ -286,7 +293,9 @@ test("task board manages durable agent work end to end", async ({
     .fill("Correlate the signal and return an evidence-linked review draft.");
   await page.getByLabel("Due").fill("2026-08-15T15:30");
   await page.getByLabel("Priority").selectOption("high");
-  await page.getByLabel("Room").selectOption({ label: "#soc-operations" });
+  await page
+    .getByLabel("Room", { exact: true })
+    .selectOption({ label: "#soc-operations" });
   await page.getByPlaceholder("Optional case ID").fill("CASE-SYNTHETIC-17");
   await page.getByRole("button", { name: "Create task", exact: true }).click();
   await expect(page.getByText(taskTitle)).toBeVisible();
