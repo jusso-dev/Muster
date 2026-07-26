@@ -1515,6 +1515,166 @@ test("agent observer APIs redact secrets for authorised and unauthorised callers
   }
 });
 
+test("live search filters persist in URL history and exclude private rooms", async ({
+  page,
+  playwright,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium");
+  const db = database();
+  const [requester] = await db
+    .select()
+    .from(schema.actors)
+    .where(eq(schema.actors.identityReference, "admin@muster.local"))
+    .limit(1);
+  const [visibleRoom] = await db
+    .select()
+    .from(schema.rooms)
+    .where(eq(schema.rooms.slug, "soc-operations"))
+    .limit(1);
+  if (!requester || !visibleRoom) {
+    throw new Error("Seeded search requester and room required");
+  }
+
+  const suffix = newId().slice(0, 8);
+  const authorId = newId();
+  const privateRoomId = newId();
+  const messageIds = [newId(), newId(), newId()];
+  const authorName = `Synthetic Search Author ${suffix}`;
+  const canary = `searchbrowsercanary${suffix}`;
+  const visibleInside = `${canary} visible inside date window`;
+  const visibleBefore = `${canary} visible before date window`;
+  const privateInside = `${canary} private excluded result`;
+
+  try {
+    await db.insert(schema.actors).values({
+      id: authorId,
+      organisationId: requester.organisationId,
+      actorType: "human",
+      displayName: authorName,
+      capabilityAssignments: ["rooms.read"],
+    });
+    await db.insert(schema.rooms).values({
+      id: privateRoomId,
+      organisationId: requester.organisationId,
+      name: `synthetic-search-private-${suffix}`,
+      slug: `synthetic-search-private-${suffix}`,
+      displayName: `Synthetic Search Private ${suffix}`,
+      roomType: "private",
+      visibility: "private",
+      createdByActorId: requester.id,
+    });
+    await db.insert(schema.roomMemberships).values([
+      {
+        organisationId: requester.organisationId,
+        roomId: visibleRoom.id,
+        actorId: authorId,
+        membershipRole: "member",
+      },
+      {
+        organisationId: requester.organisationId,
+        roomId: privateRoomId,
+        actorId: authorId,
+        membershipRole: "owner",
+      },
+    ]);
+    await db.insert(schema.messages).values([
+      {
+        id: messageIds[0]!,
+        organisationId: requester.organisationId,
+        roomId: visibleRoom.id,
+        authorActorId: authorId,
+        messageType: "text",
+        document: { type: "doc", content: [] },
+        plainText: visibleInside,
+        createdAt: new Date("2026-07-15T12:00:00.000Z"),
+      },
+      {
+        id: messageIds[1]!,
+        organisationId: requester.organisationId,
+        roomId: visibleRoom.id,
+        authorActorId: authorId,
+        messageType: "text",
+        document: { type: "doc", content: [] },
+        plainText: visibleBefore,
+        createdAt: new Date("2026-06-30T23:59:59.000Z"),
+      },
+      {
+        id: messageIds[2]!,
+        organisationId: requester.organisationId,
+        roomId: privateRoomId,
+        authorActorId: authorId,
+        messageType: "text",
+        document: { type: "doc", content: [] },
+        plainText: privateInside,
+        createdAt: new Date("2026-07-15T12:00:00.000Z"),
+      },
+    ]);
+
+    await page.goto("/search");
+    await expect(
+      page.getByRole("heading", { name: "Search your workspace" }),
+    ).toBeVisible();
+    const input = page.getByPlaceholder(
+      "Search or filter with from:, in:, after:, before:",
+    );
+    const filteredQuery = `${canary} from:"${authorName}" in:"${visibleRoom.displayName}" after:2026-07-01 before:2026-08-01`;
+    await input.fill(filteredQuery);
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await expect(page.getByText(visibleInside)).toBeVisible();
+    await expect(page.getByText(visibleBefore)).toHaveCount(0);
+    await expect(page.getByText(privateInside)).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Remove from filter" }),
+    ).toContainText(authorName);
+    await expect(
+      page.getByRole("button", { name: "Remove in filter" }),
+    ).toContainText(visibleRoom.displayName);
+    await expect(page).toHaveURL(/after%3A2026-07-01/);
+
+    await page.getByRole("button", { name: "Remove after filter" }).click();
+    await expect(page.getByText(visibleBefore)).toBeVisible();
+    await expect(page.getByText(privateInside)).toHaveCount(0);
+    await page.goBack();
+    await expect(page.getByText(visibleInside)).toBeVisible();
+    await expect(page.getByText(visibleBefore)).toHaveCount(0);
+    await page.reload();
+    await expect(input).toHaveValue(filteredQuery);
+    await expect(page.getByText(visibleInside)).toBeVisible();
+
+    await input.fill(`${canary} from:"Unknown Synthetic Actor"`);
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({ hasText: "Unknown from: search filter" }),
+    ).toContainText('Unknown from: search filter "Unknown Synthetic Actor".');
+    await expect(page.getByText(privateInside)).toHaveCount(0);
+
+    const baseURL = testInfo.project.use.baseURL?.toString();
+    if (!baseURL) throw new Error("Playwright baseURL required");
+    const anonymous = await playwright.request.newContext({
+      baseURL,
+      storageState: { cookies: [], origins: [] },
+    });
+    try {
+      expect((await anonymous.get(`/api/v1/search?q=${canary}`)).status()).toBe(
+        401,
+      );
+    } finally {
+      await anonymous.dispose();
+    }
+  } finally {
+    await db
+      .delete(schema.messages)
+      .where(inArray(schema.messages.id, messageIds));
+    await db
+      .delete(schema.roomMemberships)
+      .where(eq(schema.roomMemberships.actorId, authorId));
+    await db.delete(schema.rooms).where(eq(schema.rooms.id, privateRoomId));
+    await db.delete(schema.actors).where(eq(schema.actors.id, authorId));
+  }
+});
+
 test("workflow YAML editor, integrations, search, and approvals render", async ({
   page,
 }) => {
@@ -1525,7 +1685,7 @@ test("workflow YAML editor, integrations, search, and approvals render", async (
     page.getByText("Heartbeat and queue state do not prove"),
   ).toBeVisible();
   await page.goto("/search");
-  await expect(page.getByText("6 permission-filtered results")).toBeVisible();
+  await expect(page.getByText("0 permission-filtered results")).toBeVisible();
   await page.goto("/approvals");
   await expect(page.getByRole("heading", { name: "Approvals" })).toBeVisible();
   await expect(page.getByText("No approval records.")).toBeVisible();

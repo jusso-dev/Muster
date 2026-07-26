@@ -192,6 +192,181 @@ describeIntegration("enterprise room governance", () => {
     ]);
   });
 
+  it("combines parameterised search filters without weakening tenant visibility", async () => {
+    const repository = new TenantRepository(database(), organisationId);
+    const duplicateActorIds = [newId(), newId()];
+    await database()
+      .insert(schema.actors)
+      .values(
+        duplicateActorIds.map((id) => ({
+          id,
+          organisationId,
+          actorType: "human" as const,
+          displayName: "Synthetic Duplicate",
+          capabilityAssignments: ["rooms.read"],
+        })),
+      );
+    await database()
+      .insert(schema.roomMemberships)
+      .values(
+        duplicateActorIds.map((actorId) => ({
+          organisationId,
+          roomId: privateRoomId,
+          actorId,
+          membershipRole: "member",
+        })),
+      );
+
+    const searchableMessageId = newId();
+    await database()
+      .insert(schema.messages)
+      .values([
+        {
+          id: searchableMessageId,
+          organisationId,
+          roomId: privateRoomId,
+          authorActorId: memberActorId,
+          messageType: "text",
+          document: { type: "doc", content: [] },
+          plainText: "Synthetic searchfiltercanary inside window",
+          createdAt: new Date("2026-07-15T12:00:00.000Z"),
+        },
+        {
+          id: newId(),
+          organisationId,
+          roomId: privateRoomId,
+          authorActorId: memberActorId,
+          messageType: "text",
+          document: { type: "doc", content: [] },
+          plainText: "Synthetic searchfiltercanary before window",
+          createdAt: new Date("2026-06-30T23:59:59.000Z"),
+        },
+        {
+          id: newId(),
+          organisationId,
+          roomId: privateRoomId,
+          authorActorId: ownerActorId,
+          messageType: "text",
+          document: { type: "doc", content: [] },
+          plainText: "Synthetic searchfiltercanary different author",
+          createdAt: new Date("2026-07-15T12:00:00.000Z"),
+        },
+      ]);
+
+    const resolved = await repository.resolveSearchFilters(memberActorId, {
+      from: "Synthetic Member",
+      in: "Synthetic Private",
+      after: new Date("2026-07-01T00:00:00.000Z"),
+      before: new Date("2026-08-01T00:00:00.000Z"),
+    });
+    expect(
+      await repository.search(
+        "searchfiltercanary",
+        memberActorId,
+        resolved.filters,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        id: searchableMessageId,
+        actorName: "Synthetic Member",
+        roomId: privateRoomId,
+        roomName: "Synthetic Private",
+        type: "message",
+      }),
+    ]);
+    expect(
+      await repository.search("", memberActorId, resolved.filters),
+    ).toEqual([expect.objectContaining({ id: searchableMessageId })]);
+    expect(
+      await repository.search("searchfiltercanary", memberActorId, {
+        fromActorId: memberActorId,
+      }),
+    ).toHaveLength(2);
+    expect(
+      await repository.search("searchfiltercanary", memberActorId, {
+        roomId: privateRoomId,
+      }),
+    ).toHaveLength(3);
+    expect(
+      await repository.search("searchfiltercanary", memberActorId, {
+        after: new Date("2026-07-01T00:00:00.000Z"),
+      }),
+    ).toHaveLength(2);
+    expect(
+      await repository.search("searchfiltercanary", memberActorId, {
+        before: new Date("2026-07-01T00:00:00.000Z"),
+      }),
+    ).toHaveLength(1);
+
+    await expect(
+      repository.resolveSearchFilters(nonMemberActorId, {
+        in: "Synthetic Private",
+      }),
+    ).rejects.toMatchObject({ filter: "in", reason: "unknown" });
+    await expect(
+      repository.resolveSearchFilters(memberActorId, {
+        from: "Synthetic Cross Tenant",
+      }),
+    ).rejects.toMatchObject({ filter: "from", reason: "unknown" });
+    await expect(
+      repository.resolveSearchFilters(memberActorId, {
+        from: "Synthetic Duplicate",
+      }),
+    ).rejects.toMatchObject({ filter: "from", reason: "ambiguous" });
+    await expect(
+      repository.resolveSearchFilters(memberActorId, { in: "%" }),
+    ).rejects.toMatchObject({ filter: "in", reason: "unknown" });
+
+    expect(
+      await repository.search(
+        "literalinjectionmarker'; DROP TABLE messages; --",
+        memberActorId,
+      ),
+    ).toEqual([]);
+    expect(
+      await repository.search("searchfiltercanary", nonMemberActorId),
+    ).toEqual([]);
+    expect(
+      await repository.search("searchfiltercanary", memberActorId),
+    ).toHaveLength(3);
+  });
+
+  it("does not leak findings through inaccessible investigation rooms", async () => {
+    const investigationId = newId();
+    await database()
+      .insert(schema.investigations)
+      .values({
+        id: investigationId,
+        organisationId,
+        investigationNumber: `SYN-${newId()}`,
+        title: "Synthetic private investigation",
+        summary: "Synthetic finding visibility test",
+        status: "open",
+        severity: "medium",
+        roomId: privateRoomId,
+      });
+    await database().insert(schema.findings).values({
+      id: newId(),
+      organisationId,
+      investigationId,
+      createdByActorId: memberActorId,
+      title: "Synthetic findingleakcheck",
+      summary: "Synthetic private finding",
+      confidence: 80,
+      severity: "medium",
+    });
+    const repository = new TenantRepository(database(), organisationId);
+    expect(
+      await repository.search("findingleakcheck", nonMemberActorId),
+    ).toEqual([]);
+    expect(await repository.search("findingleakcheck", memberActorId)).toEqual([
+      expect.objectContaining({
+        roomId: privateRoomId,
+        type: "finding",
+      }),
+    ]);
+  });
+
   it("joins and leaves discoverable rooms while protecting owners", async () => {
     await governance.lifecycle(
       nonMember,
