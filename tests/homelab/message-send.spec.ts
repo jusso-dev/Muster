@@ -58,7 +58,8 @@ test("deployed user can send and reload a durable room message", async ({
     await page.goto("/rooms/investigation-suspicious-powershell");
     await expect(
       page.getByRole("heading", {
-        name: "investigation-suspicious-powershell",
+        name: "Suspicious PowerShell",
+        level: 1,
       }),
     ).toBeVisible();
 
@@ -103,7 +104,10 @@ test("deployed user uploads governed evidence and reloads its message", async ({
     ).toBeVisible();
     await page.reload();
     await expect(
-      page.getByRole("article").filter({ hasText: message }).getByText(fileName),
+      page
+        .getByRole("article")
+        .filter({ hasText: message })
+        .getByText(fileName),
     ).toBeVisible();
   } finally {
     await attachDiagnostics();

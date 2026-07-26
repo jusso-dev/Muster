@@ -63,10 +63,10 @@ test("administrator completes governed room lifecycle through the UI", async ({
 
   await card.getByRole("link", { name: roomName }).click();
   await expect(page).toHaveURL(/\/rooms\/synthetic-governance-/);
-  await expect(page.getByRole("heading", { name: roomName })).toBeVisible();
-  await page
-    .getByRole("button", { name: "Room details", exact: true })
-    .click();
+  await expect(
+    page.getByRole("heading", { name: roomName, level: 1 }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Room details", exact: true }).click();
   await expect(page.getByRole("tab", { name: "About" })).toBeVisible();
   await expect(page.getByLabel("Visibility")).toHaveValue("private");
   await page.getByLabel("Name").fill(renamedRoom);
