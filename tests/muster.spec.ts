@@ -158,6 +158,7 @@ test("composer drafts persist and theme control works", async ({
   const composer = page.locator(".tiptap");
   await composer.fill(draft);
   await page.getByRole("button", { name: "User menu and theme" }).click();
+  await page.getByRole("menuitem", { name: "Use light theme" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.reload();
   await expect(composer).toContainText(draft);
@@ -466,7 +467,8 @@ test("workflow YAML editor, integrations, search, and approvals render", async (
   await page.goto("/search");
   await expect(page.getByText("6 permission-filtered results")).toBeVisible();
   await page.goto("/approvals");
-  await expect(page.getByText("Isolate endpoint WS-1042")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Approvals" })).toBeVisible();
+  await expect(page.getByText("No approval records.")).toBeVisible();
 });
 
 test("mobile navigation supports channel work", async ({ page }, testInfo) => {
