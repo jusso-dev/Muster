@@ -25,7 +25,13 @@ test("fresh workspace is empty and accepts first message and task", async ({
   const message = `First clean-install message ${Date.now()}`;
   const composer = page.locator(".tiptap");
   await composer.fill(message);
+  const createdMessage = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith("/messages"),
+  );
   await page.keyboard.press("Enter");
+  expect((await createdMessage).status()).toBe(201);
   await expect(page.locator("#room-timeline").getByText(message)).toBeVisible();
   await page.reload();
   await expect(page.locator("#room-timeline").getByText(message)).toBeVisible();
