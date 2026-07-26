@@ -1535,8 +1535,9 @@ test("live search filters persist in URL history and exclude private rooms", asy
     throw new Error("Seeded search requester and room required");
   }
 
-  const suffix = newId().slice(0, 8);
+  const suffix = newId().slice(-8);
   const authorId = newId();
+  const authorIdentity = `search-${authorId}@example.invalid`;
   const privateRoomId = newId();
   const messageIds = [newId(), newId(), newId()];
   const authorName = `Synthetic Search Author ${suffix}`;
@@ -1551,6 +1552,7 @@ test("live search filters persist in URL history and exclude private rooms", asy
       organisationId: requester.organisationId,
       actorType: "human",
       displayName: authorName,
+      identityReference: authorIdentity,
       capabilityAssignments: ["rooms.read"],
     });
     await db.insert(schema.rooms).values({
@@ -1617,9 +1619,15 @@ test("live search filters persist in URL history and exclude private rooms", asy
     const input = page.getByPlaceholder(
       "Search or filter with from:, in:, after:, before:",
     );
-    const filteredQuery = `${canary} from:"${authorName}" in:"${visibleRoom.displayName}" after:2026-07-01 before:2026-08-01`;
+    const filteredQuery = `${canary} from:"${authorIdentity}" in:"${visibleRoom.displayName}" after:2026-07-01 before:2026-08-01`;
     await input.fill(filteredQuery);
+    const initialSearch = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/search?q=") &&
+        response.request().method() === "GET",
+    );
     await page.getByRole("button", { name: "Search", exact: true }).click();
+    expect((await initialSearch).ok()).toBe(true);
     await expect(page.getByText(visibleInside)).toBeVisible();
     await expect(page.getByText(visibleBefore)).toHaveCount(0);
     await expect(page.getByText(privateInside)).toHaveCount(0);
@@ -1631,18 +1639,34 @@ test("live search filters persist in URL history and exclude private rooms", asy
     ).toContainText(visibleRoom.displayName);
     await expect(page).toHaveURL(/after%3A2026-07-01/);
 
+    const filterRemovalSearch = page.waitForResponse((response) =>
+      response.url().includes("/api/v1/search?q="),
+    );
     await page.getByRole("button", { name: "Remove after filter" }).click();
+    expect((await filterRemovalSearch).ok()).toBe(true);
     await expect(page.getByText(visibleBefore)).toBeVisible();
     await expect(page.getByText(privateInside)).toHaveCount(0);
+    const historySearch = page.waitForResponse((response) =>
+      response.url().includes("/api/v1/search?q="),
+    );
     await page.goBack();
+    expect((await historySearch).ok()).toBe(true);
     await expect(page.getByText(visibleInside)).toBeVisible();
     await expect(page.getByText(visibleBefore)).toHaveCount(0);
+    const reloadSearch = page.waitForResponse((response) =>
+      response.url().includes("/api/v1/search?q="),
+    );
     await page.reload();
+    expect((await reloadSearch).ok()).toBe(true);
     await expect(input).toHaveValue(filteredQuery);
     await expect(page.getByText(visibleInside)).toBeVisible();
 
     await input.fill(`${canary} from:"Unknown Synthetic Actor"`);
+    const invalidSearch = page.waitForResponse((response) =>
+      response.url().includes("/api/v1/search?q="),
+    );
     await page.getByRole("button", { name: "Search", exact: true }).click();
+    expect((await invalidSearch).status()).toBe(400);
     await expect(
       page
         .getByRole("alert")
