@@ -15,6 +15,11 @@ env:
   REDIS_URL: redis://127.0.0.1:6379
   BETTER_AUTH_SECRET: muster-ci-only-secret-at-least-32-characters
   BETTER_AUTH_URL: http://127.0.0.1:3000
+  OBJECT_STORAGE_ENDPOINT: http://127.0.0.1:9000
+  OBJECT_STORAGE_REGION: us-east-1
+  OBJECT_STORAGE_BUCKET: muster-evidence
+  OBJECT_STORAGE_ACCESS_KEY: muster
+  OBJECT_STORAGE_SECRET_KEY: local-minio-secret
 
 jobs:
   quality:
@@ -45,6 +50,31 @@ jobs:
         with:
           node-version: "24"
           cache: pnpm
+      - name: Start object storage
+        run: |
+          docker run --detach --name muster-ci-minio \
+            --publish 9000:9000 \
+            --env MINIO_ROOT_USER=muster \
+            --env MINIO_ROOT_PASSWORD=local-minio-secret \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z \
+            server /data
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 20 ]; then
+              docker logs muster-ci-minio
+              exit 1
+            fi
+            sleep 2
+          done
+          docker run --rm --network host \
+            --entrypoint /bin/sh \
+            minio/mc:RELEASE.2025-08-13T08-35-41Z \
+            -c 'mc alias set ci http://127.0.0.1:9000 muster local-minio-secret &&
+              mc mb --ignore-existing ci/muster-evidence &&
+              mc version enable ci/muster-evidence &&
+              mc anonymous set none ci/muster-evidence'
       - run: pnpm install --frozen-lockfile
       - name: Build database dependencies
         run: pnpm exec turbo build --filter=@muster/database
