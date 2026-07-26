@@ -226,6 +226,10 @@ export const actionApprovalPolicy = {
     approvalCount: 1,
     capability: "evidence.export",
   },
+  "reaction-pack.external-import": {
+    approvalCount: 1,
+    capability: "administration.manage",
+  },
   "evidence.delete": { prohibited: true },
 } as const satisfies Record<
   string,

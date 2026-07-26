@@ -40,6 +40,10 @@ import {
 } from "@/components/room-composer";
 import { RoomAgentActivity } from "@/components/room-agent-activity";
 import { RoomAgentHandoffs } from "@/components/room-agent-handoffs";
+import {
+  VisualReactionAsset,
+  type VisualReactionAssetData,
+} from "@/components/visual-reaction-asset";
 import { SeverityBadge } from "@/components/severity";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -494,6 +498,40 @@ function messageAttachments(document: Record<string, unknown> | undefined) {
   return attachments;
 }
 
+function messageVisualReactions(document: Record<string, unknown> | undefined) {
+  const reactions: VisualReactionAssetData[] = [];
+  function visit(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const node = value as Record<string, unknown>;
+    if (
+      node.type === "visualReaction" &&
+      node.attrs &&
+      typeof node.attrs === "object" &&
+      !Array.isArray(node.attrs)
+    ) {
+      const attrs = node.attrs as Record<string, unknown>;
+      if (
+        typeof attrs.assetId === "string" &&
+        typeof attrs.revisionId === "string" &&
+        typeof attrs.sha256 === "string" &&
+        typeof attrs.altText === "string" &&
+        typeof attrs.frameCount === "number"
+      ) {
+        reactions.push({
+          id: attrs.assetId,
+          revisionId: attrs.revisionId,
+          sha256: attrs.sha256,
+          altText: attrs.altText,
+          frameCount: attrs.frameCount,
+        });
+      }
+    }
+    if (Array.isArray(node.content)) node.content.forEach(visit);
+  }
+  visit(document);
+  return reactions;
+}
+
 const structuredMessageLabels: Record<string, string> = {
   system: "System activity",
   alert: "Security alert",
@@ -585,6 +623,7 @@ function DynamicMessageEntry({
       ? message.messageType
       : null;
   const attachments = messageAttachments(message.document);
+  const visualReactions = messageVisualReactions(message.document);
   const displayText = attachments
     .reduce(
       (text, attachment) =>
@@ -594,6 +633,7 @@ function DynamicMessageEntry({
         ),
       message.plainText,
     )
+    .replace(/^\[Visual reaction: .+\]$/, "")
     .trim();
   const authorName =
     message.authorName ?? (demoMode ? "Jordan Blake" : "Muster Administrator");
@@ -837,6 +877,19 @@ function DynamicMessageEntry({
             ))}
           </div>
         )}
+        {visualReactions.length > 0 && !message.deletedAt && (
+          <div
+            className="mt-2 flex flex-wrap gap-2"
+            aria-label="Decorative visual reaction"
+          >
+            {visualReactions.map((reaction) => (
+              <VisualReactionAsset key={reaction.id} asset={reaction} />
+            ))}
+            <span className="sr-only">
+              Decorative only. This reaction does not change operational state.
+            </span>
+          </div>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {(message.reactions ?? []).map((reaction) => (
             <button
@@ -969,7 +1022,7 @@ function DynamicMessageEntry({
               >
                 <Copy className="size-3.5" /> Copy link
               </button>
-              {message.canEdit && (
+              {message.canEdit && visualReactions.length === 0 && (
                 <>
                   <button
                     role="menuitem"

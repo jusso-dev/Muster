@@ -22,9 +22,14 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
+  SmilePlus,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  VisualReactionAsset,
+  type VisualReactionAssetData,
+} from "@/components/visual-reaction-asset";
 import { browserUuid } from "@/lib/browser-uuid";
 import { roomIdBySlug } from "@/lib/demo-data";
 
@@ -85,6 +90,23 @@ type AttachmentUpload = {
   file?: File | undefined;
 };
 
+type ReactionCatalogPack = {
+  id: string;
+  displayName: string;
+  revisionId: string;
+  revision: number;
+  assets: Array<
+    VisualReactionAssetData & {
+      name: string;
+      mimeType: string;
+      width: number;
+      height: number;
+      frameCount: number;
+      url: string;
+    }
+  >;
+};
+
 export function RoomComposer({
   roomSlug,
   roomLabel,
@@ -100,6 +122,11 @@ export function RoomComposer({
   const [enterToSend, setEnterToSend] = useState(true);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
+  const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
+  const [reactionPacks, setReactionPacks] = useState<ReactionCatalogPack[]>([]);
+  const [reactionCatalogLoaded, setReactionCatalogLoaded] = useState(false);
+  const [reactionSending, setReactionSending] = useState(false);
+  const [reactionError, setReactionError] = useState("");
   const stateRef = useRef(state);
   const uploadsRef = useRef<AttachmentUpload[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -112,6 +139,36 @@ export function RoomComposer({
   const roomId =
     roomIdBySlug[roomSlug] ??
     roomIdBySlug["investigation-suspicious-powershell"];
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/v1/reaction-packs/catalog")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Reaction catalog unavailable");
+        return (await response.json()) as { data: ReactionCatalogPack[] };
+      })
+      .then((payload) => {
+        if (!cancelled) setReactionPacks(payload.data);
+      })
+      .catch(() => {
+        if (!cancelled) setReactionPacks([]);
+      })
+      .finally(() => {
+        if (!cancelled) setReactionCatalogLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!reactionPickerOpen) return;
+    function closeOnEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") setReactionPickerOpen(false);
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [reactionPickerOpen]);
 
   function updateState(next: "idle" | "sending" | "error") {
     stateRef.current = next;
@@ -332,6 +389,60 @@ export function RoomComposer({
         idempotencyKey: payload.idempotencyKey,
         deliveryState: "failed",
       });
+    }
+  }
+
+  async function sendVisualReaction(
+    pack: ReactionCatalogPack,
+    asset: ReactionCatalogPack["assets"][number],
+  ) {
+    if (!roomId || reactionSending) return;
+    setReactionSending(true);
+    setReactionError("");
+    const payload = {
+      document: {
+        type: "doc",
+        content: [
+          {
+            type: "visualReaction",
+            attrs: {
+              assetId: asset.id,
+              revisionId: pack.revisionId,
+              sha256: asset.sha256,
+              altText: asset.altText,
+              frameCount: asset.frameCount,
+            },
+          },
+        ],
+      },
+      plainText: `[Visual reaction: ${asset.altText}]`,
+      messageType: "text",
+      dataClassification: "internal",
+      idempotencyKey: browserUuid(),
+    };
+    try {
+      const response = await fetch(`/api/v1/rooms/${roomId}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const problem = (await response.json().catch(() => null)) as {
+          detail?: string;
+        } | null;
+        throw new Error(problem?.detail ?? "Visual reaction failed to send.");
+      }
+      const result = (await response.json()) as { data: RoomMessageRecord };
+      onDeliveryChange?.(result.data);
+      setReactionPickerOpen(false);
+    } catch (error) {
+      setReactionError(
+        error instanceof Error
+          ? error.message
+          : "Visual reaction failed to send.",
+      );
+    } finally {
+      setReactionSending(false);
     }
   }
 
@@ -599,6 +710,116 @@ export function RoomComposer({
                 event.target.value = "";
               }}
             />
+            <div className="relative">
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label="Add visual reaction"
+                aria-expanded={reactionPickerOpen}
+                title={
+                  reactionPacks.length > 0
+                    ? "Send an approved visual reaction"
+                    : "No approved visual reaction packs installed"
+                }
+                className={
+                  reactionCatalogLoaded && reactionPacks.length === 0
+                    ? "text-muted-foreground"
+                    : undefined
+                }
+                onClick={() => {
+                  setReactionError("");
+                  setReactionPickerOpen((open) => !open);
+                }}
+              >
+                <SmilePlus />
+              </Button>
+              {reactionPickerOpen && (
+                <div
+                  role="dialog"
+                  aria-label="Visual reactions"
+                  className="absolute bottom-11 left-0 z-30 w-72 rounded-md border bg-popover p-3 shadow-lg"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setReactionPickerOpen(false);
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold">Visual reactions</p>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 min-h-7"
+                      aria-label="Close visual reactions"
+                      onClick={() => setReactionPickerOpen(false)}
+                    >
+                      <X />
+                    </Button>
+                  </div>
+                  {!reactionCatalogLoaded ? (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      Loading approved packs…
+                    </p>
+                  ) : reactionPacks.length === 0 ? (
+                    <div className="mt-3 rounded border border-dashed p-3 text-xs">
+                      <p className="font-semibold">
+                        No approved packs installed
+                      </p>
+                      <a
+                        href="/settings/reaction-packs"
+                        className="mt-1 inline-block text-[var(--color-accent)] underline"
+                      >
+                        Open organisation reaction settings
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="mt-2 max-h-72 space-y-3 overflow-y-auto">
+                      {reactionPacks.map((pack) => (
+                        <section
+                          key={pack.id}
+                          aria-label={`${pack.displayName} revision ${pack.revision}`}
+                        >
+                          <p className="text-xs font-semibold">
+                            {pack.displayName}
+                          </p>
+                          <div className="mt-1 grid grid-cols-4 gap-1">
+                            {pack.assets.map((asset) => (
+                              <button
+                                key={asset.id}
+                                type="button"
+                                className="flex min-h-16 items-center justify-center rounded border p-1 hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)]"
+                                aria-label={`Send ${asset.altText}`}
+                                disabled={reactionSending}
+                                onClick={() =>
+                                  void sendVisualReaction(pack, asset)
+                                }
+                              >
+                                <VisualReactionAsset
+                                  asset={{
+                                    ...asset,
+                                    revisionId: pack.revisionId,
+                                  }}
+                                  compact
+                                />
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  )}
+                  {reactionError && (
+                    <p
+                      role="alert"
+                      className="mt-2 text-xs text-[var(--color-error)]"
+                    >
+                      {reactionError}
+                    </p>
+                  )}
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Decorative only. Reactions never change operational state.
+                  </p>
+                </div>
+              )}
+            </div>
             <Button
               size="icon"
               variant="ghost"

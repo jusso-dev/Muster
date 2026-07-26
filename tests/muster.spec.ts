@@ -1699,6 +1699,221 @@ test("live search filters persist in URL history and exclude private rooms", asy
   }
 });
 
+test("approved visual reactions send in two interactions and fail closed", async ({
+  page,
+  playwright,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium");
+  const db = database();
+  const adminEmail =
+    process.env.MUSTER_LOCAL_ADMIN_EMAIL ?? "admin@muster.local";
+  const [requester] = await db
+    .select()
+    .from(schema.actors)
+    .where(eq(schema.actors.identityReference, adminEmail))
+    .limit(1);
+  const [room] = await db
+    .select()
+    .from(schema.rooms)
+    .where(
+      and(
+        eq(schema.rooms.organisationId, requester?.organisationId ?? newId()),
+        eq(schema.rooms.slug, "soc-operations"),
+      ),
+    )
+    .limit(1);
+  if (!requester || !room) {
+    throw new Error("Seeded reaction requester and room required");
+  }
+
+  const suffix = newId().slice(-8);
+  let packId: string | undefined;
+  let revisionId: string | undefined;
+  let assetId: string | undefined;
+  let digest: string | undefined;
+  const altText = `Synthetic animated acknowledgement ${suffix}`;
+  let messageId: string | undefined;
+  const animatedGif = Buffer.from(
+    "47494638396101000100800000000000ffffff" +
+      "21f90400000000002c0000000001000100000202440100" +
+      "21f90400000000002c0000000001000100000202440100" +
+      "3b",
+    "hex",
+  );
+
+  try {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+
+    await page.goto("/settings/reaction-packs");
+    await expect(
+      page.getByRole("heading", { name: "Visual reaction packs" }),
+    ).toBeVisible();
+    await page.getByLabel("Pack name").fill(`Synthetic Browser Pack ${suffix}`);
+    await page.getByLabel("Pack slug").fill(`synthetic-browser-pack-${suffix}`);
+    await page.getByLabel("Asset key").fill("animated-acknowledgement");
+    await page.getByLabel("Accessible alt text").fill(altText);
+    await page.getByLabel("Image asset").setInputFiles({
+      name: "synthetic-animated-acknowledgement.gif",
+      mimeType: "image/gif",
+      buffer: animatedGif,
+    });
+    const created = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/v1/reaction-packs") &&
+        response.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Store draft" }).click();
+    const createResponse = await created;
+    expect(createResponse.status()).toBe(201);
+    const createdPayload = (await createResponse.json()) as {
+      data: {
+        pack: { id: string };
+        revision: { id: string };
+        asset: { id: string; sha256: string };
+      };
+    };
+    packId = createdPayload.data.pack.id;
+    revisionId = createdPayload.data.revision.id;
+    assetId = createdPayload.data.asset.id;
+    digest = createdPayload.data.asset.sha256;
+    await expect(page.getByText(altText)).toBeVisible();
+    await expect(page.getByText(digest)).toBeVisible();
+    const approved = page.waitForResponse(
+      (response) =>
+        response
+          .url()
+          .endsWith(
+            `/api/v1/reaction-packs/${packId}/revisions/${revisionId}/approve`,
+          ) && response.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Approve exact revision" }).click();
+    expect((await approved).status()).toBe(200);
+    await expect(
+      page.getByText("Exact verified revision approved."),
+    ).toBeVisible();
+    const assetResponse = await page.request.get(
+      `/api/v1/reaction-assets/${assetId}?revision=${revisionId}&digest=${digest}`,
+    );
+    expect(assetResponse.status()).toBe(200);
+    expect(assetResponse.headers()["content-type"]).toContain("image/gif");
+    expect(assetResponse.headers().etag).toBe(`"sha256-${digest}"`);
+
+    await page.goto(`/rooms/${room.slug}`);
+    await page.getByRole("button", { name: "Add visual reaction" }).click();
+    const picker = page.getByRole("dialog", { name: "Visual reactions" });
+    await expect(picker).toBeVisible();
+    const sent = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/v1/rooms/${room.id}/messages`) &&
+        response.request().method() === "POST",
+    );
+    await picker.getByRole("button", { name: `Send ${altText}` }).click();
+    const response = await sent;
+    expect(response.status()).toBe(201);
+    const payload = (await response.json()) as {
+      data: { id: string; document: unknown };
+    };
+    messageId = payload.data.id;
+    await expect(
+      page.getByRole("img", {
+        name: `${altText}. Animation paused for reduced motion.`,
+      }),
+    ).toBeVisible();
+
+    const [stored] = await db
+      .select({
+        messageType: schema.messages.messageType,
+        relatedAlertId: schema.messages.relatedAlertId,
+        relatedInvestigationId: schema.messages.relatedInvestigationId,
+        plainText: schema.messages.plainText,
+      })
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.organisationId, requester.organisationId),
+          eq(schema.messages.id, messageId),
+        ),
+      )
+      .limit(1);
+    expect(stored).toEqual({
+      messageType: "text",
+      relatedAlertId: null,
+      relatedInvestigationId: null,
+      plainText: `[Visual reaction: ${altText}]`,
+    });
+
+    await page.getByRole("button", { name: "Add visual reaction" }).click();
+    await expect(picker).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(picker).toBeHidden();
+
+    await page.route("**/api/v1/reaction-assets/**", async (route) => {
+      await route.fulfill({ status: 404, body: "Synthetic missing asset" });
+    });
+    await page.reload();
+    await expect(
+      page.getByRole("img", {
+        name: `${altText}. Reaction unavailable.`,
+      }),
+    ).toBeVisible();
+
+    const baseURL = testInfo.project.use.baseURL?.toString();
+    if (!baseURL) throw new Error("Playwright baseURL required");
+    const anonymous = await playwright.request.newContext({
+      baseURL,
+      storageState: { cookies: [], origins: [] },
+    });
+    try {
+      expect(
+        (await anonymous.get("/api/v1/reaction-packs/catalog")).status(),
+      ).toBe(401);
+    } finally {
+      await anonymous.dispose();
+    }
+  } finally {
+    if (messageId) {
+      await db
+        .delete(schema.messages)
+        .where(
+          and(
+            eq(schema.messages.organisationId, requester.organisationId),
+            eq(schema.messages.id, messageId),
+          ),
+        );
+    }
+    if (assetId) {
+      await db
+        .delete(schema.reactionPackAssets)
+        .where(eq(schema.reactionPackAssets.id, assetId));
+    }
+    if (revisionId) {
+      await db
+        .delete(schema.reactionPackRevisions)
+        .where(eq(schema.reactionPackRevisions.id, revisionId));
+    }
+    if (packId) {
+      await db
+        .delete(schema.reactionPacks)
+        .where(eq(schema.reactionPacks.id, packId));
+    }
+  }
+});
+
+test("empty visual reaction picker points to organisation settings", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium");
+  await page.goto("/rooms/soc-operations");
+  await page.getByRole("button", { name: "Add visual reaction" }).click();
+  const picker = page.getByRole("dialog", { name: "Visual reactions" });
+  await expect(picker.getByText("No approved packs installed")).toBeVisible();
+  await expect(
+    picker.getByRole("link", {
+      name: "Open organisation reaction settings",
+    }),
+  ).toHaveAttribute("href", "/settings/reaction-packs");
+});
+
 test("workflow YAML editor, integrations, search, and approvals render", async ({
   page,
 }) => {

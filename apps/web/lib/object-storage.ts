@@ -10,6 +10,10 @@ export interface EvidenceObjectStorage {
   putObject(object: EvidenceObject): Promise<void>;
 }
 
+export interface ContentObjectStorage extends EvidenceObjectStorage {
+  getObject(storageKey: string): Promise<Uint8Array>;
+}
+
 function sha256(value: string | Uint8Array) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -30,25 +34,29 @@ function objectUrl(endpoint: string, bucket: string, storageKey: string) {
 }
 
 function signingHeaders(
+  method: "GET" | "PUT",
   url: URL,
-  object: EvidenceObject,
+  body: Uint8Array,
   region: string,
   accessKey: string,
   secretKey: string,
+  contentType?: string,
 ) {
   const now = new Date();
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
   const date = amzDate.slice(0, 8);
-  const payloadHash = sha256(object.body);
+  const payloadHash = sha256(body);
   const canonicalHeaders = [
-    `content-type:${object.contentType}`,
+    ...(contentType ? [`content-type:${contentType}`] : []),
     `host:${url.host}`,
     `x-amz-content-sha256:${payloadHash}`,
     `x-amz-date:${amzDate}`,
   ].join("\n");
-  const signedHeaders = "content-type;host;x-amz-content-sha256;x-amz-date";
+  const signedHeaders = contentType
+    ? "content-type;host;x-amz-content-sha256;x-amz-date"
+    : "host;x-amz-content-sha256;x-amz-date";
   const canonicalRequest = [
-    "PUT",
+    method,
     url.pathname,
     "",
     canonicalHeaders,
@@ -71,7 +79,7 @@ function signingHeaders(
     .update(stringToSign)
     .digest("hex");
   return {
-    "content-type": object.contentType,
+    ...(contentType ? { "content-type": contentType } : {}),
     "x-amz-content-sha256": payloadHash,
     "x-amz-date": amzDate,
     authorization:
@@ -80,19 +88,32 @@ function signingHeaders(
   };
 }
 
-export const defaultEvidenceObjectStorage: EvidenceObjectStorage = {
+function storageConfiguration() {
+  return {
+    endpoint: process.env.OBJECT_STORAGE_ENDPOINT ?? "http://127.0.0.1:9000",
+    bucket: process.env.OBJECT_STORAGE_BUCKET ?? "muster-evidence",
+    region: process.env.OBJECT_STORAGE_REGION ?? "us-east-1",
+    accessKey: process.env.OBJECT_STORAGE_ACCESS_KEY ?? "muster",
+    secretKey: process.env.OBJECT_STORAGE_SECRET_KEY ?? "local-minio-secret",
+  };
+}
+
+export const defaultObjectStorage: ContentObjectStorage = {
   async putObject(object) {
-    const endpoint =
-      process.env.OBJECT_STORAGE_ENDPOINT ?? "http://127.0.0.1:9000";
-    const bucket = process.env.OBJECT_STORAGE_BUCKET ?? "muster-evidence";
-    const region = process.env.OBJECT_STORAGE_REGION ?? "us-east-1";
-    const accessKey = process.env.OBJECT_STORAGE_ACCESS_KEY ?? "muster";
-    const secretKey =
-      process.env.OBJECT_STORAGE_SECRET_KEY ?? "local-minio-secret";
+    const { endpoint, bucket, region, accessKey, secretKey } =
+      storageConfiguration();
     const url = objectUrl(endpoint, bucket, object.storageKey);
     const response = await fetch(url, {
       method: "PUT",
-      headers: signingHeaders(url, object, region, accessKey, secretKey),
+      headers: signingHeaders(
+        "PUT",
+        url,
+        object.body,
+        region,
+        accessKey,
+        secretKey,
+        object.contentType,
+      ),
       body: Buffer.from(object.body),
     });
     if (!response.ok) {
@@ -101,4 +122,30 @@ export const defaultEvidenceObjectStorage: EvidenceObjectStorage = {
       );
     }
   },
+  async getObject(storageKey) {
+    const { endpoint, bucket, region, accessKey, secretKey } =
+      storageConfiguration();
+    const url = objectUrl(endpoint, bucket, storageKey);
+    const emptyBody = new Uint8Array();
+    const response = await fetch(url, {
+      method: "GET",
+      headers: signingHeaders(
+        "GET",
+        url,
+        emptyBody,
+        region,
+        accessKey,
+        secretKey,
+      ),
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Object storage rejected download with status ${response.status}`,
+      );
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  },
 };
+
+export const defaultEvidenceObjectStorage: EvidenceObjectStorage =
+  defaultObjectStorage;

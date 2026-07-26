@@ -55,6 +55,7 @@ const allowedNodeTypes = new Set([
   "mention",
   "reference",
   "attachment",
+  "visualReaction",
 ]);
 const allowedMarkTypes = new Set(["bold", "italic", "strike", "code", "link"]);
 
@@ -143,6 +144,17 @@ export function sanitiseMessageDocument(input: unknown) {
               : z.string().max(300).parse(attrs.id),
           label: z.string().max(300).parse(attrs.label),
         };
+      } else if (source.type === "visualReaction") {
+        node.attrs = {
+          assetId: z.uuid().parse(attrs.assetId),
+          revisionId: z.uuid().parse(attrs.revisionId),
+          sha256: z
+            .string()
+            .regex(/^[a-f0-9]{64}$/)
+            .parse(attrs.sha256),
+          altText: z.string().trim().min(2).max(160).parse(attrs.altText),
+          frameCount: z.number().int().min(1).max(24).parse(attrs.frameCount),
+        };
       }
     }
     return node;
@@ -174,6 +186,45 @@ function attachmentIds(document: Record<string, unknown>) {
   }
   visit(document);
   return [...ids];
+}
+
+type VisualReactionReference = {
+  assetId: string;
+  revisionId: string;
+  sha256: string;
+  altText: string;
+  frameCount: number;
+};
+
+export function visualReactionReferences(
+  document: Record<string, unknown>,
+): VisualReactionReference[] {
+  const references: VisualReactionReference[] = [];
+  function visit(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const node = value as Record<string, unknown>;
+    if (
+      node.type === "visualReaction" &&
+      node.attrs &&
+      typeof node.attrs === "object" &&
+      !Array.isArray(node.attrs)
+    ) {
+      const attrs = node.attrs as Record<string, unknown>;
+      references.push({
+        assetId: z.uuid().parse(attrs.assetId),
+        revisionId: z.uuid().parse(attrs.revisionId),
+        sha256: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .parse(attrs.sha256),
+        altText: z.string().trim().min(2).max(160).parse(attrs.altText),
+        frameCount: z.number().int().min(1).max(24).parse(attrs.frameCount),
+      });
+    }
+    if (Array.isArray(node.content)) node.content.forEach(visit);
+  }
+  visit(document);
+  return references;
 }
 
 export const PostMessageSchema = z.object({
@@ -594,8 +645,24 @@ export class RoomService {
     requireCapability(subject, "messages.create");
     const parsed = PostMessageSchema.parse(input);
     const attachments = attachmentIds(parsed.document);
+    const visualReactions = visualReactionReferences(parsed.document);
     if (attachments.length > 0 && !hasCapability(subject, "evidence.upload")) {
       throw new Error("Attachment upload capability required");
+    }
+    if (visualReactions.length > 0) {
+      const [reaction] = visualReactions;
+      if (
+        visualReactions.length !== 1 ||
+        !reaction ||
+        parsed.messageType !== "text" ||
+        parsed.relatedAlertId ||
+        parsed.relatedInvestigationId ||
+        parsed.plainText !== `[Visual reaction: ${reaction.altText}]`
+      ) {
+        throw new Error(
+          "Visual reactions must remain decorative standalone messages",
+        );
+      }
     }
     const mentionRecords = Array.from(
       new Map(
@@ -670,6 +737,53 @@ export class RoomService {
           );
         if (governedAttachments.length !== attachments.length) {
           throw new Error("Attachment unavailable in room");
+        }
+      }
+      if (visualReactions.length > 0) {
+        const reaction = visualReactions[0]!;
+        const [approvedAsset] = await tx
+          .select({ id: schema.reactionPackAssets.id })
+          .from(schema.reactionPackAssets)
+          .innerJoin(
+            schema.reactionPackRevisions,
+            and(
+              eq(
+                schema.reactionPackRevisions.organisationId,
+                subject.organisationId,
+              ),
+              eq(
+                schema.reactionPackRevisions.id,
+                schema.reactionPackAssets.revisionId,
+              ),
+              eq(schema.reactionPackRevisions.id, reaction.revisionId),
+              eq(schema.reactionPackRevisions.status, "approved"),
+            ),
+          )
+          .innerJoin(
+            schema.reactionPacks,
+            and(
+              eq(schema.reactionPacks.organisationId, subject.organisationId),
+              eq(schema.reactionPacks.id, schema.reactionPackRevisions.packId),
+              eq(schema.reactionPacks.lifecycle, "active"),
+            ),
+          )
+          .where(
+            and(
+              eq(
+                schema.reactionPackAssets.organisationId,
+                subject.organisationId,
+              ),
+              eq(schema.reactionPackAssets.id, reaction.assetId),
+              eq(schema.reactionPackAssets.revisionId, reaction.revisionId),
+              eq(schema.reactionPackAssets.sha256, reaction.sha256),
+              eq(schema.reactionPackAssets.altText, reaction.altText),
+              eq(schema.reactionPackAssets.frameCount, reaction.frameCount),
+              eq(schema.reactionPackAssets.verificationState, "verified"),
+            ),
+          )
+          .limit(1);
+        if (!approvedAsset) {
+          throw new Error("The exact approved visual reaction is unavailable");
         }
       }
 
@@ -841,6 +955,9 @@ export class RoomService {
   ) {
     requireCapability(subject, "messages.create");
     const parsed = EditMessageSchema.parse(input);
+    if (visualReactionReferences(parsed.document).length > 0) {
+      throw new Error("Visual reactions cannot be edited");
+    }
     return this.db.transaction(async (tx) => {
       const [message] = await tx
         .select()

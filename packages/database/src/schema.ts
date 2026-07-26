@@ -579,6 +579,124 @@ export const reactionOperations = pgTable(
   ],
 );
 
+export const reactionPacks = pgTable(
+  "reaction_packs",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    slug: text("slug").notNull(),
+    displayName: text("display_name").notNull(),
+    lifecycle: text("lifecycle").notNull().default("active"),
+    createdByActorId: uuid("created_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    removedByActorId: uuid("removed_by_actor_id").references(() => actors.id),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("reaction_packs_org_slug_unique").on(
+      table.organisationId,
+      table.slug,
+    ),
+    index("reaction_packs_org_lifecycle_idx").on(
+      table.organisationId,
+      table.lifecycle,
+    ),
+    check(
+      "reaction_packs_lifecycle_check",
+      sql`${table.lifecycle} in ('active','removed')`,
+    ),
+  ],
+);
+
+export const reactionPackRevisions = pgTable(
+  "reaction_pack_revisions",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    packId: uuid("pack_id")
+      .notNull()
+      .references(() => reactionPacks.id),
+    revision: integer("revision").notNull(),
+    status: text("status").notNull().default("draft"),
+    approvalId: uuid("approval_id"),
+    approvedByActorId: uuid("approved_by_actor_id").references(() => actors.id),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+    createdByActorId: uuid("created_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("reaction_pack_revisions_org_pack_revision_unique").on(
+      table.organisationId,
+      table.packId,
+      table.revision,
+    ),
+    index("reaction_pack_revisions_org_status_idx").on(
+      table.organisationId,
+      table.status,
+    ),
+    check(
+      "reaction_pack_revisions_status_check",
+      sql`${table.status} in ('draft','approved','superseded','removed')`,
+    ),
+    check("reaction_pack_revisions_revision_check", sql`${table.revision} > 0`),
+  ],
+);
+
+export const reactionPackAssets = pgTable(
+  "reaction_pack_assets",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => reactionPackRevisions.id),
+    name: text("name").notNull(),
+    altText: text("alt_text").notNull(),
+    mimeType: text("mime_type").notNull(),
+    byteSize: bigint("byte_size", { mode: "number" }).notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    frameCount: integer("frame_count").notNull().default(1),
+    sha256: text("sha256").notNull(),
+    storageKey: text("storage_key").notNull(),
+    verificationState: text("verification_state").notNull().default("verified"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("reaction_pack_assets_org_revision_name_unique").on(
+      table.organisationId,
+      table.revisionId,
+      table.name,
+    ),
+    index("reaction_pack_assets_org_digest_idx").on(
+      table.organisationId,
+      table.sha256,
+    ),
+    check(
+      "reaction_pack_assets_verification_check",
+      sql`${table.verificationState} in ('verified','missing','mismatch')`,
+    ),
+    check(
+      "reaction_pack_assets_dimensions_check",
+      sql`${table.width} > 0 and ${table.height} > 0 and ${table.frameCount} > 0 and ${table.byteSize} > 0`,
+    ),
+  ],
+);
+
 export const messageRevisions = pgTable(
   "message_revisions",
   {

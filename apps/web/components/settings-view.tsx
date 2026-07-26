@@ -15,6 +15,7 @@ const sections = [
   "Workflows",
   "Integrations",
   "Evidence",
+  "Reaction packs",
   "Retention",
   "Notifications",
   "Audit",
@@ -31,32 +32,50 @@ export function SettingsView() {
         title="Settings"
         description={demoOrganisation.name}
         actions={
-          <Link
-            href="/integrations/connectors"
-            className={buttonVariants({ variant: "default" })}
-          >
-            Governed connectors
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/settings/reaction-packs"
+              className={buttonVariants({ variant: "outline" })}
+            >
+              Reaction packs
+            </Link>
+            <Link
+              href="/integrations/connectors"
+              className={buttonVariants({ variant: "default" })}
+            >
+              Governed connectors
+            </Link>
+          </div>
         }
       />
       <div className="grid min-h-0 flex-1 tablet:grid-cols-[13rem_minmax(0,1fr)]">
         <nav className="hidden border-r bg-[var(--color-paper-2)] p-2 tablet:block">
-          {sections.map((section, index) => (
-            <button
-              type="button"
-              key={section}
-              disabled
-              aria-current={index === 0 ? "page" : undefined}
-              title={
-                index === 0
-                  ? "Current section"
-                  : `${section} settings are not available yet`
-              }
-              className={`block h-9 w-full rounded px-2 text-left text-xs disabled:opacity-100 ${index === 0 ? "active-indicator font-semibold" : "text-muted-foreground"}`}
-            >
-              {section}
-            </button>
-          ))}
+          {sections.map((section, index) =>
+            section === "Reaction packs" ? (
+              <Link
+                key={section}
+                href="/settings/reaction-packs"
+                className="block h-9 w-full rounded px-2 py-2 text-left text-xs text-muted-foreground hover:bg-muted"
+              >
+                {section}
+              </Link>
+            ) : (
+              <button
+                type="button"
+                key={section}
+                disabled
+                aria-current={index === 0 ? "page" : undefined}
+                title={
+                  index === 0
+                    ? "Current section"
+                    : `${section} settings are not available yet`
+                }
+                className={`block h-9 w-full rounded px-2 text-left text-xs disabled:opacity-100 ${index === 0 ? "active-indicator font-semibold" : "text-muted-foreground"}`}
+              >
+                {section}
+              </button>
+            ),
+          )}
         </nav>
         <div className="scroll-region overflow-y-auto p-4 tablet:p-6">
           <div className="max-w-2xl">
