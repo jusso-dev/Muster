@@ -1616,8 +1616,16 @@ function RoomDetailsPanel({
     );
   }
 
-  if (!demoMode || governed) {
-    return <GovernedDetailsPanel roomId={roomId} />;
+  if (governed) {
+    return <GovernedDetailsPanel key={roomId} roomId={roomId} />;
+  }
+
+  if (!demoMode) {
+    return (
+      <div className="grid h-full place-items-center p-4 text-xs text-muted-foreground">
+        Resolving governed room…
+      </div>
+    );
   }
 
   return (
@@ -2037,6 +2045,9 @@ export function RoomView({ slug }: { slug: string }) {
     governedRoom?.id ??
     roomIdBySlug[slug] ??
     roomIdBySlug["investigation-suspicious-powershell"]!;
+  const roomResolved = Boolean(
+    governedRoom || (demoMode && roomIdBySlug[slug]),
+  );
 
   useEffect(() => {
     if (demoMode && roomIdBySlug[slug]) return;
@@ -2066,6 +2077,7 @@ export function RoomView({ slug }: { slug: string }) {
 
   const refreshMessages = useCallback(
     async (signal?: AbortSignal) => {
+      if (!roomResolved) return;
       const response = await fetch(
         `/api/v1/rooms/${roomId}/messages`,
         signal ? { signal } : undefined,
@@ -2107,7 +2119,7 @@ export function RoomView({ slug }: { slug: string }) {
         }).catch(() => undefined);
       }
     },
-    [roomId],
+    [roomId, roomResolved],
   );
 
   useEffect(() => {
@@ -2149,6 +2161,7 @@ export function RoomView({ slug }: { slug: string }) {
   }, [messages]);
 
   useEffect(() => {
+    if (!roomResolved) return;
     const source = new EventSource("/api/v1/events/stream");
     const reportPresence = (active: boolean) =>
       fetch(`/api/v1/rooms/${roomId}/presence`, {
@@ -2257,7 +2270,7 @@ export function RoomView({ slug }: { slug: string }) {
       presenceTimersRef.current.clear();
       setPresentSessions([]);
     };
-  }, [refreshMessages, roomId]);
+  }, [refreshMessages, roomId, roomResolved]);
 
   const presentActorCount = new Set(
     presentSessions.map((session) => session.actorId),
