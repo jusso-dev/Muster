@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { closeDatabase, database, schema } from "./index.ts";
+import { bootstrapEnvironmentConnectors } from "./bootstrap-connectors.ts";
 import { starterIds } from "./seed-data.ts";
 
 const db = database();
@@ -176,7 +177,12 @@ await db
       model: process.env.MUSTER_CODEX_MODEL?.trim() || "configured",
       ownerActorId: starterIds.actors.jordan,
       systemPromptVersion: "alfie-v1",
-      allowedTools: ["alerts.read", "kelpie.cases.read", "sentinel.rules.read", "research.feeds.read"],
+      allowedTools: [
+        "alerts.read",
+        "kelpie.cases.read",
+        "sentinel.rules.read",
+        "research.feeds.read",
+      ],
       allowedRooms: [starterIds.rooms.soc, starterIds.rooms.triageDirect],
       capabilityRequirements: [
         "alerts.read",
@@ -389,6 +395,8 @@ await db
     },
   ])
   .onConflictDoNothing();
+
+await bootstrapEnvironmentConnectors(db);
 
 process.stdout.write(
   `Bootstrapped ${organisationName} without demonstration activity.\n`,

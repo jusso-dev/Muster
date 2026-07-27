@@ -449,6 +449,9 @@ importers:
       '@muster/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@muster/integrations':
+        specifier: workspace:*
+        version: link:../integrations
       drizzle-orm:
         specifier: 0.45.2
         version: 0.45.2(@types/pg@8.20.0)(kysely@0.29.4)(pg@8.22.0)
