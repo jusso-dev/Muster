@@ -24,7 +24,7 @@ if [[ "$*" == *"imagetools inspect"* ]]; then
   fi
   digest="$(awk -F '|' -v tag="$tag" '$1 == tag { print $2 }' "$PROMOTE_TEST_STATE")"
   if [[ -z "$digest" ]]; then
-    printf 'manifest unknown: not found\n' >&2
+    printf 'ERROR: %s: not found\n' "$tag" >&2
     exit 1
   fi
   printf '{"digest":"%s"}\n' "$digest"

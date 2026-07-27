@@ -35,7 +35,7 @@ inspect_tag() {
     return 0
   fi
   if grep -Eiq \
-    'manifest unknown|MANIFEST_UNKNOWN|name unknown|not found: manifest' \
+    'manifest unknown|MANIFEST_UNKNOWN|name unknown|not found: manifest|^ERROR: .*: not found$' \
     "$error_file"; then
     rm "$error_file"
     return 3
