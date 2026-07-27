@@ -1320,7 +1320,8 @@ test("Parker task produces a reviewable, versioned report manifest", async ({
       id: taskId,
       organisationId: "018f55d8-c4c7-7c3e-88ef-000000000001",
       title,
-      description: "Prepare an executive reporting brief from authoritative history.",
+      description:
+        "Prepare an executive reporting brief from authoritative history.",
       status: "ready",
       priority: "normal",
       assignedActorId: "018f55d8-c4c7-7c3e-88ef-000000000025",
@@ -1338,8 +1339,26 @@ test("Parker task produces a reviewable, versioned report manifest", async ({
     await expect(review.getByText(title)).toBeVisible({ timeout: 15_000 });
     const reviewTask = review.getByRole("article").filter({ hasText: title });
     await expect(reviewTask.getByText("Parker report manifest")).toBeVisible();
-    await reviewTask.getByRole("button", { name: "Review report" }).click();
-    await reviewTask.getByRole("button", { name: "Post to room" }).click();
+    const [reviewResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/v1/reports/") &&
+          response.url().endsWith("/review") &&
+          response.request().method() === "POST",
+      ),
+      reviewTask.getByRole("button", { name: "Review report" }).click(),
+    ]);
+    expect(reviewResponse.ok()).toBe(true);
+    const [postResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/v1/reports/") &&
+          response.url().endsWith("/post") &&
+          response.request().method() === "POST",
+      ),
+      reviewTask.getByRole("button", { name: "Post to room" }).click(),
+    ]);
+    expect(postResponse.ok()).toBe(true);
 
     const [report] = await db
       .select()
@@ -1354,7 +1373,11 @@ test("Parker task produces a reviewable, versioned report manifest", async ({
     expect((await versionResponse.json()).data.version).toBe(2);
   } finally {
     const reports = await db
-      .select({ id: schema.reportManifests.id, agentRunId: schema.reportManifests.agentRunId, postedMessageId: schema.reportManifests.postedMessageId })
+      .select({
+        id: schema.reportManifests.id,
+        agentRunId: schema.reportManifests.agentRunId,
+        postedMessageId: schema.reportManifests.postedMessageId,
+      })
       .from(schema.reportManifests)
       .where(eq(schema.reportManifests.taskId, taskId));
     const reportIds = reports.map((report) => report.id);
@@ -1362,31 +1385,54 @@ test("Parker task produces a reviewable, versioned report manifest", async ({
       .map((report) => report.agentRunId)
       .filter((id): id is string => Boolean(id));
     if (reportIds.length) {
-      await db.delete(schema.reportDeliveries).where(inArray(schema.reportDeliveries.reportId, reportIds));
-      await db.delete(schema.reportManifests).where(inArray(schema.reportManifests.id, reportIds));
+      await db
+        .delete(schema.reportDeliveries)
+        .where(inArray(schema.reportDeliveries.reportId, reportIds));
+      await db
+        .delete(schema.reportManifests)
+        .where(inArray(schema.reportManifests.id, reportIds));
     }
     const messageIds = reports
       .map((report) => report.postedMessageId)
       .filter((id): id is string => Boolean(id));
     if (messageIds.length)
-      await db.delete(schema.messages).where(inArray(schema.messages.id, messageIds));
+      await db
+        .delete(schema.messages)
+        .where(inArray(schema.messages.id, messageIds));
     await db.delete(schema.tasks).where(eq(schema.tasks.id, taskId));
     if (runIds.length) {
-      await db.delete(schema.agentRunEvents).where(inArray(schema.agentRunEvents.runId, runIds));
-      await db.delete(schema.agentRuns).where(inArray(schema.agentRuns.id, runIds));
+      await db
+        .delete(schema.agentRunEvents)
+        .where(inArray(schema.agentRunEvents.runId, runIds));
+      await db
+        .delete(schema.agentRuns)
+        .where(inArray(schema.agentRuns.id, runIds));
     }
   }
 });
 
-test("Parker schedule creates and displays a governed weekly task configuration", async ({ page }) => {
+test("Parker schedule creates and displays a governed weekly task configuration", async ({
+  page,
+}) => {
   const db = database();
   try {
     await page.goto("/settings/parker-reports");
-    await page.getByLabel("Room ID").fill("018f55d8-c4c7-7c3e-88ef-000000000100");
+    await page
+      .getByLabel("Room ID")
+      .fill("018f55d8-c4c7-7c3e-88ef-000000000100");
     await page.getByRole("button", { name: "Create weekly schedule" }).click();
-    await expect(page.getByText("weekly leadership report").last()).toBeVisible();
+    await expect(
+      page.getByText("weekly leadership report").last(),
+    ).toBeVisible();
   } finally {
-    await db.delete(schema.reportSchedules).where(eq(schema.reportSchedules.idempotencyKey, "parker-ui:018f55d8-c4c7-7c3e-88ef-000000000100:weekly"));
+    await db
+      .delete(schema.reportSchedules)
+      .where(
+        eq(
+          schema.reportSchedules.idempotencyKey,
+          "parker-ui:018f55d8-c4c7-7c3e-88ef-000000000100:weekly:leadership:Australia/Sydney",
+        ),
+      );
   }
 });
 

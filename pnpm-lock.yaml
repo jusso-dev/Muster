@@ -204,6 +204,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@muster/agents':
+        specifier: workspace:*
+        version: link:../../packages/agents
       '@muster/config':
         specifier: workspace:*
         version: link:../../packages/config

@@ -3,6 +3,10 @@ import { defineConfig, devices } from "@playwright/test";
 const testDatabaseUrl =
   process.env.MUSTER_TEST_DATABASE_URL ??
   "postgresql://muster:muster@localhost:5432/muster";
+const testRedisUrl =
+  process.env.MUSTER_TEST_REDIS_URL ?? "redis://localhost:6379";
+
+process.env.DATABASE_URL ??= testDatabaseUrl;
 
 export default defineConfig({
   testDir: "./tests",
@@ -42,7 +46,7 @@ export default defineConfig({
     },
     {
       name: "Muster worker",
-      command: `MUSTER_RESEARCH_TEST_MODE=true CONNECTOR_ENCRYPTION_KEY=0707070707070707070707070707070707070707070707070707070707070707 DATABASE_URL=${testDatabaseUrl} REDIS_URL=redis://localhost:6379 AGENT_GATEWAY_URL=http://127.0.0.1:3002 pnpm --dir apps/worker dev`,
+      command: `MUSTER_RESEARCH_TEST_MODE=true CONNECTOR_ENCRYPTION_KEY=0707070707070707070707070707070707070707070707070707070707070707 DATABASE_URL=${testDatabaseUrl} REDIS_URL=${testRedisUrl} AGENT_GATEWAY_URL=http://127.0.0.1:3002 pnpm --dir apps/worker dev`,
       url: "http://127.0.0.1:3001/ready",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
@@ -56,7 +60,7 @@ export default defineConfig({
     },
     {
       name: "Muster web",
-      command: `MUSTER_RESEARCH_TEST_MODE=true MUSTER_DEMO_MODE=true NEXT_PUBLIC_MUSTER_DEMO_MODE=true CONNECTOR_ENCRYPTION_KEY=0707070707070707070707070707070707070707070707070707070707070707 BETTER_AUTH_SECRET=muster-playwright-secret-at-least-32-characters AUTH_RATE_LIMIT_MAX=10000 DATABASE_URL=${testDatabaseUrl} REDIS_URL=redis://localhost:6379 AGENT_GATEWAY_URL=http://127.0.0.1:3002 pnpm --dir apps/web dev`,
+      command: `MUSTER_RESEARCH_TEST_MODE=true MUSTER_DEMO_MODE=true NEXT_PUBLIC_MUSTER_DEMO_MODE=true CONNECTOR_ENCRYPTION_KEY=0707070707070707070707070707070707070707070707070707070707070707 BETTER_AUTH_SECRET=muster-playwright-secret-at-least-32-characters AUTH_RATE_LIMIT_MAX=10000 DATABASE_URL=${testDatabaseUrl} REDIS_URL=${testRedisUrl} AGENT_GATEWAY_URL=http://127.0.0.1:3002 pnpm --dir apps/web dev`,
       url: "http://127.0.0.1:3000/api/v1/health",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

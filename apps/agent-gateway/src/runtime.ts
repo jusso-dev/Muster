@@ -173,13 +173,16 @@ export class DurableAgentRuntime {
         .select()
         .from(schema.agentRuns)
         .where(
-          or(
-            eq(schema.agentRuns.status, "queued"),
-            and(
-              eq(schema.agentRuns.status, "running"),
-              or(
-                isNull(schema.agentRuns.leaseExpiresAt),
-                lt(schema.agentRuns.leaseExpiresAt, new Date()),
+          and(
+            sql`coalesce(${schema.agentRuns.request}->>'kind', '') <> 'parker_report'`,
+            or(
+              eq(schema.agentRuns.status, "queued"),
+              and(
+                eq(schema.agentRuns.status, "running"),
+                or(
+                  isNull(schema.agentRuns.leaseExpiresAt),
+                  lt(schema.agentRuns.leaseExpiresAt, new Date()),
+                ),
               ),
             ),
           ),
