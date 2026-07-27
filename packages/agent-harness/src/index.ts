@@ -110,7 +110,9 @@ function traceId(value: string | undefined) {
 export class GovernedAgentHarness {
   constructor(private readonly db = database()) {}
 
-  async manifest(subject: AuthorisationSubject): Promise<AgentHarnessManifest[]> {
+  async manifest(
+    subject: AuthorisationSubject,
+  ): Promise<AgentHarnessManifest[]> {
     requireCapability(subject, "agents.read");
     const definitions = await this.db
       .select()
@@ -124,8 +126,8 @@ export class GovernedAgentHarness {
       );
     return definitions
       .filter((definition) =>
-        agentRequirements(definition.capabilityRequirements).every((capability) =>
-          subject.capabilities.has(capability),
+        agentRequirements(definition.capabilityRequirements).every(
+          (capability) => subject.capabilities.has(capability),
         ),
       )
       .map((definition) =>
@@ -313,7 +315,10 @@ export class GovernedAgentHarness {
     });
   }
 
-  async read(subject: AuthorisationSubject, runId: string): Promise<AgentHarnessRun> {
+  async read(
+    subject: AuthorisationSubject,
+    runId: string,
+  ): Promise<AgentHarnessRun> {
     requireCapability(subject, "agents.read");
     const [row] = await this.db
       .select({ run: schema.agentRuns, agentKey: schema.agentDefinitions.name })
@@ -394,18 +399,23 @@ export function signSlackOAuthState(input: {
   actorId: string;
   expiresAt: number;
 }) {
-  const secret = process.env.SLACK_OAUTH_STATE_SECRET ?? process.env.BETTER_AUTH_SECRET;
+  const secret = process.env.SLACK_OAUTH_STATE_SECRET;
   if (!secret) throw new Error("Slack OAuth state secret is not configured");
   const payload = Buffer.from(JSON.stringify(input)).toString("base64url");
-  const signature = createHmac("sha256", secret).update(payload).digest("base64url");
+  const signature = createHmac("sha256", secret)
+    .update(payload)
+    .digest("base64url");
   return `${payload}.${signature}`;
 }
 
 export function verifySlackOAuthState(value: string) {
   const [payload, signature] = value.split(".");
-  const secret = process.env.SLACK_OAUTH_STATE_SECRET ?? process.env.BETTER_AUTH_SECRET;
-  if (!payload || !signature || !secret) throw new Error("Invalid Slack OAuth state");
-  const expected = createHmac("sha256", secret).update(payload).digest("base64url");
+  const secret = process.env.SLACK_OAUTH_STATE_SECRET;
+  if (!payload || !signature || !secret)
+    throw new Error("Invalid Slack OAuth state");
+  const expected = createHmac("sha256", secret)
+    .update(payload)
+    .digest("base64url");
   if (
     expected.length !== signature.length ||
     !timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
@@ -418,7 +428,8 @@ export function verifySlackOAuthState(value: string) {
       expiresAt: z.number(),
     })
     .parse(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")));
-  if (input.expiresAt < Date.now()) throw new Error("Expired Slack OAuth state");
+  if (input.expiresAt < Date.now())
+    throw new Error("Expired Slack OAuth state");
   return input;
 }
 
@@ -444,11 +455,16 @@ export class SlackGovernanceAdapter {
     if (!consumed) throw new Error("Slack OAuth state has already been used");
   }
 
-  async install(subject: AuthorisationSubject, code: string, redirectUri: string) {
+  async install(
+    subject: AuthorisationSubject,
+    code: string,
+    redirectUri: string,
+  ) {
     requireCapability(subject, "administration.manage");
     const clientId = process.env.SLACK_CLIENT_ID;
     const clientSecret = process.env.SLACK_CLIENT_SECRET;
-    if (!clientId || !clientSecret) throw new Error("Slack OAuth is not configured");
+    if (!clientId || !clientSecret)
+      throw new Error("Slack OAuth is not configured");
     const response = await fetch(slackWebApiUrl("oauth.v2.access"), {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -477,11 +493,10 @@ export class SlackGovernanceAdapter {
         .from(schema.slackInstallations)
         .where(eq(schema.slackInstallations.teamId, payload.team.id))
         .limit(1);
-      if (
-        existing &&
-        existing.organisationId !== subject.organisationId
-      ) {
-        throw new Error("Slack workspace is already connected to another organisation");
+      if (existing && existing.organisationId !== subject.organisationId) {
+        throw new Error(
+          "Slack workspace is already connected to another organisation",
+        );
       }
       const [installation] = existing
         ? await tx
@@ -522,7 +537,8 @@ export class SlackGovernanceAdapter {
               status: "active",
             })
             .returning();
-      if (!installation) throw new Error("Slack installation was not persisted");
+      if (!installation)
+        throw new Error("Slack installation was not persisted");
       await appendAuditEvent(tx, {
         organisationId: subject.organisationId,
         actorId: subject.actorId,
@@ -541,7 +557,9 @@ export class SlackGovernanceAdapter {
     const teamId =
       typeof payload.team_id === "string"
         ? payload.team_id
-        : typeof payload.team === "object" && payload.team && "id" in payload.team
+        : typeof payload.team === "object" &&
+            payload.team &&
+            "id" in payload.team
           ? String((payload.team as { id: unknown }).id)
           : undefined;
     if (!teamId) throw new Error("Slack workspace is missing");
@@ -602,7 +620,8 @@ export class SlackGovernanceAdapter {
     envelope_id: string;
     payload: Record<string, unknown>;
   }) {
-    if (!envelope.envelope_id.trim()) throw new Error("Slack envelope is missing");
+    if (!envelope.envelope_id.trim())
+      throw new Error("Slack envelope is missing");
     // Envelope ids are transport-attempt ids. Hash only the Slack payload when
     // it lacks an event id so reconnect delivery cannot invoke an agent twice.
     return this.recordEvent(JSON.stringify(envelope.payload), envelope.payload);
@@ -622,26 +641,37 @@ export class SlackGovernanceAdapter {
         lastError: schema.slackInstallations.lastError,
       })
       .from(schema.slackInstallations)
-      .where(eq(schema.slackInstallations.organisationId, subject.organisationId));
+      .where(
+        eq(schema.slackInstallations.organisationId, subject.organisationId),
+      );
     await Promise.all(
       installations
         .filter((installation) => installation.status === "active")
         .map(async (installation) => {
           try {
-            const token = (decryptConnectorPayload(
-              (
-                await this.db
-                  .select({ encryptedBotToken: schema.slackInstallations.encryptedBotToken })
-                  .from(schema.slackInstallations)
-                  .where(eq(schema.slackInstallations.id, installation.id))
-                  .limit(1)
-              )[0]?.encryptedBotToken ?? "",
-              encryptionKey(),
-            ) as { token: string }).token;
+            const token = (
+              decryptConnectorPayload(
+                (
+                  await this.db
+                    .select({
+                      encryptedBotToken:
+                        schema.slackInstallations.encryptedBotToken,
+                    })
+                    .from(schema.slackInstallations)
+                    .where(eq(schema.slackInstallations.id, installation.id))
+                    .limit(1)
+                )[0]?.encryptedBotToken ?? "",
+                encryptionKey(),
+              ) as { token: string }
+            ).token;
             await slackApi(token, "auth.test", {});
             await this.db
               .update(schema.slackInstallations)
-              .set({ lastHealthAt: new Date(), lastError: null, updatedAt: new Date() })
+              .set({
+                lastHealthAt: new Date(),
+                lastError: null,
+                updatedAt: new Date(),
+              })
               .where(eq(schema.slackInstallations.id, installation.id));
           } catch (error) {
             await this.db
@@ -649,7 +679,9 @@ export class SlackGovernanceAdapter {
               .set({
                 lastHealthAt: new Date(),
                 lastError: redactObservationText(
-                  error instanceof Error ? error.message : "Slack health check failed",
+                  error instanceof Error
+                    ? error.message
+                    : "Slack health check failed",
                 ),
                 updatedAt: new Date(),
               })
@@ -669,7 +701,9 @@ export class SlackGovernanceAdapter {
         lastError: schema.slackInstallations.lastError,
       })
       .from(schema.slackInstallations)
-      .where(eq(schema.slackInstallations.organisationId, subject.organisationId));
+      .where(
+        eq(schema.slackInstallations.organisationId, subject.organisationId),
+      );
   }
 
   async settings(subject: AuthorisationSubject) {
@@ -715,7 +749,10 @@ export class SlackGovernanceAdapter {
           .from(schema.agentDefinitions)
           .where(
             and(
-              eq(schema.agentDefinitions.organisationId, subject.organisationId),
+              eq(
+                schema.agentDefinitions.organisationId,
+                subject.organisationId,
+              ),
               eq(schema.agentDefinitions.status, "active"),
               eq(schema.agentDefinitions.killSwitch, false),
             ),
@@ -761,8 +798,14 @@ export class SlackGovernanceAdapter {
           .innerJoin(
             schema.agentDefinitions,
             and(
-              eq(schema.agentDefinitions.id, schema.slackAgentExposures.agentId),
-              eq(schema.agentDefinitions.organisationId, subject.organisationId),
+              eq(
+                schema.agentDefinitions.id,
+                schema.slackAgentExposures.agentId,
+              ),
+              eq(
+                schema.agentDefinitions.organisationId,
+                subject.organisationId,
+              ),
             ),
           )
           .where(
@@ -808,10 +851,12 @@ export class SlackGovernanceAdapter {
       .limit(1);
     if (!installation) throw new Error("Slack installation not found");
     try {
-      const token = (decryptConnectorPayload(
-        installation.encryptedBotToken,
-        encryptionKey(),
-      ) as { token: string }).token;
+      const token = (
+        decryptConnectorPayload(
+          installation.encryptedBotToken,
+          encryptionKey(),
+        ) as { token: string }
+      ).token;
       await slackApi(token, "auth.revoke", { test: false });
     } finally {
       await this.db.transaction(async (tx) => {
@@ -853,7 +898,10 @@ export class SlackGovernanceAdapter {
         .where(
           and(
             eq(schema.slackInstallations.id, input.installationId),
-            eq(schema.slackInstallations.organisationId, subject.organisationId),
+            eq(
+              schema.slackInstallations.organisationId,
+              subject.organisationId,
+            ),
             eq(schema.slackInstallations.status, "active"),
           ),
         )
@@ -914,7 +962,10 @@ export class SlackGovernanceAdapter {
         .where(
           and(
             eq(schema.slackInstallations.id, input.installationId),
-            eq(schema.slackInstallations.organisationId, subject.organisationId),
+            eq(
+              schema.slackInstallations.organisationId,
+              subject.organisationId,
+            ),
           ),
         )
         .limit(1),
@@ -946,7 +997,10 @@ export class SlackGovernanceAdapter {
           .where(
             and(
               eq(schema.slackAgentExposures.installationId, installation.id),
-              eq(schema.slackAgentExposures.organisationId, subject.organisationId),
+              eq(
+                schema.slackAgentExposures.organisationId,
+                subject.organisationId,
+              ),
             ),
           );
       await tx
@@ -997,15 +1051,15 @@ export class SlackGovernanceAdapter {
 }
 
 type SlackMessage = {
-    type?: string;
-    user?: string;
-    channel?: string;
-    channel_type?: string;
-    text?: string;
-    thread_ts?: string;
-    ts?: string;
-    assistant_thread?: SlackAssistantThread;
-    tokens?: { oauth?: string[]; bot?: string[] };
+  type?: string;
+  user?: string;
+  channel?: string;
+  channel_type?: string;
+  text?: string;
+  thread_ts?: string;
+  ts?: string;
+  assistant_thread?: SlackAssistantThread;
+  tokens?: { oauth?: string[]; bot?: string[] };
 };
 
 type SlackEnvelope = {
@@ -1037,7 +1091,8 @@ export function normaliseSlackConversation(payload: SlackEnvelope) {
     event,
     assistantThread,
     slackUserId: event.user ?? assistantThread?.user_id ?? payload.user?.id,
-    channelId: event.channel ?? assistantThread?.channel_id ?? payload.channel?.id,
+    channelId:
+      event.channel ?? assistantThread?.channel_id ?? payload.channel?.id,
     threadTs:
       event.thread_ts ??
       assistantThread?.thread_ts ??
@@ -1165,18 +1220,29 @@ export async function slackApi(
   throw new Error(`Slack ${method} retry limit exhausted`);
 }
 
-export function slackResultBlocks(agentName: string, status: string, output: unknown) {
+export function slackResultBlocks(
+  agentName: string,
+  status: string,
+  output: unknown,
+) {
   const result =
     output && typeof output === "object" && !Array.isArray(output)
       ? (output as Record<string, unknown>)
       : {};
-  const summary = slackMrkdwn(result.summary, 1_500) || "No typed result was produced.";
+  const summary =
+    slackMrkdwn(result.summary, 1_500) || "No typed result was produced.";
   const confidence =
     typeof result.confidence === "number"
       ? `\n*Confidence:* ${Math.round(result.confidence * 100)}%`
       : "";
   const gaps = Array.isArray(result.gaps)
-    ? slackMrkdwn(result.gaps.filter((gap): gap is string => typeof gap === "string").slice(0, 3).join("; "), 700)
+    ? slackMrkdwn(
+        result.gaps
+          .filter((gap): gap is string => typeof gap === "string")
+          .slice(0, 3)
+          .join("; "),
+        700,
+      )
     : "";
   const nextSteps = [
     result.recommendedNextSteps,
@@ -1214,7 +1280,11 @@ export function slackResultBlocks(agentName: string, status: string, output: unk
       ...(runUrl ? { url: runUrl } : {}),
     });
   }
-  if (["queued", "running", "waiting_sources", "awaiting_approval"].includes(status))
+  if (
+    ["queued", "running", "waiting_sources", "awaiting_approval"].includes(
+      status,
+    )
+  )
     actions.unshift({
       type: "button",
       action_id: "muster.cancel",
@@ -1222,7 +1292,10 @@ export function slackResultBlocks(agentName: string, status: string, output: unk
       style: "danger",
       value: typeof result.runId === "string" ? result.runId : "",
     });
-  if (["failed", "cancelled"].includes(status) && typeof result.runId === "string")
+  if (
+    ["failed", "cancelled"].includes(status) &&
+    typeof result.runId === "string"
+  )
     actions.unshift({
       type: "button",
       action_id: "muster.retry",
@@ -1289,7 +1362,10 @@ export async function processSlackInboxEvent(inboxEventId: string) {
     .innerJoin(
       schema.slackInstallations,
       and(
-        eq(schema.slackInstallations.id, schema.slackInboxEvents.installationId),
+        eq(
+          schema.slackInstallations.id,
+          schema.slackInboxEvents.installationId,
+        ),
         eq(
           schema.slackInstallations.organisationId,
           schema.slackInboxEvents.organisationId,
@@ -1321,10 +1397,7 @@ export async function processSlackInboxEvent(inboxEventId: string) {
   ) as SlackEnvelope;
   const { event, assistantThread, slackUserId, channelId, threadTs } =
     normaliseSlackConversation(payload);
-  if (
-    event.type === "app_uninstalled" ||
-    event.type === "tokens_revoked"
-  ) {
+  if (event.type === "app_uninstalled" || event.type === "tokens_revoked") {
     const revokedBotIds = Array.isArray(event.tokens?.bot)
       ? event.tokens.bot.filter((id): id is string => typeof id === "string")
       : [];
@@ -1407,7 +1480,11 @@ export async function processSlackInboxEvent(inboxEventId: string) {
   if (!identity) {
     await db
       .update(schema.slackInboxEvents)
-      .set({ status: "ignored", processedAt: new Date(), error: "identity_unmapped" })
+      .set({
+        status: "ignored",
+        processedAt: new Date(),
+        error: "identity_unmapped",
+      })
       .where(eq(schema.slackInboxEvents.id, row.inbox.id));
     return;
   }
@@ -1488,7 +1565,8 @@ export async function processSlackInboxEvent(inboxEventId: string) {
         signal: AbortSignal.timeout(5_000),
       },
     );
-    if (!gateway.ok) throw new Error("Agent runtime did not accept cancellation");
+    if (!gateway.ok)
+      throw new Error("Agent runtime did not accept cancellation");
     await db
       .update(schema.slackInboxEvents)
       .set({ status: "processed", processedAt: new Date() })
@@ -1514,7 +1592,8 @@ export async function processSlackInboxEvent(inboxEventId: string) {
         ),
       )
       .limit(1);
-    const request = prior?.run.request as { humanRequest?: unknown } | undefined;
+    const request = prior?.run.request as
+      { humanRequest?: unknown } | undefined;
     if (!prior || typeof request?.humanRequest !== "string")
       throw new Error("Run retry is not available");
     await new GovernedAgentHarness(db).invoke(
@@ -1552,7 +1631,10 @@ export async function processSlackInboxEvent(inboxEventId: string) {
     return;
   }
   const exposures = await db
-    .select({ exposure: schema.slackAgentExposures, agent: schema.agentDefinitions })
+    .select({
+      exposure: schema.slackAgentExposures,
+      agent: schema.agentDefinitions,
+    })
     .from(schema.slackAgentExposures)
     .innerJoin(
       schema.agentDefinitions,
@@ -1574,7 +1656,10 @@ export async function processSlackInboxEvent(inboxEventId: string) {
       ? slackText(payload.message?.text, 3_500)
       : "";
   const text = slackText(event.text, 4_000);
-  const requested = text.match(/(?:\/muster|use)\s+([\w -]+)/i)?.[1]?.trim().toLowerCase();
+  const requested = text
+    .match(/(?:\/muster|use)\s+([\w -]+)/i)?.[1]
+    ?.trim()
+    .toLowerCase();
   const direct = event.channel_type === "im" || Boolean(assistantThread);
   const eligible = exposures.filter(({ exposure }) => {
     const allowed = Array.isArray(exposure.allowedChannelIds)
@@ -1592,7 +1677,11 @@ export async function processSlackInboxEvent(inboxEventId: string) {
   if (!selected) {
     await db
       .update(schema.slackInboxEvents)
-      .set({ status: "ignored", processedAt: new Date(), error: "agent_not_exposed" })
+      .set({
+        status: "ignored",
+        processedAt: new Date(),
+        error: "agent_not_exposed",
+      })
       .where(eq(schema.slackInboxEvents.id, row.inbox.id));
     return;
   }
@@ -1615,10 +1704,12 @@ export async function processSlackInboxEvent(inboxEventId: string) {
       },
       `slack:${row.installation.id}:${row.inbox.eventId}`,
     );
-    const token = (decryptConnectorPayload(
-      row.installation.encryptedBotToken,
-      encryptionKey(),
-    ) as { token: string }).token;
+    const token = (
+      decryptConnectorPayload(
+        row.installation.encryptedBotToken,
+        encryptionKey(),
+      ) as { token: string }
+    ).token;
     const posted = await slackApi(token, "chat.postMessage", {
       channel: channelId,
       ...(threadTs ? { thread_ts: threadTs } : {}),
@@ -1669,7 +1760,11 @@ export async function processSlackInboxEvent(inboxEventId: string) {
         action: "slack.agent.invoked",
         targetType: "agent_run",
         targetId: accepted.runId,
-        metadata: { installationId: row.installation.id, channelId, agentId: selected.agent.id },
+        metadata: {
+          installationId: row.installation.id,
+          channelId,
+          agentId: selected.agent.id,
+        },
         traceId: row.inbox.eventId,
       });
     });
@@ -1679,7 +1774,9 @@ export async function processSlackInboxEvent(inboxEventId: string) {
       .set({
         status: "failed",
         processedAt: new Date(),
-        error: redactObservationText(error instanceof Error ? error.message : "Slack event failed"),
+        error: redactObservationText(
+          error instanceof Error ? error.message : "Slack event failed",
+        ),
       })
       .where(eq(schema.slackInboxEvents.id, row.inbox.id));
     throw error;
@@ -1694,10 +1791,7 @@ export async function processSlackNotificationJob(
     await processSlackInboxEvent(aggregateId);
     return true;
   }
-  if (
-    eventType === "agent.run.settled" ||
-    eventType === "agent.run.progress"
-  ) {
+  if (eventType === "agent.run.settled" || eventType === "agent.run.progress") {
     await deliverSlackRun(aggregateId);
     return true;
   }
@@ -1717,22 +1811,34 @@ export async function deliverSlackRun(runId: string) {
     .innerJoin(
       schema.slackInstallations,
       and(
-        eq(schema.slackInstallations.id, schema.slackRunDeliveries.installationId),
-        eq(schema.slackInstallations.organisationId, schema.slackRunDeliveries.organisationId),
+        eq(
+          schema.slackInstallations.id,
+          schema.slackRunDeliveries.installationId,
+        ),
+        eq(
+          schema.slackInstallations.organisationId,
+          schema.slackRunDeliveries.organisationId,
+        ),
       ),
     )
     .innerJoin(
       schema.agentRuns,
       and(
         eq(schema.agentRuns.id, schema.slackRunDeliveries.runId),
-        eq(schema.agentRuns.organisationId, schema.slackRunDeliveries.organisationId),
+        eq(
+          schema.agentRuns.organisationId,
+          schema.slackRunDeliveries.organisationId,
+        ),
       ),
     )
     .innerJoin(
       schema.agentDefinitions,
       and(
         eq(schema.agentDefinitions.id, schema.agentRuns.agentId),
-        eq(schema.agentDefinitions.organisationId, schema.agentRuns.organisationId),
+        eq(
+          schema.agentDefinitions.organisationId,
+          schema.agentRuns.organisationId,
+        ),
       ),
     )
     .where(
@@ -1753,11 +1859,15 @@ export async function deliverSlackRun(runId: string) {
         .where(eq(schema.slackRunDeliveries.id, row.delivery.id));
       continue;
     }
-    const terminal = ["completed", "failed", "cancelled"].includes(row.run.status);
-    const token = (decryptConnectorPayload(
-      row.installation.encryptedBotToken,
-      encryptionKey(),
-    ) as { token: string }).token;
+    const terminal = ["completed", "failed", "cancelled"].includes(
+      row.run.status,
+    );
+    const token = (
+      decryptConnectorPayload(
+        row.installation.encryptedBotToken,
+        encryptionKey(),
+      ) as { token: string }
+    ).token;
     try {
       const progress =
         row.delivery.lastProgress &&
@@ -1827,7 +1937,11 @@ export async function deliverSlackRun(runId: string) {
           .where(eq(schema.slackRunDeliveries.id, row.delivery.id));
         await tx
           .update(schema.slackInstallations)
-          .set({ lastDeliveryAt: new Date(), lastError: null, updatedAt: new Date() })
+          .set({
+            lastDeliveryAt: new Date(),
+            lastError: null,
+            updatedAt: new Date(),
+          })
           .where(eq(schema.slackInstallations.id, row.installation.id));
       });
     } catch (error) {
@@ -1836,7 +1950,9 @@ export async function deliverSlackRun(runId: string) {
         .set({
           status: sql`case when ${schema.slackRunDeliveries.attemptCount} >= 2 then 'dead_letter' else 'queued' end`,
           attemptCount: sql`${schema.slackRunDeliveries.attemptCount} + 1`,
-          lastError: redactObservationText(error instanceof Error ? error.message : "Slack delivery failed"),
+          lastError: redactObservationText(
+            error instanceof Error ? error.message : "Slack delivery failed",
+          ),
           updatedAt: new Date(),
         })
         .where(

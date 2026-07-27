@@ -113,6 +113,11 @@ if ! grep -q '^MUSTER_AGENT_GATEWAY_TOKEN=' "$env_file"; then
     >> "$env_file"
   chmod 600 "$env_file"
 fi
+if ! grep -q '^SLACK_OAUTH_STATE_SECRET=' "$env_file"; then
+  printf 'SLACK_OAUTH_STATE_SECRET=%s\n' "$(openssl rand -hex 32)" \
+    >> "$env_file"
+  chmod 600 "$env_file"
+fi
 
 # Persist an explicitly requested reviewed image reference before reading the
 # environment file so a prior installation cannot silently override it.

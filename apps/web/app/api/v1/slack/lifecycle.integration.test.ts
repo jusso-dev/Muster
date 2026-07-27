@@ -23,8 +23,6 @@ import { POST as interactionRoute } from "./interactions/route";
 const integration = process.env.MUSTER_INTEGRATION_TESTS === "true";
 const describeIntegration = integration ? describe.sequential : describe.skip;
 
-type SlackIngressRoute = (request: Request) => Promise<Response>;
-
 class SlackIngressServer {
   private server: Server | undefined;
   private origin: string | undefined;
@@ -39,13 +37,11 @@ class SlackIngressServer {
         );
         request.on("error", reject);
       });
-      const routes: Record<string, SlackIngressRoute> = {
-        "/api/v1/slack/events": eventRoute,
-        "/api/v1/slack/commands": commandRoute,
-        "/api/v1/slack/interactions": interactionRoute,
-      };
-      const route = routes[request.url ?? ""];
-      if (!route) {
+      if (
+        request.url !== "/api/v1/slack/events" &&
+        request.url !== "/api/v1/slack/commands" &&
+        request.url !== "/api/v1/slack/interactions"
+      ) {
         response.writeHead(404).end();
         return;
       }
@@ -57,13 +53,20 @@ class SlackIngressServer {
           headers.set(name, value);
         }
       }
-      const routed = await route(
-        new Request(`http://muster.synthetic${request.url}`, {
+      const routedRequest = new Request(
+        `http://muster.synthetic${request.url}`,
+        {
           method: "POST",
           headers,
           body,
-        }),
+        },
       );
+      const routed =
+        request.url === "/api/v1/slack/events"
+          ? await eventRoute(routedRequest)
+          : request.url === "/api/v1/slack/commands"
+            ? await commandRoute(routedRequest)
+            : await interactionRoute(routedRequest);
       response.statusCode = routed.status;
       routed.headers.forEach((value, name) => response.setHeader(name, value));
       response.end(await routed.text());
