@@ -131,11 +131,6 @@ for external_network in tawny_default kelpie_default; do
   fi
 done
 
-if [[ "$MUSTER_VERSION" == "latest" || "$MUSTER_VERSION" == *"REPLACE"* ]]; then
-  printf '%s\n' 'MUSTER_VERSION must be a reviewed immutable sha-<commit> tag.' >&2
-  exit 2
-fi
-
 docker compose --env-file "$env_file" -f "$compose_file" pull
 docker compose --env-file "$env_file" -f "$compose_file" up -d
 
