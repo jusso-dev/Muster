@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import nodemailer from "nodemailer";
 import { Queue, Worker, type JobsOptions, type Processor } from "bullmq";
+import { deliverSlackRun, processSlackInboxEvent } from "@muster/agent-harness";
 import {
   queueNames,
   ReportManifestSchema,
@@ -133,6 +134,18 @@ const authoritativeProcessor: Processor = async (job) => {
       job.data.traceId,
       finalResearchAttempt(job.attemptsMade, job.opts.attempts ?? 1),
     );
+  }
+  if (
+    job.queueName === "muster-notifications" &&
+    job.name === "slack.event.received"
+  ) {
+    await processSlackInboxEvent(job.data.aggregateId);
+  }
+  if (
+    job.queueName === "muster-notifications" &&
+    job.name === "agent.run.settled"
+  ) {
+    await deliverSlackRun(job.data.aggregateId);
   }
   if (
     job.queueName === "muster-integrations" &&

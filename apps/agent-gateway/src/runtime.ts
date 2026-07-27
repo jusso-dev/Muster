@@ -565,6 +565,18 @@ export class DurableAgentRuntime {
           error: reason,
         },
       );
+      await writeOutbox(tx, {
+        organisationId: updated.organisationId,
+        eventType: "agent.run.settled",
+        aggregateType: "agent_run",
+        aggregateId: updated.id,
+        queueName: "muster-notifications",
+        payload: { runId: updated.id, status: "cancelled" },
+        idempotencyKey: `agent.run.settled:${updated.id}`,
+        traceId: redactObservationText(
+          this.request(updated).traceId ?? `agent-run-${updated.id}`,
+        ),
+      });
       const [hunt] = await tx
         .update(schema.huntRuns)
         .set({
@@ -1385,6 +1397,18 @@ export class DurableAgentRuntime {
         outputHash: result.outputHash,
         outputSchema: result.schemaName,
       });
+      await writeOutbox(tx, {
+        organisationId: updated.organisationId,
+        eventType: "agent.run.settled",
+        aggregateType: "agent_run",
+        aggregateId: updated.id,
+        queueName: "muster-notifications",
+        payload: { runId: updated.id, status: "completed" },
+        idempotencyKey: `agent.run.settled:${updated.id}`,
+        traceId: redactObservationText(
+          this.request(updated).traceId ?? `agent-run-${updated.id}`,
+        ),
+      });
       const [hunt] = await tx
         .update(schema.huntRuns)
         .set({
@@ -1562,6 +1586,18 @@ export class DurableAgentRuntime {
         status: "failed",
         failureCode: failure.code,
         error: failure.message,
+      });
+      await writeOutbox(tx, {
+        organisationId: updated.organisationId,
+        eventType: "agent.run.settled",
+        aggregateType: "agent_run",
+        aggregateId: updated.id,
+        queueName: "muster-notifications",
+        payload: { runId: updated.id, status: "failed" },
+        idempotencyKey: `agent.run.settled:${updated.id}`,
+        traceId: redactObservationText(
+          this.request(updated).traceId ?? `agent-run-${updated.id}`,
+        ),
       });
       const [hunt] = await tx
         .update(schema.huntRuns)

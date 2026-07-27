@@ -1193,6 +1193,191 @@ export const agentRuns = pgTable(
   ],
 );
 
+// Slack remains an adapter: these records map external identities and delivery
+// state to authoritative organisations, actors and agent runs. Tokens and raw
+// event bodies are encrypted before persistence.
+export const slackInstallations = pgTable(
+  "slack_installations",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    teamId: text("team_id").notNull(),
+    teamName: text("team_name"),
+    enterpriseId: text("enterprise_id"),
+    botUserId: text("bot_user_id"),
+    scopes: jsonb("scopes").notNull().default([]),
+    encryptedBotToken: text("encrypted_bot_token").notNull(),
+    encryptedAppToken: text("encrypted_app_token"),
+    status: text("status").notNull().default("active"),
+    installedByActorId: uuid("installed_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    installedAt: timestamp("installed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastHealthAt: timestamp("last_health_at", { withTimezone: true }),
+    lastDeliveryAt: timestamp("last_delivery_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("slack_installations_team_unique").on(table.teamId),
+    index("slack_installations_org_status_idx").on(
+      table.organisationId,
+      table.status,
+    ),
+  ],
+);
+
+export const slackIdentityMappings = pgTable(
+  "slack_identity_mappings",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    installationId: uuid("installation_id")
+      .notNull()
+      .references(() => slackInstallations.id),
+    slackUserId: text("slack_user_id").notNull(),
+    actorId: uuid("actor_id")
+      .notNull()
+      .references(() => actors.id),
+    status: text("status").notNull().default("active"),
+    createdByActorId: uuid("created_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("slack_identity_installation_user_unique").on(
+      table.installationId,
+      table.slackUserId,
+    ),
+    uniqueIndex("slack_identity_org_actor_unique").on(
+      table.organisationId,
+      table.actorId,
+    ),
+  ],
+);
+
+export const slackAgentExposures = pgTable(
+  "slack_agent_exposures",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    installationId: uuid("installation_id")
+      .notNull()
+      .references(() => slackInstallations.id),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agentDefinitions.id),
+    enabled: boolean("enabled").notNull().default(true),
+    isDefault: boolean("is_default").notNull().default(false),
+    allowedChannelIds: jsonb("allowed_channel_ids").notNull().default([]),
+    allowDirectMessages: boolean("allow_direct_messages").notNull().default(true),
+    allowThreadContext: boolean("allow_thread_context").notNull().default(false),
+    updatedByActorId: uuid("updated_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("slack_exposures_installation_agent_unique").on(
+      table.installationId,
+      table.agentId,
+    ),
+    index("slack_exposures_org_enabled_idx").on(
+      table.organisationId,
+      table.enabled,
+    ),
+  ],
+);
+
+export const slackInboxEvents = pgTable(
+  "slack_inbox_events",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    installationId: uuid("installation_id")
+      .notNull()
+      .references(() => slackInstallations.id),
+    eventId: text("event_id").notNull(),
+    eventType: text("event_type").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    encryptedPayload: text("encrypted_payload").notNull(),
+    status: text("status").notNull().default("queued"),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    error: text("error"),
+  },
+  (table) => [
+    uniqueIndex("slack_inbox_installation_event_unique").on(
+      table.installationId,
+      table.eventId,
+    ),
+    index("slack_inbox_org_status_idx").on(
+      table.organisationId,
+      table.status,
+      table.receivedAt,
+    ),
+  ],
+);
+
+export const slackRunDeliveries = pgTable(
+  "slack_run_deliveries",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    installationId: uuid("installation_id")
+      .notNull()
+      .references(() => slackInstallations.id),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => agentRuns.id),
+    inboxEventId: uuid("inbox_event_id").references(() => slackInboxEvents.id),
+    channelId: text("channel_id").notNull(),
+    threadTs: text("thread_ts").notNull(),
+    progressMessageTs: text("progress_message_ts"),
+    resultMessageTs: text("result_message_ts"),
+    status: text("status").notNull().default("queued"),
+    lastProgress: jsonb("last_progress").notNull().default({}),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("slack_delivery_installation_run_unique").on(
+      table.installationId,
+      table.runId,
+    ),
+    index("slack_delivery_org_status_idx").on(
+      table.organisationId,
+      table.status,
+      table.updatedAt,
+    ),
+  ],
+);
+
 export const agentRunEvents = pgTable(
   "agent_run_events",
   {
