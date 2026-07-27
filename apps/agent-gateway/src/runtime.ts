@@ -32,14 +32,123 @@ import { z } from "zod";
 
 type AgentRunRow = typeof schema.agentRuns.$inferSelect;
 type Context = Awaited<ReturnType<typeof loadAuthoritativeContext>>;
+type Db = ReturnType<typeof database>;
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 type PersistedRequest = {
-  kind?: "jessie_hunt" | undefined;
+  kind?: "jessie_hunt" | "direct_message" | undefined;
   huntId?: string | undefined;
   huntPlan?: unknown;
   humanRequest?: string | undefined;
+  sourceMessageId?: string | undefined;
   traceId?: string | undefined;
 };
+
+function terminalSummary(output: unknown) {
+  if (!output || typeof output !== "object" || Array.isArray(output))
+    return "The agent completed the request with schema-valid output.";
+  const record = output as Record<string, unknown>;
+  for (const key of ["summary", "narrative", "headline", "title"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim())
+      return value.trim().slice(0, 10_000);
+  }
+  return "The agent completed the request with schema-valid output.";
+}
+
+async function projectDirectMessageTerminalReply(
+  tx: Tx,
+  run: AgentRunRow,
+  request: PersistedRequest,
+  terminal:
+    | {
+        status: "completed";
+        output: unknown;
+        outputHash: string;
+        outputSchema: AgentStructuredOutputName;
+      }
+    | {
+        status: "failed";
+        failureCode: string;
+        error: string;
+      },
+) {
+  if (
+    request.kind !== "direct_message" ||
+    !request.sourceMessageId ||
+    !run.roomId
+  )
+    return;
+  const [source] = await tx
+    .select({ id: schema.messages.id })
+    .from(schema.messages)
+    .where(
+      and(
+        eq(schema.messages.organisationId, run.organisationId),
+        eq(schema.messages.id, request.sourceMessageId),
+        eq(schema.messages.roomId, run.roomId),
+      ),
+    )
+    .limit(1);
+  if (!source) return;
+
+  const completed = terminal.status === "completed";
+  const plainText = completed
+    ? terminalSummary(terminal.output)
+    : `The agent could not complete this request (${terminal.failureCode}). ${redactObservationText(terminal.error, { maxStringLength: 2_000 })}`;
+  const messageId = newId();
+  const [message] = await tx
+    .insert(schema.messages)
+    .values({
+      id: messageId,
+      organisationId: run.organisationId,
+      roomId: run.roomId,
+      threadParentId: request.sourceMessageId,
+      authorActorId: run.agentId,
+      messageType: "agent-status",
+      document: completed
+        ? {
+            type: "agent-direct-message-reply",
+            status: terminal.status,
+            sourceMessageId: request.sourceMessageId,
+            agentRunId: run.id,
+            outputSchema: terminal.outputSchema,
+            outputHash: terminal.outputHash,
+            summary: plainText,
+            trust: "agent-analysis",
+          }
+        : {
+            type: "agent-direct-message-reply",
+            status: terminal.status,
+            sourceMessageId: request.sourceMessageId,
+            agentRunId: run.id,
+            failureCode: terminal.failureCode,
+          },
+      plainText,
+      dataClassification: "internal",
+      relatedInvestigationId: run.investigationId,
+      relatedAgentRunId: run.id,
+      idempotencyKey: `agent-direct-message-reply:${run.id}`,
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.messages.id });
+  if (!message) return;
+  await writeOutbox(tx, {
+    organisationId: run.organisationId,
+    eventType: "room.message.created",
+    aggregateType: "message",
+    aggregateId: message.id,
+    queueName: "muster-outbox",
+    payload: {
+      messageId: message.id,
+      roomId: run.roomId,
+      threadParentId: request.sourceMessageId,
+      agentRunId: run.id,
+    },
+    idempotencyKey: `room.message.created:agent-direct-message:${run.id}`,
+    traceId: redactObservationText(request.traceId ?? `agent-run-${run.id}`),
+  });
+}
 
 function removeUnsupportedCodexSchemaFormats(value: unknown): unknown {
   if (Array.isArray(value))
@@ -505,7 +614,10 @@ export class DurableAgentRuntime {
     const recovered = candidate.status === "running";
     const [run] = await database().transaction(async (tx) => {
       const [definition] = await tx
-        .select({ killSwitch: schema.agentDefinitions.killSwitch })
+        .select({
+          status: schema.agentDefinitions.status,
+          killSwitch: schema.agentDefinitions.killSwitch,
+        })
         .from(schema.agentDefinitions)
         .where(
           and(
@@ -517,7 +629,11 @@ export class DurableAgentRuntime {
           ),
         )
         .limit(1);
-      if (!definition || definition.killSwitch) {
+      if (
+        !definition ||
+        definition.status !== "active" ||
+        definition.killSwitch
+      ) {
         const [disabled] = await tx
           .update(schema.agentRuns)
           .set({
@@ -543,6 +659,28 @@ export class DurableAgentRuntime {
             message: "Agent kill switch blocked execution",
             payload: { failureCode: "agent_kill_switch" },
           });
+          await appendAuditEvent(tx, {
+            organisationId: disabled.organisationId,
+            actorId: disabled.agentId,
+            actorType: "agent",
+            action: "agent.run.failed",
+            targetType: "agent_run",
+            targetId: disabled.id,
+            metadata: { failureCode: "agent_kill_switch" },
+            traceId: redactObservationText(
+              this.request(disabled).traceId ?? `agent-run-${disabled.id}`,
+            ),
+          });
+          await projectDirectMessageTerminalReply(
+            tx,
+            disabled,
+            this.request(disabled),
+            {
+              status: "failed",
+              failureCode: "agent_kill_switch",
+              error: "Agent is disabled by its kill switch",
+            },
+          );
         }
         return [];
       }
@@ -1092,6 +1230,12 @@ export class DurableAgentRuntime {
           this.request(run).traceId ?? `agent-run-${run.id}`,
         ),
       });
+      await projectDirectMessageTerminalReply(tx, run, this.request(run), {
+        status: "completed",
+        output: result.output,
+        outputHash: result.outputHash,
+        outputSchema: result.schemaName,
+      });
       const [hunt] = await tx
         .update(schema.huntRuns)
         .set({
@@ -1265,6 +1409,11 @@ export class DurableAgentRuntime {
           this.request(run).traceId ?? `agent-run-${run.id}`,
         ),
       });
+      await projectDirectMessageTerminalReply(tx, run, this.request(run), {
+        status: "failed",
+        failureCode: failure.code,
+        error: failure.message,
+      });
       const [hunt] = await tx
         .update(schema.huntRuns)
         .set({
@@ -1327,10 +1476,11 @@ export class DurableAgentRuntime {
   private request(run: AgentRunRow): PersistedRequest {
     const parsed = z
       .object({
-        kind: z.literal("jessie_hunt").optional(),
+        kind: z.enum(["jessie_hunt", "direct_message"]).optional(),
         huntId: z.uuid().optional(),
         huntPlan: z.unknown().optional(),
         humanRequest: z.string().optional(),
+        sourceMessageId: z.uuid().optional(),
         traceId: z.string().optional(),
       })
       .safeParse(run.request);
