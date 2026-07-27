@@ -78,6 +78,18 @@ describe("Codex structured output schema", () => {
     expect(bindHuntResultToAuthoritativeCase(output, null)).toMatchObject({
       enrichmentProposal: { caseId: null },
     });
+    expect(
+      bindHuntResultToAuthoritativeCase(
+        { ...output, enrichmentProposal: null },
+        "authoritative-case",
+      ),
+    ).toMatchObject({
+      enrichmentProposal: {
+        caseId: "authoritative-case",
+        finding: "Synthetic result",
+        timelineEntry: "Jessie completed a governed hunt for: What happened?",
+      },
+    });
   });
 });
 

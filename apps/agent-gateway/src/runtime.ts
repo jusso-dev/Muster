@@ -70,11 +70,30 @@ export function bindHuntResultToAuthoritativeCase(
   linkedCaseId: string | null,
 ) {
   const result = HuntResultSchema.parse(output);
-  if (!result.enrichmentProposal) return result;
+  if (!result.enrichmentProposal && !linkedCaseId) return result;
+  const proposal = result.enrichmentProposal ?? {
+    finding: result.summary,
+    timelineEntry: `Jessie completed a governed hunt for: ${result.question}`,
+    observables: result.observables.slice(0, 50).map((observable) => ({
+      type:
+        observable.type === "hash"
+          ? ("file_hash" as const)
+          : observable.type === "identity"
+            ? ("username" as const)
+            : observable.type === "endpoint"
+              ? ("hostname" as const)
+              : observable.type === "cloud_resource"
+                ? ("other" as const)
+                : observable.type,
+      value: observable.normalizedValue,
+      description: "Normalized by Jessie from the governed hunt result.",
+    })),
+    evidenceReferences: result.evidenceReferences.slice(0, 100),
+  };
   return {
     ...result,
     enrichmentProposal: {
-      ...result.enrichmentProposal,
+      ...proposal,
       // The hunt record, not model output, authorises its target case.
       caseId: linkedCaseId,
     },
