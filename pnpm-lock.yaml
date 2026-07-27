@@ -153,8 +153,8 @@ importers:
         specifier: 0.45.2
         version: 0.45.2(@types/pg@8.20.0)(kysely@0.29.4)(pg@8.22.0)
       ioredis:
-        specifier: 5.8.2
-        version: 5.8.2
+        specifier: 5.11.1
+        version: 5.11.1
       lucide-react:
         specifier: 1.27.0
         version: 1.27.0(react@19.2.8)
@@ -332,8 +332,8 @@ importers:
         specifier: 1.6.25
         version: 1.6.25(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@types/pg@8.20.0)(kysely@0.29.4)(pg@8.22.0))(next@16.2.12(@playwright/test@1.62.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(pg@8.22.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.10(@types/node@24.13.3)(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)))
       nodemailer:
-        specifier: 9.0.1
-        version: 9.0.1
+        specifier: 9.0.3
+        version: 9.0.3
     devDependencies:
       '@types/nodemailer':
         specifier: ^7.0.1
@@ -404,8 +404,8 @@ importers:
         specifier: ^8.16.3
         version: 8.22.0
       uuid:
-        specifier: ^13.0.0
-        version: 13.0.2
+        specifier: 14.0.1
+        version: 14.0.1
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -1349,9 +1349,6 @@ packages:
 
   '@ioredis/commands@1.10.0':
     resolution: {integrity: sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q==}
-
-  '@ioredis/commands@1.4.0':
-    resolution: {integrity: sha512-aFT2yemJJo+TZCmieA7qnYGQooOS7QfNmYrzGtsYd3g9j5iDP8AimYYAesf79ohjbLG12XxC4nG5DyEnC88AsQ==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -3266,10 +3263,6 @@ packages:
     resolution: {integrity: sha512-ehuGcf94bQXhfagULNXrJdfnWO38v070jxSx/qE87Kjzmu2fU7ro5EFAb+OPituLqgfyuQaym5DlrNydW2sJ9A==}
     engines: {node: '>=12.22.0'}
 
-  ioredis@5.8.2:
-    resolution: {integrity: sha512-C6uC+kleiIMmjViJINWk80sOQw5lEzse1ZmvD+S/s8p8CWapftSaC+kocGTx6xrbrJ4WmYQGC08ffHLr6ToR6Q==}
-    engines: {node: '>=12.22.0'}
-
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
@@ -3432,12 +3425,6 @@ packages:
   linkifyjs@4.3.3:
     resolution: {integrity: sha512-P8aEP5U/D1/IlTY2OeYsErdwh9bGuLE30NcXtKEjgdHcahveQoQwM2yZNsioQHsWFz0P7KKudisbrzCgR0sDHg==}
 
-  lodash.defaults@4.2.0:
-    resolution: {integrity: sha512-qjxPLHd3r5DnsdGacqOMU6pb/avJzdh9tFX2ymgoZE27BmjXrNy/y4LoaiTeAb+O3gL8AfpJGtqfX/ae2leYYQ==}
-
-  lodash.isarguments@3.1.0:
-    resolution: {integrity: sha512-chi4NHZlZqZD18a0imDHnZPrDeBbTtVN7GXMwuGdRH9qotxAjYs3aVLKc7zNOG9eddR5Ksd8rvFEBc9SsggPpg==}
-
   lucide-react@1.27.0:
     resolution: {integrity: sha512-rJicGl/3Fly/E0rOH1YmPZ6e49JCnKknh1ox1vpHnkfjujAkKA6sqUZvH3MTAaXXjgexyUwgNwTJzTtYuAFYJw==}
     peerDependencies:
@@ -3496,10 +3483,6 @@ packages:
   node-gyp-build-optional-packages@5.2.2:
     resolution: {integrity: sha512-s+w+rBWnpTMwSFbaE0UXsRlg7hU4FjekKU4eyAih5T8nJuNZT1nNsskXpxmeqSK9UzkBl6UgRlnKc8hz8IEqOw==}
     hasBin: true
-
-  nodemailer@9.0.1:
-    resolution: {integrity: sha512-Gwv8SQewT616ZM/URn0H54b8PWo/Wum7md3EW2aWy1lO27+WZCX+Xyak3J+NlmHUjDh5ME+uesJUDRbR3Ye8Bw==}
-    engines: {node: '>=6.0.0'}
 
   nodemailer@9.0.3:
     resolution: {integrity: sha512-n+YP+NKwR5zRWa60k3GiQ6Q3B4KXCoAw40dAKeCtYn020iNN74aWK2liXIC3ZEATeGql7we3tE3t8QwhY0eskw==}
@@ -3883,8 +3866,8 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  uuid@13.0.2:
-    resolution: {integrity: sha512-vzi9uRZ926x4XV73S/4qQaTwPXM2JBj6/6lI/byHH1jOpCzb0zDbfytgA9LcN/hzb2l7WQSQnxITOVx5un/wGw==}
+  uuid@14.0.1:
+    resolution: {integrity: sha512-6ZxzVpzDXDa3bJWaHilVayA+BH/1zmxCJoVgvmqJnid/gPoKHxUrS/aC/T6LGQtNHT+XHG9fXPJB4d+IrU30Ew==}
     hasBin: true
 
   victory-vendor@37.3.6:
@@ -4453,8 +4436,6 @@ snapshots:
     optional: true
 
   '@ioredis/commands@1.10.0': {}
-
-  '@ioredis/commands@1.4.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -6236,20 +6217,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  ioredis@5.8.2:
-    dependencies:
-      '@ioredis/commands': 1.4.0
-      cluster-key-slot: 1.1.1
-      debug: 4.4.3
-      denque: 2.1.0
-      lodash.defaults: 4.2.0
-      lodash.isarguments: 3.1.0
-      redis-errors: 1.2.0
-      redis-parser: 3.0.0
-      standard-as-callback: 2.1.0
-    transitivePeerDependencies:
-      - supports-color
-
   jiti@2.7.0: {}
 
   jose@6.2.4: {}
@@ -6356,10 +6323,6 @@ snapshots:
 
   linkifyjs@4.3.3: {}
 
-  lodash.defaults@4.2.0: {}
-
-  lodash.isarguments@3.1.0: {}
-
   lucide-react@1.27.0(react@19.2.8):
     dependencies:
       react: 19.2.8
@@ -6423,8 +6386,6 @@ snapshots:
     dependencies:
       detect-libc: 2.1.2
     optional: true
-
-  nodemailer@9.0.1: {}
 
   nodemailer@9.0.3: {}
 
@@ -6898,7 +6859,7 @@ snapshots:
     dependencies:
       react: 19.2.8
 
-  uuid@13.0.2: {}
+  uuid@14.0.1: {}
 
   victory-vendor@37.3.6:
     dependencies:
