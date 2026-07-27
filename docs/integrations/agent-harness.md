@@ -60,7 +60,10 @@ Slack accepts only fresh HMAC-signed requests, persists them using a workspace
 event idempotency key, acknowledges immediately, and invokes agents asynchronously
 from the outbox. One bounded execution-progress update and the terminal typed
 result are updated in the original thread and offer
-capability-checked Cancel, Retry, and View in Muster actions.
+capability-checked Cancel, Retry, Approval Review, and View in Muster actions.
+Approval Review verifies the mapped approver and opens the authoritative Muster
+approval record; only the existing Muster approval decision flow can approve or
+execute a dangerous action.
 
 Slack Assistant lifecycle events `assistant_thread_started` and
 `assistant_thread_context_changed` start a governed run in the assistant DM
@@ -75,3 +78,18 @@ For Socket Mode, acknowledge Slack's `envelope_id` immediately and pass the
 envelope payload to `SlackGovernanceAdapter.recordSocketEnvelope`. It shares the
 same encrypted inbox and idempotency path as Events API delivery, so reconnects
 cannot duplicate a run.
+
+## Verification
+
+The fast harness suite verifies signature replay handling, Assistant lifecycle
+normalisation, typed Block Kit actions, and the portable adapter contract. The
+database-backed deterministic Slack flow is opt-in because it uses the local
+synthetic PostgreSQL fixture only:
+
+```sh
+MUSTER_INTEGRATION_TESTS=true pnpm --dir packages/agent-harness test
+```
+
+It asserts signed event replay, an exact-once inbox/run, bounded progress and
+terminal updates, approval review, cancel/retry, Assistant status lifecycle, and
+out-of-order terminal delivery without Slack credentials.

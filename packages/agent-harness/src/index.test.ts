@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { AgentHarnessInvokeSchema } from "@muster/contracts";
 import {
   normaliseSlackConversation,
   slackResultBlocks,
@@ -68,11 +69,25 @@ describe("Slack governed harness boundary", () => {
       summary: "Bounded synthetic failure",
       confidence: 0.8,
       gaps: ["No connector evidence"],
+      approvalId: "00000000-0000-4000-8000-000000000003",
     });
     const failedActions = failed.find((block) => block.type === "actions") as {
       elements: Array<{ action_id: string }>;
     };
     expect(failedActions.elements.map((element) => element.action_id)).toContain("muster.retry");
+    expect(failedActions.elements.map((element) => element.action_id)).toContain("muster.approval.view");
     expect(JSON.stringify(failed)).not.toContain("connector-token");
+  });
+
+  it("keeps Hermes, MCP, CLI, and HTTP invocations on one portable contract", () => {
+    for (const mode of ["hermes", "mcp", "cli", "http"] as const) {
+      expect(
+        AgentHarnessInvokeSchema.parse({
+          agentKey: "Synthetic Agent",
+          mode,
+          input: { prompt: "Synthetic bounded request" },
+        }).mode,
+      ).toBe(mode);
+    }
   });
 });

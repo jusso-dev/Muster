@@ -884,6 +884,13 @@ export function slackResultBlocks(agentName: string, status: string, output: unk
       text: { type: "plain_text", text: "Retry" },
       value: result.runId,
     });
+  if (typeof result.approvalId === "string")
+    actions.push({
+      type: "button",
+      action_id: "muster.approval.view",
+      text: { type: "plain_text", text: "Review approval" },
+      value: result.approvalId,
+    });
   return [
     {
       type: "section",
@@ -974,6 +981,37 @@ export async function processSlackInboxEvent(inboxEventId: string) {
       .update(schema.slackInboxEvents)
       .set({ status: "processed", processedAt: new Date() })
       .where(eq(schema.slackInboxEvents.id, row.inbox.id));
+    return;
+  }
+  if (action?.action_id === "muster.approval.view" && action.value) {
+    requireCapability(subject, "workflows.approve");
+    const [approval] = await db
+      .select({ id: schema.approvals.id })
+      .from(schema.approvals)
+      .where(
+        and(
+          eq(schema.approvals.id, action.value),
+          eq(schema.approvals.organisationId, row.inbox.organisationId),
+        ),
+      )
+      .limit(1);
+    if (!approval) throw new Error("Approval not found");
+    await db.transaction(async (tx) => {
+      await tx
+        .update(schema.slackInboxEvents)
+        .set({ status: "processed", processedAt: new Date() })
+        .where(eq(schema.slackInboxEvents.id, row.inbox.id));
+      await appendAuditEvent(tx, {
+        organisationId: row.inbox.organisationId,
+        actorId: subject.actorId,
+        actorType: "human",
+        action: "slack.approval.review.opened",
+        targetType: "approval",
+        targetId: approval.id,
+        metadata: { installationId: row.installation.id },
+        traceId: row.inbox.eventId,
+      });
+    });
     return;
   }
   if (action?.action_id === "muster.cancel" && action.value) {
