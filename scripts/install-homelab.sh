@@ -10,8 +10,16 @@ requested_http_port="${MUSTER_HTTP_PORT:-3004}"
 requested_version="${MUSTER_VERSION:-}"
 requested_image="${MUSTER_IMAGE:-}"
 
+read_env_value() {
+  sed -n "s|^$1=||p" "$env_file" | tail -n 1
+}
+
 if [[ -n "$requested_version" && -n "$requested_image" ]]; then
   printf 'Set either MUSTER_VERSION or MUSTER_IMAGE, not both.\n' >&2
+  exit 2
+fi
+if [[ ! -f "$env_file" && -z "$requested_version" && -z "$requested_image" ]]; then
+  printf 'A reviewed immutable MUSTER_IMAGE digest or MUSTER_VERSION sha tag is required for a fresh install.\n' >&2
   exit 2
 fi
 if [[ -n "$requested_version" && ! "$requested_version" =~ ^sha-[0-9a-f]{7,40}$ ]]; then
@@ -78,9 +86,26 @@ if [[ -n "$requested_image" ]]; then
   rm "$env_file.bak"
 fi
 
-read_env_value() {
-  sed -n "s|^$1=||p" "$env_file" | tail -n 1
-}
+effective_version="$(read_env_value MUSTER_VERSION)"
+effective_image="$(read_env_value MUSTER_IMAGE)"
+if [[ -n "$effective_version" && -n "$effective_image" ]]; then
+  printf 'The persisted homelab configuration contains conflicting image references.\n' >&2
+  exit 2
+fi
+if [[ -n "$effective_version" ]]; then
+  if [[ ! "$effective_version" =~ ^sha-[0-9a-f]{7,40}$ ]]; then
+    printf 'The persisted MUSTER_VERSION is not an immutable sha-<hex> tag.\n' >&2
+    exit 2
+  fi
+elif [[ -n "$effective_image" ]]; then
+  if [[ ! "$effective_image" =~ ^ghcr\.io/jusso-dev/muster@sha256:[0-9a-f]{64}$ ]]; then
+    printf 'The persisted MUSTER_IMAGE is not a reviewed GHCR digest.\n' >&2
+    exit 2
+  fi
+else
+  printf 'The persisted homelab configuration has no immutable image reference.\n' >&2
+  exit 2
+fi
 
 MUSTER_HTTP_PORT="$(read_env_value MUSTER_HTTP_PORT)"
 MUSTER_PUBLIC_URL="$(read_env_value MUSTER_PUBLIC_URL)"

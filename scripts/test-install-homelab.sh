@@ -46,6 +46,14 @@ export DOCKER_CALLS="$fixture_root/docker-calls"
 export DOCKER_NETWORKS="$fixture_root/docker-networks"
 touch "$DOCKER_CALLS" "$DOCKER_NETWORKS"
 
+if (
+  cd "$fixture_root"
+  ./scripts/install-homelab.sh >/dev/null 2>&1
+); then
+  printf 'Fresh install accepted a missing immutable image reference.\n' >&2
+  exit 1
+fi
+
 digest="ghcr.io/jusso-dev/muster@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 (
   cd "$fixture_root"
@@ -80,6 +88,17 @@ second_digest="ghcr.io/jusso-dev/muster@sha256:ccccccccccccccccccccccccccccccccc
 grep -Fxq "MUSTER_IMAGE=$second_digest" "$fixture_root/.env.homelab"
 if grep -q '^MUSTER_VERSION=' "$fixture_root/.env.homelab"; then
   printf 'Digest transition retained conflicting MUSTER_VERSION.\n' >&2
+  exit 1
+fi
+
+sed -i.bak -e '/^MUSTER_IMAGE=/d' "$fixture_root/.env.homelab"
+rm "$fixture_root/.env.homelab.bak"
+printf 'MUSTER_VERSION=latest\n' >>"$fixture_root/.env.homelab"
+if (
+  cd "$fixture_root"
+  ./scripts/install-homelab.sh >/dev/null 2>&1
+); then
+  printf 'Installer accepted a persisted mutable image tag.\n' >&2
   exit 1
 fi
 
