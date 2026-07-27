@@ -7,6 +7,7 @@ const testRedisUrl =
   process.env.MUSTER_TEST_REDIS_URL ?? "redis://localhost:6379";
 
 process.env.DATABASE_URL ??= testDatabaseUrl;
+process.env.REDIS_URL ??= testRedisUrl;
 
 export default defineConfig({
   testDir: "./tests",
