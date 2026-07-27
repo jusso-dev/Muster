@@ -56,8 +56,27 @@ type PersistedRequest = {
   traceId?: string | undefined;
   harness?: {
     mode?: "slack" | "hermes" | "mcp" | "cli" | "http" | undefined;
-  };
+  } | undefined;
 };
+
+const PersistedRequestSchema = z.object({
+  kind: z.enum(["jessie_hunt", "direct_message"]).optional(),
+  huntId: z.uuid().optional(),
+  huntPlan: z.unknown().optional(),
+  humanRequest: z.string().optional(),
+  sourceMessageId: z.uuid().optional(),
+  traceId: z.string().optional(),
+  harness: z
+    .object({
+      mode: z.enum(["slack", "hermes", "mcp", "cli", "http"]).optional(),
+    })
+    .optional(),
+});
+
+export function parsePersistedRequest(input: unknown): PersistedRequest {
+  const parsed = PersistedRequestSchema.safeParse(input);
+  return parsed.success ? parsed.data : {};
+}
 
 type LiveConnectorEvidence = {
   queryRunId?: string;
@@ -1704,17 +1723,7 @@ export class DurableAgentRuntime {
   }
 
   private request(run: AgentRunRow): PersistedRequest {
-    const parsed = z
-      .object({
-        kind: z.enum(["jessie_hunt", "direct_message"]).optional(),
-        huntId: z.uuid().optional(),
-        huntPlan: z.unknown().optional(),
-        humanRequest: z.string().optional(),
-        sourceMessageId: z.uuid().optional(),
-        traceId: z.string().optional(),
-      })
-      .safeParse(run.request);
-    return parsed.success ? parsed.data : {};
+    return parsePersistedRequest(run.request);
   }
 
   private job(run: AgentRunRow): AgentInvestigationJob {
