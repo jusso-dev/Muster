@@ -152,8 +152,8 @@ Never run that command against a production or clean-install database.
 
 The public image is built for `linux/amd64`; CI publishes SBOM/provenance and
 verifies an anonymous GHCR pull on `main`. Use a reviewed OCI digest, not
-`latest`. At this README revision, the published `sha-e13bb3b` image resolves to
-`ghcr.io/jusso-dev/muster@sha256:8f34bcfe021343d800869f6f4c28889ba4510caafb948c2da4bb95992ff9e734`.
+`latest`. At this README revision, the published `sha-a37ea88` image resolves to
+`ghcr.io/jusso-dev/muster@sha256:75ebdad962373ff1fa5dbef8dba8f0a005de6058e21655dad8c72b1129e90861`.
 Verify that digest or replace it with a newer reviewed release before deployment.
 
 ```bash
@@ -161,7 +161,7 @@ git clone https://github.com/jusso-dev/Muster.git
 cd Muster
 MUSTER_PUBLIC_URL=http://muster.example.lan:3004 \
 AUTH_TRUSTED_ORIGINS=http://muster.example.lan:3004 \
-MUSTER_IMAGE=ghcr.io/jusso-dev/muster@sha256:8f34bcfe021343d800869f6f4c28889ba4510caafb948c2da4bb95992ff9e734 \
+MUSTER_IMAGE=ghcr.io/jusso-dev/muster@sha256:75ebdad962373ff1fa5dbef8dba8f0a005de6058e21655dad8c72b1129e90861 \
 ./scripts/install-homelab.sh
 ```
 

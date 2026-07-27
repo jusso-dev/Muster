@@ -41,7 +41,7 @@ if ! grep -q '^AUTH_TRUSTED_ORIGINS=' "$env_file"; then
     "$requested_public_url" "$requested_http_port" >> "$env_file"
 fi
 
-# Persist an explicitly requested reviewed image tag before sourcing the env
+# Persist an explicitly requested reviewed image reference before sourcing the env
 # file. Otherwise the template's `latest` value would silently win.
 if [[ -n "$requested_version" ]]; then
   sed -i.bak \
