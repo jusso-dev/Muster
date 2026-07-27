@@ -6,6 +6,13 @@ the published full `sha-<40-hex-commit>` tag, OCI digest, SBOM, provenance, and
 `linux/amd64` application image, scans it with Trivy, and verifies an anonymous
 GHCR pull after logout.
 
+The container job has an explicit `needs: quality` dependency, so a push cannot
+publish before lint, typecheck, unit, build, migration, and Chromium E2E pass.
+GitHub Actions cannot express `needs` across independent workflow files; the
+separate security workflow therefore remains a required same-commit
+branch-protection and deployment gate. Do not deploy an image until that
+security run is also green.
+
 Before the first release, make the GitHub Container Registry package public in
 its package settings. CI deliberately logs out before pulling; it fails until
 anonymous users can pull the package. Do not treat a successful authenticated
@@ -34,6 +41,10 @@ homelab, prints its password only when generated, and does not seed demo
 activity. Keep `MUSTER_PUBLIC_URL` and `AUTH_TRUSTED_ORIGINS` limited to exact
 IP and `homelab` browser origins; pass both variables explicitly if deployment
 uses a different approved pair.
+
+Upgrade and rollback preserve the existing public URL, HTTP port, and trusted
+origins unless each value is explicitly supplied. This prevents an immutable
+tag change from silently resetting a non-default homelab address.
 
 The private `codex-state` volume survives application upgrades and rollback.
 Authenticate it only through the setup profile; never copy, publish, or log
