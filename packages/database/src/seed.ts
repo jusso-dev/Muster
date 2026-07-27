@@ -43,6 +43,7 @@ const allCapabilities = [
   "sentinel.query.execute",
   "sentinel.rules.read",
   "sentinel.rules.publish",
+  "research.feeds.read",
   "agents.read",
   "agents.invoke",
   "agents.manage",
@@ -177,6 +178,7 @@ await db
         "alerts.read",
         "investigations.read",
         "investigations.update",
+        "research.feeds.read",
       ],
     },
     {
@@ -259,9 +261,13 @@ await db
       model: process.env.MUSTER_CODEX_MODEL?.trim() || "configured",
       ownerActorId: demoIds.actors.jordan,
       systemPromptVersion: "alfie-v1",
-      allowedTools: ["alerts.read", "investigations.read"],
+      allowedTools: ["alerts.read", "investigations.read", "research.feeds.read"],
       allowedRooms: [demoIds.rooms.soc, demoIds.rooms.triageDirect],
-      capabilityRequirements: ["alerts.read", "investigations.read"],
+      capabilityRequirements: [
+        "alerts.read",
+        "investigations.read",
+        "research.feeds.read",
+      ],
       approvalRequirements: { externalWrites: "human" },
     },
     {

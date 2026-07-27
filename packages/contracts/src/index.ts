@@ -427,6 +427,40 @@ export const ExecutiveUpdateSchema = z.object({
   nextUpdateAt: z.iso.datetime({ offset: true }).nullable(),
 });
 
+export const ResearchBriefSchema = z.object({
+  version: z.literal("research-brief-v1"),
+  source: z.object({
+    name: z.string().min(1).max(160),
+    url: z.url().max(2_000),
+    publishedAt: z.iso.datetime({ offset: true }).nullable(),
+    retrievedAt: z.iso.datetime({ offset: true }),
+    citation: z.string().min(1).max(2_000),
+  }),
+  title: z.string().min(1).max(500),
+  summary: z.string().min(1).max(4_000),
+  urgency: z.enum(["critical", "high", "medium", "low"]),
+  confidence: z.number().int().min(0).max(100),
+  affectedVendors: z.array(z.string().min(1).max(160)).max(50),
+  affectedTechnologies: z.array(z.string().min(1).max(160)).max(50),
+  matchedCaseIds: z.array(z.string().min(1).max(200)).max(50),
+  conclusions: z
+    .array(
+      z.object({
+        claim: z.string().min(1).max(1_000),
+        evidence: z.array(AgentEvidenceReferenceSchema).min(1).max(20),
+      }),
+    )
+    .min(1)
+    .max(10),
+  recommendedFollowUp: z.string().min(1).max(2_000),
+  learningProposal: z
+    .object({
+      title: z.string().min(1).max(200),
+      rationale: z.string().min(1).max(2_000),
+    })
+    .nullable(),
+});
+
 export const AgentStructuredOutputSchemas = {
   TriageRecommendation: TriageRecommendationSchema,
   ThreatIntelFinding: ThreatIntelFindingSchema,
@@ -438,6 +472,7 @@ export const AgentStructuredOutputSchemas = {
   EvidenceBundleManifest: EvidenceBundleManifestSchema,
   PostIncidentSummary: PostIncidentSummarySchema,
   ExecutiveUpdate: ExecutiveUpdateSchema,
+  ResearchBrief: ResearchBriefSchema,
 } as const;
 
 export type AgentStructuredOutputName =

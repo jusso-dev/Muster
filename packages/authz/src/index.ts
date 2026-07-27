@@ -32,6 +32,7 @@ export const capabilities = [
   "sentinel.query.execute",
   "sentinel.rules.read",
   "sentinel.rules.publish",
+  "research.feeds.read",
   "agents.read",
   "agents.invoke",
   "agents.manage",

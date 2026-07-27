@@ -1962,6 +1962,81 @@ export const huntQueries = pgTable(
   ],
 );
 
+// Alfie research configuration and evidence are authoritative PostgreSQL
+// records. Queue payloads carry identifiers only.
+export const researchWatchlists = pgTable(
+  "research_watchlists",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id").notNull().references(() => organisations.id),
+    roomId: uuid("room_id").notNull().references(() => rooms.id),
+    createdByActorId: uuid("created_by_actor_id").notNull().references(() => actors.id),
+    name: text("name").notNull(),
+    vendors: jsonb("vendors").notNull().default([]),
+    technologies: jsonb("technologies").notNull().default([]),
+    sources: jsonb("sources").notNull().default([]),
+    cadenceMinutes: integer("cadence_minutes").notNull().default(240),
+    enabled: boolean("enabled").notNull().default(true),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("research_watchlists_org_name_unique").on(table.organisationId, table.name),
+    index("research_watchlists_due_idx").on(table.enabled, table.nextRunAt),
+    check("research_watchlists_cadence_check", sql`${table.cadenceMinutes} between 15 and 10080`),
+  ],
+);
+
+export const researchRuns = pgTable(
+  "research_runs",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id").notNull().references(() => organisations.id),
+    watchlistId: uuid("watchlist_id").notNull().references(() => researchWatchlists.id),
+    agentRunId: uuid("agent_run_id").notNull().references(() => agentRuns.id),
+    status: text("status").notNull().default("queued"),
+    sourceLimit: integer("source_limit").notNull(),
+    tokenBudget: integer("token_budget").notNull(),
+    costLimitCents: integer("cost_limit_cents").notNull(),
+    timeLimitSeconds: integer("time_limit_seconds").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    error: text("error"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("research_runs_org_idempotency_unique").on(table.organisationId, table.idempotencyKey),
+    uniqueIndex("research_runs_org_agent_unique").on(table.organisationId, table.agentRunId),
+    index("research_runs_org_status_idx").on(table.organisationId, table.status, table.createdAt),
+    check("research_runs_status_check", sql`${table.status} in ('queued','running','completed','failed')`),
+  ],
+);
+
+export const researchItems = pgTable(
+  "research_items",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id").notNull().references(() => organisations.id),
+    watchlistId: uuid("watchlist_id").notNull().references(() => researchWatchlists.id),
+    researchRunId: uuid("research_run_id").notNull().references(() => researchRuns.id),
+    fingerprint: text("fingerprint").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    sourcePublishedAt: timestamp("source_published_at", { withTimezone: true }),
+    rootMessageId: uuid("root_message_id").references(() => messages.id),
+    latestMessageId: uuid("latest_message_id").references(() => messages.id),
+    brief: jsonb("brief").notNull(),
+    feedback: text("feedback"),
+    feedbackByActorId: uuid("feedback_by_actor_id").references(() => actors.id),
+    feedbackAt: timestamp("feedback_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("research_items_org_fingerprint_unique").on(table.organisationId, table.fingerprint),
+    index("research_items_org_watchlist_idx").on(table.organisationId, table.watchlistId, table.updatedAt),
+  ],
+);
+
 export const idempotencyRecords = pgTable(
   "idempotency_records",
   {

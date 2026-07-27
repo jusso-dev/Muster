@@ -777,6 +777,37 @@ export class DurableAgentRuntime {
         fileCount: 0,
       },
       HuntResult: mockHuntResult(run, context),
+      ResearchBrief: {
+        version: "research-brief-v1",
+        source: {
+          name: "Synthetic approved feed",
+          url: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
+          publishedAt: null,
+          retrievedAt: "2026-07-27T00:00:00.000Z",
+          citation: "Synthetic approved feed fixture",
+        },
+        title: base.title,
+        summary: base.summary,
+        urgency: "low",
+        confidence: 82,
+        affectedVendors: [],
+        affectedTechnologies: [],
+        matchedCaseIds: [],
+        conclusions: [
+          {
+            claim: "Synthetic evidence-backed research result.",
+            evidence: [
+              {
+                type: "fixture",
+                reference: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
+                sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+              },
+            ],
+          },
+        ],
+        recommendedFollowUp: "Human review required before external action.",
+        learningProposal: null,
+      },
       TelemetryGapFinding: {
         ...base,
         collectorId: "synthetic-collector-20",

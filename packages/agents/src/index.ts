@@ -180,6 +180,20 @@ export const agentToolRegistry = new Map<string, ToolDefinition>([
     },
   ],
   [
+    "research.feeds.read",
+    {
+      name: "research.feeds.read",
+      capability: "research.feeds.read",
+      mutation: false,
+      argumentSchema: z.object({
+        source: z.string().min(1).max(160),
+        url: z.url().max(2_000),
+      }),
+      maximumRecords: 200,
+      allowedUrlOrigins: ["https://www.cisa.gov"],
+    },
+  ],
+  [
     "tawny.endpoint.isolate",
     {
       name: "tawny.endpoint.isolate",
