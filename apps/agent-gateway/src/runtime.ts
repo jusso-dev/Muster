@@ -27,6 +27,18 @@ import {
   TenantRepository,
   writeOutbox,
 } from "@muster/database";
+import {
+  ConnectorConfigurationSchema,
+  GovernedConnectorError,
+  QueryTemplateSchema,
+  decryptConnectorAuth,
+  encryptConnectorPayload,
+  executeGovernedQuery,
+  redactUntrusted,
+  type ConnectorAuth,
+  type ConnectorConfiguration,
+  type QueryTemplate,
+} from "@muster/integrations";
 import { and, asc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -42,6 +54,21 @@ type PersistedRequest = {
   humanRequest?: string | undefined;
   sourceMessageId?: string | undefined;
   traceId?: string | undefined;
+  harness?: {
+    mode?: "slack" | "hermes" | "mcp" | "cli" | "http" | undefined;
+  };
+};
+
+type LiveConnectorEvidence = {
+  queryRunId?: string;
+  source: string;
+  product: string;
+  templateKey: string;
+  status: "succeeded" | "failed" | "unavailable";
+  result?: unknown;
+  responseMetadata?: unknown;
+  errorCode?: string;
+  errorMessage?: string;
 };
 
 function terminalSummary(output: unknown) {
@@ -1203,7 +1230,10 @@ export class DurableAgentRuntime {
             eq(schema.agentRuns.workerId, this.workerId),
           ),
         )
-        .returning({ id: schema.agentRuns.id, organisationId: schema.agentRuns.organisationId });
+        .returning({
+          id: schema.agentRuns.id,
+          organisationId: schema.agentRuns.organisationId,
+        });
       const run = rows[0];
       if (run)
         await writeOutbox(tx, {
@@ -1828,7 +1858,21 @@ async function loadAuthoritativeContext(
     );
   if (request.kind === "jessie_hunt" && !hunt)
     throw new RunFailure("Hunt not found in organisation", "hunt_not_found");
-  return { investigation, actor, alerts, findings, hunt, huntQueries };
+  const liveConnectorEvidence = await loadLiveConnectorEvidence({
+    db,
+    actor,
+    runId,
+    request,
+  });
+  return {
+    investigation,
+    actor,
+    alerts,
+    findings,
+    hunt,
+    huntQueries,
+    liveConnectorEvidence,
+  };
 }
 
 function outputSchemaFor(
@@ -1848,6 +1892,478 @@ function outputSchemaFor(
   if (identity.includes("post-incident")) return "PostIncidentSummary";
   if (identity.includes("executive")) return "ExecutiveUpdate";
   return "TriageRecommendation";
+}
+
+type LiveTemplateRow = {
+  integration: typeof schema.integrationRecords.$inferSelect;
+  template: typeof schema.integrationQueryTemplates.$inferSelect;
+  credential: typeof schema.integrationConnectorCredentials.$inferSelect;
+};
+
+function connectorFailure(error: unknown) {
+  if (error instanceof GovernedConnectorError)
+    return {
+      code: error.code,
+      message: redactObservationText(error.message),
+    };
+  return {
+    code: "source_unavailable",
+    message: redactObservationText(
+      error instanceof Error ? error.message : "Connector query failed",
+    ),
+  };
+}
+
+async function executeLiveContextQuery(input: {
+  db: Db;
+  row: LiveTemplateRow;
+  actor: typeof schema.actors.$inferSelect;
+  runId: string;
+  traceId: string;
+  values: Record<string, unknown>;
+  suffix?: string;
+}): Promise<LiveConnectorEvidence> {
+  const key = process.env.CONNECTOR_ENCRYPTION_KEY;
+  if (!key)
+    return {
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: input.row.template.templateKey,
+      status: "unavailable",
+      errorCode: "connector_encryption_unavailable",
+      errorMessage: "Connector encryption is not configured.",
+    };
+  const definition = QueryTemplateSchema.parse(input.row.template.definition);
+  const capabilities = Array.isArray(input.actor.capabilityAssignments)
+    ? input.actor.capabilityAssignments
+    : [];
+  if (!capabilities.includes(definition.requiredCapability))
+    return {
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: definition.key,
+      status: "unavailable",
+      errorCode: "capability_revoked",
+      errorMessage: "The agent lacks the connector read capability.",
+    };
+  const auth: ConnectorAuth = decryptConnectorAuth(
+    input.row.credential.encryptedCredential,
+    key,
+  );
+  const { authType: _storedAuthType, ...storedConfiguration } = input.row
+    .integration.configuration as Record<string, unknown>;
+  const configuration: ConnectorConfiguration =
+    ConnectorConfigurationSchema.parse({
+      ...storedConfiguration,
+      auth,
+    });
+  const suffix = input.suffix ? `:${input.suffix}` : "";
+  const idempotencyKey =
+    `agent-context:${input.runId}:${definition.key}${suffix}`.slice(0, 200);
+  const queryRunId = newId();
+  const [inserted] = await input.db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(schema.integrationQueryRuns)
+      .values({
+        id: queryRunId,
+        organisationId: input.actor.organisationId,
+        integrationId: input.row.integration.id,
+        templateId: input.row.template.id,
+        requestedByActorId: input.actor.id,
+        idempotencyKey,
+        traceId: input.traceId,
+        status: "running",
+        input: { envelope: encryptConnectorPayload(input.values, key) },
+        requestMetadata: {
+          source: "agent-live-context",
+          agentRunId: input.runId,
+          templateKey: definition.key,
+        },
+        startedAt: new Date(),
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (created) {
+      await appendAuditEvent(tx, {
+        organisationId: input.actor.organisationId,
+        actorId: input.actor.id,
+        actorType: input.actor.actorType,
+        action: "connector.query.started",
+        targetType: "integration_query",
+        targetId: created.id,
+        metadata: {
+          source: "agent-live-context",
+          agentRunId: input.runId,
+          integrationId: input.row.integration.id,
+          templateKey: definition.key,
+          templateVersion: definition.version,
+        },
+        traceId: input.traceId,
+      });
+      await writeOutbox(tx, {
+        organisationId: input.actor.organisationId,
+        eventType: "connector.query.started",
+        aggregateType: "integration_query",
+        aggregateId: created.id,
+        queueName: "muster-outbox",
+        payload: {
+          queryRunId: created.id,
+          agentRunId: input.runId,
+          templateKey: definition.key,
+        },
+        idempotencyKey: `connector.query.started:${created.id}`,
+        traceId: input.traceId,
+      });
+    }
+    return [created] as const;
+  });
+  const run =
+    inserted ??
+    (
+      await input.db
+        .select()
+        .from(schema.integrationQueryRuns)
+        .where(
+          and(
+            eq(
+              schema.integrationQueryRuns.organisationId,
+              input.actor.organisationId,
+            ),
+            eq(schema.integrationQueryRuns.idempotencyKey, idempotencyKey),
+          ),
+        )
+        .limit(1)
+    )[0];
+  if (!run)
+    return {
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: definition.key,
+      status: "unavailable",
+      errorCode: "query_state_unavailable",
+      errorMessage: "Connector query state could not be created.",
+    };
+  if (run.status === "succeeded")
+    return {
+      queryRunId: run.id,
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: definition.key,
+      status: "succeeded",
+      result: run.result,
+      responseMetadata: run.responseMetadata,
+    };
+  if (run.status === "failed")
+    return {
+      queryRunId: run.id,
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: definition.key,
+      status: "failed",
+      errorCode: run.errorCode ?? "source_unavailable",
+      errorMessage: run.errorMessage ?? "Connector query failed.",
+    };
+  try {
+    const result = await executeGovernedQuery({
+      configuration,
+      auth,
+      template: definition,
+      values: input.values,
+    });
+    const safeResult = redactUntrusted(result.data);
+    await input.db.transaction(async (tx) => {
+      await tx
+        .update(schema.integrationQueryRuns)
+        .set({
+          status: "succeeded",
+          result: safeResult,
+          responseMetadata: result.metadata,
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(
+              schema.integrationQueryRuns.organisationId,
+              input.actor.organisationId,
+            ),
+            eq(schema.integrationQueryRuns.id, run.id),
+          ),
+        );
+      await tx
+        .update(schema.integrationRecords)
+        .set({
+          status: "healthy",
+          health: {
+            status: "healthy",
+            checkedAt: new Date().toISOString(),
+            lastQueryRunId: run.id,
+          },
+          lastSyncAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(
+              schema.integrationRecords.organisationId,
+              input.actor.organisationId,
+            ),
+            eq(schema.integrationRecords.id, input.row.integration.id),
+          ),
+        );
+      await appendAuditEvent(tx, {
+        organisationId: input.actor.organisationId,
+        actorId: input.actor.id,
+        actorType: input.actor.actorType,
+        action: "connector.query.succeeded",
+        targetType: "integration_query",
+        targetId: run.id,
+        metadata: {
+          source: "agent-live-context",
+          agentRunId: input.runId,
+          integrationId: input.row.integration.id,
+          templateKey: definition.key,
+          templateVersion: definition.version,
+          ...result.metadata,
+        },
+        traceId: input.traceId,
+      });
+      await writeOutbox(tx, {
+        organisationId: input.actor.organisationId,
+        eventType: "connector.query.succeeded",
+        aggregateType: "integration_query",
+        aggregateId: run.id,
+        queueName: "muster-outbox",
+        payload: {
+          queryRunId: run.id,
+          agentRunId: input.runId,
+          templateKey: definition.key,
+        },
+        idempotencyKey: `connector.query.succeeded:${run.id}`,
+        traceId: input.traceId,
+      });
+    });
+    return {
+      queryRunId: run.id,
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: definition.key,
+      status: "succeeded",
+      result: safeResult,
+      responseMetadata: result.metadata,
+    };
+  } catch (error) {
+    const failure = connectorFailure(error);
+    await input.db.transaction(async (tx) => {
+      await tx
+        .update(schema.integrationQueryRuns)
+        .set({
+          status: "failed",
+          errorCode: failure.code,
+          errorMessage: failure.message,
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(
+              schema.integrationQueryRuns.organisationId,
+              input.actor.organisationId,
+            ),
+            eq(schema.integrationQueryRuns.id, run.id),
+          ),
+        );
+      await appendAuditEvent(tx, {
+        organisationId: input.actor.organisationId,
+        actorId: input.actor.id,
+        actorType: input.actor.actorType,
+        action: "connector.query.failed",
+        targetType: "integration_query",
+        targetId: run.id,
+        metadata: {
+          source: "agent-live-context",
+          agentRunId: input.runId,
+          integrationId: input.row.integration.id,
+          templateKey: definition.key,
+          errorCode: failure.code,
+        },
+        traceId: input.traceId,
+      });
+      await writeOutbox(tx, {
+        organisationId: input.actor.organisationId,
+        eventType: "connector.query.failed",
+        aggregateType: "integration_query",
+        aggregateId: run.id,
+        queueName: "muster-outbox",
+        payload: {
+          queryRunId: run.id,
+          agentRunId: input.runId,
+          templateKey: definition.key,
+          errorCode: failure.code,
+        },
+        idempotencyKey: `connector.query.failed:${run.id}`,
+        traceId: input.traceId,
+      });
+    });
+    return {
+      queryRunId: run.id,
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: definition.key,
+      status: "failed",
+      errorCode: failure.code,
+      errorMessage: failure.message,
+    };
+  }
+}
+
+async function loadLiveConnectorEvidence(input: {
+  db: Db;
+  actor: typeof schema.actors.$inferSelect;
+  runId: string;
+  request: PersistedRequest;
+}): Promise<LiveConnectorEvidence[]> {
+  if (
+    input.request.harness?.mode !== "slack" ||
+    !input.request.humanRequest?.trim()
+  )
+    return [];
+  const prompt = input.request.humanRequest.toLowerCase();
+  const requestedProducts = new Set<string>();
+  if (/\b(tawny|host|hosts|endpoint|endpoints|machine|machines)\b/.test(prompt))
+    requestedProducts.add("tawny");
+  if (/\b(kelpie|case|cases|incident|incidents)\b/.test(prompt))
+    requestedProducts.add("kelpie");
+  if (
+    /\b(unifi|network|traffic|client|clients|device|devices|bandwidth)\b/.test(
+      prompt,
+    )
+  )
+    requestedProducts.add("unifi");
+  const products = requestedProducts.size
+    ? [...requestedProducts]
+    : ["tawny", "kelpie", "unifi"];
+  const rows = await input.db
+    .select({
+      integration: schema.integrationRecords,
+      template: schema.integrationQueryTemplates,
+      credential: schema.integrationConnectorCredentials,
+    })
+    .from(schema.integrationRecords)
+    .innerJoin(
+      schema.integrationQueryTemplates,
+      and(
+        eq(
+          schema.integrationQueryTemplates.organisationId,
+          input.actor.organisationId,
+        ),
+        eq(
+          schema.integrationQueryTemplates.integrationId,
+          schema.integrationRecords.id,
+        ),
+        eq(schema.integrationQueryTemplates.enabled, true),
+      ),
+    )
+    .innerJoin(
+      schema.integrationConnectorCredentials,
+      and(
+        eq(
+          schema.integrationConnectorCredentials.organisationId,
+          input.actor.organisationId,
+        ),
+        eq(
+          schema.integrationConnectorCredentials.integrationId,
+          schema.integrationRecords.id,
+        ),
+      ),
+    )
+    .where(
+      and(
+        eq(
+          schema.integrationRecords.organisationId,
+          input.actor.organisationId,
+        ),
+        inArray(schema.integrationRecords.product, products),
+        inArray(schema.integrationRecords.status, ["configured", "healthy"]),
+        eq(schema.integrationRecords.mock, false),
+        isNull(schema.integrationRecords.archivedAt),
+      ),
+    )
+    .orderBy(asc(schema.integrationRecords.createdAt));
+  const evidence: LiveConnectorEvidence[] = [];
+  const traceId = redactObservationText(
+    input.request.traceId ?? `agent-run-${input.runId}`,
+  );
+  const execute = async (
+    product: string,
+    templateKey: string,
+    values: Record<string, unknown>,
+    suffix?: string,
+  ) => {
+    const row = rows.find(
+      (candidate) =>
+        candidate.integration.product === product &&
+        candidate.template.templateKey === templateKey,
+    );
+    if (!row) {
+      const unavailable: LiveConnectorEvidence = {
+        source: product,
+        product,
+        templateKey,
+        status: "unavailable",
+        errorCode: "integration_unavailable",
+        errorMessage: `No healthy ${product} connector template is configured.`,
+      };
+      evidence.push(unavailable);
+      return unavailable;
+    }
+    const result = await executeLiveContextQuery({
+      db: input.db,
+      row,
+      actor: input.actor,
+      runId: input.runId,
+      traceId,
+      values,
+      ...(suffix ? { suffix } : {}),
+    });
+    evidence.push(result);
+    return result;
+  };
+  await Promise.all([
+    ...(requestedProducts.has("tawny") || requestedProducts.size === 0
+      ? [execute("tawny", "tawny.inventory.list", {})]
+      : []),
+    ...(requestedProducts.has("kelpie") || requestedProducts.size === 0
+      ? [execute("kelpie", "kelpie.cases.list", {})]
+      : []),
+  ]);
+  if (!requestedProducts.has("unifi") && requestedProducts.size !== 0)
+    return evidence;
+  const sites = await execute("unifi", "unifi.sites.list", {
+    offset: 0,
+    limit: 10,
+  });
+  const siteIds = Array.isArray(sites.result)
+    ? sites.result
+        .map((site) =>
+          site && typeof site === "object"
+            ? (site as Record<string, unknown>).id
+            : undefined,
+        )
+        .filter((siteId): siteId is string => typeof siteId === "string")
+        .slice(0, 3)
+    : [];
+  await Promise.all(
+    siteIds.map((siteId) =>
+      execute(
+        "unifi",
+        "unifi.clients.list",
+        { siteId, offset: 0, limit: 50, filter: "" },
+        siteId,
+      ),
+    ),
+  );
+  return evidence;
 }
 
 function promptParts(
@@ -1915,6 +2431,20 @@ function promptParts(
               trust: "untrusted-evidence",
             },
       ),
+    })),
+    ...context.liveConnectorEvidence.map((query) => ({
+      kind: "tool_result" as const,
+      tool: `${query.product}.${query.templateKey}`,
+      content: JSON.stringify({
+        queryRunId: query.queryRunId,
+        source: query.source,
+        status: query.status,
+        result: query.result,
+        responseMetadata: query.responseMetadata,
+        errorCode: query.errorCode,
+        errorMessage: query.errorMessage,
+        trust: "untrusted-evidence",
+      }),
     })),
   ];
 }

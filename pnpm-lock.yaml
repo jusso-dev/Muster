@@ -55,6 +55,9 @@ importers:
       '@muster/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@muster/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
       '@openai/codex':
         specifier: 0.145.0
         version: 0.145.0

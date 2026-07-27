@@ -16,6 +16,7 @@
     "@muster/config": "workspace:*",
     "@muster/contracts": "workspace:*",
     "@muster/database": "workspace:*",
+    "@muster/integrations": "workspace:*",
     "@openai/codex": "0.145.0",
     "@openai/codex-sdk": "0.145.0",
     "drizzle-orm": "0.45.2",
