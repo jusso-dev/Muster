@@ -1859,6 +1859,35 @@ async function queueAllDueResearchRuns() {
   );
 }
 
+function nextScheduledReportRun(cadence: string, now: Date) {
+  return new Date(now.valueOf() + (cadence === "weekly" ? 7 : 31) * 86_400_000);
+}
+
+async function queueDueParkerReports(organisationId: string, traceId: string) {
+  const now = new Date();
+  await database().transaction(async (tx) => {
+    const due = await tx.select().from(schema.reportSchedules).where(and(eq(schema.reportSchedules.organisationId, organisationId), eq(schema.reportSchedules.enabled, true), lte(schema.reportSchedules.nextRunAt, now))).for("update", { skipLocked: true });
+    if (!due.length) return;
+    const [parker] = await tx.select().from(schema.agentDefinitions).where(and(eq(schema.agentDefinitions.organisationId, organisationId), eq(schema.agentDefinitions.name, "Parker"), eq(schema.agentDefinitions.status, "active"), eq(schema.agentDefinitions.killSwitch, false))).limit(1);
+    if (!parker) throw new Error("Parker is not configured for this organisation");
+    for (const schedule of due) {
+      const idempotencyKey = `parker:schedule:${schedule.id}:${schedule.nextRunAt.toISOString()}`;
+      const [existing] = await tx.select({ id: schema.tasks.id }).from(schema.tasks).where(and(eq(schema.tasks.organisationId, organisationId), eq(schema.tasks.idempotencyKey, idempotencyKey))).limit(1);
+      await tx.update(schema.reportSchedules).set({ lastRunAt: now, nextRunAt: nextScheduledReportRun(schedule.cadence, now), updatedAt: now }).where(eq(schema.reportSchedules.id, schedule.id));
+      if (existing) continue;
+      const taskId = newId();
+      await tx.insert(schema.tasks).values({ id: taskId, organisationId, roomId: schedule.roomId, title: `Parker ${schedule.cadence} ${schedule.audience} report`, description: `Scheduled ${schedule.cadence} report in ${schedule.timezone}. Review and delegate Parker to generate the authoritative manifest.`, status: "ready", priority: "normal", assignedActorId: parker.id, createdByActorId: schedule.createdByActorId, idempotencyKey, approvalRequired: false });
+      await appendAuditEvent(tx, { organisationId, actorId: parker.id, actorType: "agent", action: "report.schedule.task_created", targetType: "task", targetId: taskId, metadata: { scheduleId: schedule.id, cadence: schedule.cadence, timezone: schedule.timezone }, traceId });
+      await writeOutbox(tx, { organisationId, eventType: "report.schedule.task_created", aggregateType: "task", aggregateId: taskId, queueName: "muster-outbox", payload: { taskId, scheduleId: schedule.id }, idempotencyKey: `report.schedule.task:${taskId}`, traceId });
+    }
+  });
+}
+
+async function queueAllDueParkerReports() {
+  const organisations = await database().select({ id: schema.organisations.id }).from(schema.organisations);
+  await Promise.all(organisations.map(({ id }) => queueDueParkerReports(id, newId())));
+}
+
 const researchScheduler = setInterval(
   () =>
     void queueAllDueResearchRuns().catch((error) =>
@@ -1869,6 +1898,12 @@ const researchScheduler = setInterval(
   60_000,
 );
 researchScheduler.unref();
+
+const parkerScheduler = setInterval(
+  () => void queueAllDueParkerReports().catch((error) => jsonLog("error", "report.schedule.failed", { error: error instanceof Error ? error.message : "unknown" })),
+  60_000,
+);
+parkerScheduler.unref();
 
 for (const name of queueNames.filter((queue) => queue !== "muster-outbox")) {
   const policy = queuePolicies[name];

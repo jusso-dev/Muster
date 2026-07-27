@@ -2088,6 +2088,30 @@ export const reportDeliveries = pgTable(
   ],
 );
 
+export const reportSchedules = pgTable(
+  "report_schedules",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id").notNull().references(() => organisations.id),
+    roomId: uuid("room_id").notNull().references(() => rooms.id),
+    createdByActorId: uuid("created_by_actor_id").notNull().references(() => actors.id),
+    cadence: text("cadence").notNull(),
+    timezone: text("timezone").notNull(),
+    audience: text("audience").notNull().default("leadership"),
+    enabled: boolean("enabled").notNull().default(true),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("report_schedules_org_idempotency_unique").on(table.organisationId, table.idempotencyKey),
+    index("report_schedules_org_due_idx").on(table.organisationId, table.enabled, table.nextRunAt),
+    check("report_schedules_cadence_check", sql`${table.cadence} in ('weekly','monthly')`),
+    check("report_schedules_audience_check", sql`${table.audience} in ('analyst','leadership','executive')`),
+  ],
+);
+
 export const idempotencyRecords = pgTable(
   "idempotency_records",
   {

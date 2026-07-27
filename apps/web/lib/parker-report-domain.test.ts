@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildParkerManifest, CreateParkerReportSchema } from "./parker-report-domain";
+import { buildParkerManifest, CreateParkerReportSchema, CreateParkerScheduleSchema, nextParkerScheduleRun } from "./parker-report-domain";
 
 const at = (minute: number) => new Date(`2026-07-01T00:${String(minute).padStart(2, "0")}:00.000Z`);
 
@@ -59,5 +59,11 @@ describe("Parker report aggregates", () => {
     expect(manifest.values.find((value) => value.key === "recurrence_rate")).toMatchObject({ state: "not_applicable", sampleSize: 0 });
     expect(manifest.narrative).not.toContain("sensitive-correlation-key");
     expect(() => CreateParkerReportSchema.parse({ ...input, timezone: "not/a-timezone" })).toThrow("IANA timezone");
+  });
+
+  it("validates an organisation schedule timezone and calculates bounded cadence", () => {
+    expect(CreateParkerScheduleSchema.parse({ roomId: "00000000-0000-4000-8000-000000000001", cadence: "weekly", timezone: "Australia/Sydney", idempotencyKey: "parker-schedule-weekly" }).cadence).toBe("weekly");
+    expect(nextParkerScheduleRun("weekly", at(0)).toISOString()).toBe("2026-07-08T00:00:00.000Z");
+    expect(nextParkerScheduleRun("monthly", at(0)).toISOString()).toBe("2026-08-01T00:00:00.000Z");
   });
 });

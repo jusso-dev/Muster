@@ -51,6 +51,19 @@ export const RequestReportEmailSchema = z.object({
   recipient: z.string().email().max(320),
   idempotencyKey: z.string().trim().min(8).max(200),
 });
+export const CreateParkerScheduleSchema = z.object({
+  roomId: z.uuid(),
+  cadence: z.enum(["weekly", "monthly"]),
+  timezone: z.string().trim().min(1).max(100).refine((timezone) => {
+    try { Intl.DateTimeFormat(undefined, { timeZone: timezone }); return true; } catch { return false; }
+  }, "Timezone must be an IANA timezone."),
+  audience: z.enum(["analyst", "leadership", "executive"]).default("leadership"),
+  idempotencyKey: z.string().trim().min(8).max(200),
+});
+
+export function nextParkerScheduleRun(cadence: "weekly" | "monthly", now = new Date()) {
+  return new Date(now.valueOf() + (cadence === "weekly" ? 7 : 31) * 86_400_000);
+}
 
 type Metric = z.infer<typeof ReportManifestSchema>["values"][number];
 
@@ -375,6 +388,20 @@ export class ParkerReportDomainService {
       await tx.insert(schema.reportDeliveries).values({ id: deliveryId, organisationId: subject.organisationId, reportId, approvalId, requestedByActorId: subject.actorId, recipient: input.recipient, idempotencyKey: input.idempotencyKey });
       await appendAuditEvent(tx, { organisationId: subject.organisationId, actorId: subject.actorId, actorType: "human", action: "report.email.approval_requested", targetType: "report_delivery", targetId: deliveryId, metadata: { reportId }, traceId });
       return { id: deliveryId, approvalId, status: "awaiting_approval", duplicate: false };
+    });
+  }
+
+  async createSchedule(subject: AuthorisationSubject, raw: unknown, traceId: string) {
+    requireCapability(subject, "administration.manage");
+    const input = CreateParkerScheduleSchema.parse(raw);
+    await this.requireRoomMembership(subject, input.roomId);
+    return this.db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(schema.reportSchedules).where(and(eq(schema.reportSchedules.organisationId, subject.organisationId), eq(schema.reportSchedules.idempotencyKey, input.idempotencyKey))).limit(1);
+      if (existing) return { id: existing.id, nextRunAt: existing.nextRunAt, duplicate: true };
+      const id = newId(); const nextRunAt = nextParkerScheduleRun(input.cadence);
+      await tx.insert(schema.reportSchedules).values({ id, organisationId: subject.organisationId, roomId: input.roomId, createdByActorId: subject.actorId, cadence: input.cadence, timezone: input.timezone, audience: input.audience, nextRunAt, idempotencyKey: input.idempotencyKey });
+      await appendAuditEvent(tx, { organisationId: subject.organisationId, actorId: subject.actorId, actorType: "human", action: "report.schedule.created", targetType: "report_schedule", targetId: id, metadata: { cadence: input.cadence, timezone: input.timezone, roomId: input.roomId }, traceId });
+      return { id, nextRunAt, duplicate: false };
     });
   }
 }
