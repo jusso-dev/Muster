@@ -62,7 +62,10 @@ export const CreateParkerScheduleSchema = z.object({
 });
 
 export function nextParkerScheduleRun(cadence: "weekly" | "monthly", now = new Date()) {
-  return new Date(now.valueOf() + (cadence === "weekly" ? 7 : 31) * 86_400_000);
+  const next = new Date(now);
+  if (cadence === "weekly") next.setUTCDate(next.getUTCDate() + 7);
+  else next.setUTCMonth(next.getUTCMonth() + 1);
+  return next;
 }
 
 type Metric = z.infer<typeof ReportManifestSchema>["values"][number];

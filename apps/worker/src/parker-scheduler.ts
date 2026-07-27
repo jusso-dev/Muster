@@ -2,7 +2,10 @@ import { appendAuditEvent, database, newId, schema, writeOutbox } from "@muster/
 import { and, eq, lte } from "drizzle-orm";
 
 export function nextScheduledReportRun(cadence: string, now: Date) {
-  return new Date(now.valueOf() + (cadence === "weekly" ? 7 : 31) * 86_400_000);
+  const next = new Date(now);
+  if (cadence === "weekly") next.setUTCDate(next.getUTCDate() + 7);
+  else next.setUTCMonth(next.getUTCMonth() + 1);
+  return next;
 }
 
 /** PostgreSQL is authoritative: row locks plus occurrence idempotency make ticks replay-safe. */
