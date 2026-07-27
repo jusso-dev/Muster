@@ -266,7 +266,11 @@ await db
       model: process.env.MUSTER_CODEX_MODEL?.trim() || "configured",
       ownerActorId: demoIds.actors.jordan,
       systemPromptVersion: "alfie-v1",
-      allowedTools: ["alerts.read", "investigations.read", "research.feeds.read"],
+      allowedTools: [
+        "alerts.read",
+        "investigations.read",
+        "research.feeds.read",
+      ],
       allowedRooms: [demoIds.rooms.soc, demoIds.rooms.triageDirect],
       capabilityRequirements: [
         "alerts.read",
@@ -661,7 +665,7 @@ await db
 await db
   .insert(schema.findings)
   .values({
-    id: "018f55d8-c4c7-7c3e-88ef-000000000501",
+    id: demoIds.findings.encodedPowerShell,
     organisationId: demoIds.organisation,
     investigationId: demoIds.investigation,
     createdByActorId: demoIds.actors.tawnyHunt,
@@ -705,7 +709,7 @@ await db
   .insert(schema.integrationRecords)
   .values([
     {
-      id: "018f55d8-c4c7-7c3e-88ef-000000000601",
+      id: demoIds.integrations.kelpie,
       organisationId: demoIds.organisation,
       product: "kelpie",
       instanceId: "kelpie-mock-au-01",
@@ -714,7 +718,7 @@ await db
       mock: true,
     },
     {
-      id: "018f55d8-c4c7-7c3e-88ef-000000000602",
+      id: demoIds.integrations.tawny,
       organisationId: demoIds.organisation,
       product: "tawny",
       instanceId: "tawny-mock-au-01",
@@ -723,7 +727,7 @@ await db
       mock: true,
     },
     {
-      id: "018f55d8-c4c7-7c3e-88ef-000000000603",
+      id: demoIds.integrations.bower,
       organisationId: demoIds.organisation,
       product: "bower",
       instanceId: "bower-mock-au-01",

@@ -1,23 +1,85 @@
+const starterIds = {
+  organisation: "018f55d8-c4c7-7c3e-88ef-000000000001",
+  actors: {
+    jordan: "018f55d8-c4c7-7c3e-88ef-000000000010",
+    triage: "018f55d8-c4c7-7c3e-88ef-000000000020",
+    tawnyHunt: "018f55d8-c4c7-7c3e-88ef-000000000021",
+    threatIntel: "018f55d8-c4c7-7c3e-88ef-000000000025",
+  },
+  rooms: {
+    soc: "018f55d8-c4c7-7c3e-88ef-000000000100",
+    activeIncidents: "018f55d8-c4c7-7c3e-88ef-000000000101",
+    threatIntel: "018f55d8-c4c7-7c3e-88ef-000000000102",
+    detection: "018f55d8-c4c7-7c3e-88ef-000000000103",
+    endpoint: "018f55d8-c4c7-7c3e-88ef-000000000104",
+    bower: "018f55d8-c4c7-7c3e-88ef-000000000105",
+    incident: "018f55d8-c4c7-7c3e-88ef-000000000106",
+    investigation: "018f55d8-c4c7-7c3e-88ef-000000000107",
+    alerts: "018f55d8-c4c7-7c3e-88ef-000000000108",
+    mayaDirect: "018f55d8-c4c7-7c3e-88ef-000000000109",
+    triageDirect: "018f55d8-c4c7-7c3e-88ef-000000000110",
+    tawnyDirect: "018f55d8-c4c7-7c3e-88ef-000000000111",
+    parkerDirect: "018f55d8-c4c7-7c3e-88ef-000000000112",
+  },
+  investigation: "018f55d8-c4c7-7c3e-88ef-000000000200",
+} as const;
+
+const demoIds = {
+  organisation: "019e7a10-0000-7000-8000-000000000001",
+  actors: {
+    jordan: "019e7a10-0000-7000-8000-000000000010",
+    maya: "019e7a10-0000-7000-8000-000000000011",
+    daniel: "019e7a10-0000-7000-8000-000000000012",
+    priya: "019e7a10-0000-7000-8000-000000000013",
+    alex: "019e7a10-0000-7000-8000-000000000014",
+    triage: "019e7a10-0000-7000-8000-000000000020",
+    tawnyHunt: "019e7a10-0000-7000-8000-000000000021",
+    bowerHealth: "019e7a10-0000-7000-8000-000000000022",
+    kelpieCase: "019e7a10-0000-7000-8000-000000000023",
+    sentinelQuery: "019e7a10-0000-7000-8000-000000000024",
+    threatIntel: "019e7a10-0000-7000-8000-000000000025",
+  },
+  rooms: {
+    soc: "019e7a10-0000-7000-8000-000000000100",
+    activeIncidents: "019e7a10-0000-7000-8000-000000000101",
+    threatIntel: "019e7a10-0000-7000-8000-000000000102",
+    detection: "019e7a10-0000-7000-8000-000000000103",
+    endpoint: "019e7a10-0000-7000-8000-000000000104",
+    bower: "019e7a10-0000-7000-8000-000000000105",
+    incident: "019e7a10-0000-7000-8000-000000000106",
+    investigation: "019e7a10-0000-7000-8000-000000000107",
+    alerts: "019e7a10-0000-7000-8000-000000000108",
+    mayaDirect: "019e7a10-0000-7000-8000-000000000109",
+    triageDirect: "019e7a10-0000-7000-8000-000000000110",
+    tawnyDirect: "019e7a10-0000-7000-8000-000000000111",
+    parkerDirect: "019e7a10-0000-7000-8000-000000000112",
+  },
+  investigation: "019e7a10-0000-7000-8000-000000000200",
+  messages: {
+    mayaParent: "019e7a10-0000-7000-8000-000000000701",
+    priyaParent: "019e7a10-0000-7000-8000-000000000705",
+  },
+} as const;
+
 export type Severity = "critical" | "high" | "medium" | "low" | "informational";
 
-export const demoMode =
-  process.env.NEXT_PUBLIC_MUSTER_DEMO_MODE === "true";
+export const demoMode = process.env.NEXT_PUBLIC_MUSTER_DEMO_MODE === "true";
 
 export const demoOrganisation = demoMode
   ? {
-      id: "018f55d8-c4c7-7c3e-88ef-000000000001",
+      id: demoIds.organisation,
       name: "Muster Demo Workspace",
       slug: "muster-demo",
     }
   : {
-      id: "018f55d8-c4c7-7c3e-88ef-000000000001",
+      id: starterIds.organisation,
       name: "Muster Workspace",
       slug: "muster",
     };
 
 const demoPeopleRows = [
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000010",
+    id: demoIds.actors.jordan,
     name: "Jordan Blake",
     initials: "JB",
     role: "Security Lead",
@@ -25,7 +87,7 @@ const demoPeopleRows = [
     type: "human",
   },
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000011",
+    id: demoIds.actors.maya,
     name: "Maya Chen",
     initials: "MC",
     role: "Senior Analyst",
@@ -33,7 +95,7 @@ const demoPeopleRows = [
     type: "human",
   },
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000012",
+    id: demoIds.actors.daniel,
     name: "Daniel Brooks",
     initials: "DB",
     role: "Detection Engineer",
@@ -41,7 +103,7 @@ const demoPeopleRows = [
     type: "human",
   },
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000013",
+    id: demoIds.actors.priya,
     name: "Priya Nair",
     initials: "PN",
     role: "Incident Responder",
@@ -49,7 +111,7 @@ const demoPeopleRows = [
     type: "human",
   },
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000014",
+    id: demoIds.actors.alex,
     name: "Alex Morgan",
     initials: "AM",
     role: "Read-only Auditor",
@@ -62,7 +124,7 @@ export const demoPeople = demoMode
   ? demoPeopleRows
   : ([
       {
-        id: "018f55d8-c4c7-7c3e-88ef-000000000010",
+        id: starterIds.actors.jordan,
         name: "Muster Administrator",
         initials: "MA",
         role: "Administrator",
@@ -73,7 +135,7 @@ export const demoPeople = demoMode
 
 const starterAgents = [
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000020",
+    id: demoIds.actors.triage,
     name: "Triage Agent",
     initials: "TA",
     purpose: "Correlates alerts and recommends disposition.",
@@ -88,7 +150,7 @@ const starterAgents = [
     killSwitch: false,
   },
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000021",
+    id: demoIds.actors.tawnyHunt,
     name: "Tawny Hunt Agent",
     initials: "TH",
     purpose: "Runs bounded endpoint telemetry hunts.",
@@ -103,7 +165,7 @@ const starterAgents = [
     killSwitch: false,
   },
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000022",
+    id: demoIds.actors.bowerHealth,
     name: "Bower Health Agent",
     initials: "BH",
     purpose: "Explains collector gaps and delivery posture.",
@@ -118,7 +180,7 @@ const starterAgents = [
     killSwitch: false,
   },
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000023",
+    id: demoIds.actors.kelpieCase,
     name: "Kelpie Case Agent",
     initials: "KC",
     purpose: "Drafts and synchronises formal case context.",
@@ -133,7 +195,7 @@ const starterAgents = [
     killSwitch: false,
   },
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000024",
+    id: demoIds.actors.sentinelQuery,
     name: "Sentinel Query Agent",
     initials: "SQ",
     purpose: "Builds and runs bounded KQL queries.",
@@ -148,7 +210,7 @@ const starterAgents = [
     killSwitch: false,
   },
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000025",
+    id: demoIds.actors.threatIntel,
     name: "Threat Intelligence Agent",
     initials: "TI",
     purpose: "Enriches indicators using approved sources.",
@@ -166,9 +228,9 @@ const starterAgents = [
 
 export const demoAgents = demoMode
   ? starterAgents
-  : [
+  : ([
       {
-        id: "018f55d8-c4c7-7c3e-88ef-000000000020",
+        id: starterIds.actors.triage,
         name: "Alfie",
         initials: "AL",
         purpose:
@@ -184,7 +246,7 @@ export const demoAgents = demoMode
         killSwitch: false,
       },
       {
-        id: "018f55d8-c4c7-7c3e-88ef-000000000021",
+        id: starterIds.actors.tawnyHunt,
         name: "Jessie",
         initials: "JE",
         purpose:
@@ -204,7 +266,7 @@ export const demoAgents = demoMode
         killSwitch: false,
       },
       {
-        id: "018f55d8-c4c7-7c3e-88ef-000000000025",
+        id: starterIds.actors.threatIntel,
         name: "Parker",
         initials: "PA",
         purpose:
@@ -219,18 +281,90 @@ export const demoAgents = demoMode
         successRate: "—",
         killSwitch: false,
       },
-    ] as const;
+    ] as const);
 
 const demoRoomRows = [
-  { slug: "soc-operations", name: "soc-operations", topic: "Daily coordination, shift handover and operational updates", unread: 8, mentions: 2, type: "operations", favourite: true },
-  { slug: "alerts", name: "alerts", topic: "Incoming security signals and triage discussion", unread: 12, mentions: 3, type: "system", favourite: true },
-  { slug: "active-incidents", name: "active-incidents", topic: "Coordination for active security incidents", unread: 4, mentions: 1, type: "incident", favourite: true },
-  { slug: "threat-intelligence", name: "threat-intelligence", topic: "Indicator enrichment and intelligence sharing", unread: 0, mentions: 0, type: "operations", favourite: false },
-  { slug: "detection-engineering", name: "detection-engineering", topic: "Detection proposals, reviews and releases", unread: 3, mentions: 0, type: "engineering", favourite: false },
-  { slug: "endpoint-security", name: "endpoint-security", topic: "Tawny detections, endpoint hunts and response", unread: 0, mentions: 0, type: "operations", favourite: false },
-  { slug: "bower-telemetry-health", name: "bower-telemetry-health", topic: "Collector posture, source coverage and delivery health", unread: 1, mentions: 0, type: "system", favourite: false },
-  { slug: "incident-KP-2026-0042", name: "incident-KP-2026-0042", topic: "Malicious PowerShell — credential access", unread: 6, mentions: 2, type: "incident", favourite: true },
-  { slug: "investigation-suspicious-powershell", name: "investigation-suspicious-powershell", topic: "Correlating Bower identity signals with Tawny endpoint activity", unread: 5, mentions: 1, type: "investigation", favourite: true },
+  {
+    slug: "soc-operations",
+    name: "soc-operations",
+    topic: "Daily coordination, shift handover and operational updates",
+    unread: 8,
+    mentions: 2,
+    type: "operations",
+    favourite: true,
+  },
+  {
+    slug: "alerts",
+    name: "alerts",
+    topic: "Incoming security signals and triage discussion",
+    unread: 12,
+    mentions: 3,
+    type: "system",
+    favourite: true,
+  },
+  {
+    slug: "active-incidents",
+    name: "active-incidents",
+    topic: "Coordination for active security incidents",
+    unread: 4,
+    mentions: 1,
+    type: "incident",
+    favourite: true,
+  },
+  {
+    slug: "threat-intelligence",
+    name: "threat-intelligence",
+    topic: "Indicator enrichment and intelligence sharing",
+    unread: 0,
+    mentions: 0,
+    type: "operations",
+    favourite: false,
+  },
+  {
+    slug: "detection-engineering",
+    name: "detection-engineering",
+    topic: "Detection proposals, reviews and releases",
+    unread: 3,
+    mentions: 0,
+    type: "engineering",
+    favourite: false,
+  },
+  {
+    slug: "endpoint-security",
+    name: "endpoint-security",
+    topic: "Tawny detections, endpoint hunts and response",
+    unread: 0,
+    mentions: 0,
+    type: "operations",
+    favourite: false,
+  },
+  {
+    slug: "bower-telemetry-health",
+    name: "bower-telemetry-health",
+    topic: "Collector posture, source coverage and delivery health",
+    unread: 1,
+    mentions: 0,
+    type: "system",
+    favourite: false,
+  },
+  {
+    slug: "incident-KP-2026-0042",
+    name: "incident-KP-2026-0042",
+    topic: "Malicious PowerShell — credential access",
+    unread: 6,
+    mentions: 2,
+    type: "incident",
+    favourite: true,
+  },
+  {
+    slug: "investigation-suspicious-powershell",
+    name: "investigation-suspicious-powershell",
+    topic: "Correlating Bower identity signals with Tawny endpoint activity",
+    unread: 5,
+    mentions: 1,
+    type: "investigation",
+    favourite: true,
+  },
 ] as const;
 
 export const demoRooms = demoMode
@@ -272,6 +406,14 @@ const demoDirectRoomRows = [
     presence: "away",
     agent: true,
   },
+  {
+    slug: "dm-parker",
+    name: "Parker",
+    topic: "Operational reports and executive briefings",
+    initials: "PA",
+    presence: "online",
+    agent: true,
+  },
 ] as const;
 
 export const demoDirectRooms = demoMode
@@ -303,22 +445,24 @@ export const demoDirectRooms = demoMode
       },
     ] as const);
 
+const activeIds = demoMode ? demoIds : starterIds;
+
 export const roomIdBySlug: Record<string, string> = {
-  "soc-operations": "018f55d8-c4c7-7c3e-88ef-000000000100",
-  "active-incidents": "018f55d8-c4c7-7c3e-88ef-000000000101",
-  "threat-intelligence": "018f55d8-c4c7-7c3e-88ef-000000000102",
-  "detection-engineering": "018f55d8-c4c7-7c3e-88ef-000000000103",
-  "endpoint-security": "018f55d8-c4c7-7c3e-88ef-000000000104",
-  "bower-telemetry-health": "018f55d8-c4c7-7c3e-88ef-000000000105",
-  "incident-KP-2026-0042": "018f55d8-c4c7-7c3e-88ef-000000000106",
-  "investigation-suspicious-powershell": "018f55d8-c4c7-7c3e-88ef-000000000107",
-  alerts: "018f55d8-c4c7-7c3e-88ef-000000000108",
-  "dm-maya-chen": "018f55d8-c4c7-7c3e-88ef-000000000109",
-  "dm-triage-agent": "018f55d8-c4c7-7c3e-88ef-000000000110",
-  "dm-tawny-hunt-agent": "018f55d8-c4c7-7c3e-88ef-000000000111",
-  "dm-alfie": "018f55d8-c4c7-7c3e-88ef-000000000110",
-  "dm-jessie": "018f55d8-c4c7-7c3e-88ef-000000000111",
-  "dm-parker": "018f55d8-c4c7-7c3e-88ef-000000000112",
+  "soc-operations": activeIds.rooms.soc,
+  "active-incidents": activeIds.rooms.activeIncidents,
+  "threat-intelligence": activeIds.rooms.threatIntel,
+  "detection-engineering": activeIds.rooms.detection,
+  "endpoint-security": activeIds.rooms.endpoint,
+  "bower-telemetry-health": activeIds.rooms.bower,
+  "incident-KP-2026-0042": activeIds.rooms.incident,
+  "investigation-suspicious-powershell": activeIds.rooms.investigation,
+  alerts: activeIds.rooms.alerts,
+  "dm-maya-chen": activeIds.rooms.mayaDirect,
+  "dm-triage-agent": activeIds.rooms.triageDirect,
+  "dm-tawny-hunt-agent": activeIds.rooms.tawnyDirect,
+  "dm-alfie": activeIds.rooms.triageDirect,
+  "dm-jessie": activeIds.rooms.tawnyDirect,
+  "dm-parker": activeIds.rooms.parkerDirect,
 };
 
 const demoAlertRows = [
@@ -392,7 +536,7 @@ const demoAlertRows = [
 export const demoAlerts = demoMode ? demoAlertRows : [];
 
 export const activeInvestigation = {
-  id: "018f55d8-c4c7-7c3e-88ef-000000000200",
+  id: activeIds.investigation,
   number: "INV-2026-0178",
   title: "Legacy portal credential access and suspicious PowerShell",
   severity: "critical" as Severity,
@@ -410,7 +554,8 @@ export const activeInvestigation = {
   hypotheses: [
     {
       id: "HYP-12",
-      statement: "Stolen portal credentials were used before endpoint execution.",
+      statement:
+        "Stolen portal credentials were used before endpoint execution.",
       status: "supported",
       confidence: 84,
       support: 4,
@@ -499,7 +644,7 @@ const demoRoomTimeline = [
     body: "INV-2026-0178 created from ALT-2026-1041 and ALT-2026-1042.",
   },
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000701",
+    id: demoIds.messages.mayaParent,
     type: "human",
     author: "Maya Chen",
     initials: "MC",
@@ -543,7 +688,7 @@ const demoRoomTimeline = [
     meta: "FND-87 · 5 evidence references · human reviewed",
   },
   {
-    id: "018f55d8-c4c7-7c3e-88ef-000000000705",
+    id: demoIds.messages.priyaParent,
     type: "human",
     author: "Priya Nair",
     initials: "PN",
@@ -791,9 +936,23 @@ export const integrationData = {
     ],
     rows: [
       ["legacy-portal-au-01", "Active", "12 s ago", "0", "Healthy", "3 / 3"],
-      ["legacy-finance-au-02", "Active", "34 min ago", "284", "Degraded", "4 / 5"],
+      [
+        "legacy-finance-au-02",
+        "Active",
+        "34 min ago",
+        "284",
+        "Degraded",
+        "4 / 5",
+      ],
       ["customer-api-au-01", "Active", "18 s ago", "0", "Healthy", "6 / 6"],
-      ["warehouse-erp-au-01", "Pending", "Never", "0", "Awaiting approval", "0 / 4"],
+      [
+        "warehouse-erp-au-01",
+        "Pending",
+        "Never",
+        "0",
+        "Awaiting approval",
+        "0 / 4",
+      ],
     ],
   },
   tawny: {
@@ -810,10 +969,31 @@ export const integrationData = {
       ["Actions pending", "1"],
     ],
     rows: [
-      ["WS-1042", "Online", "12 s ago", "Windows 11", "High", "Isolation pending"],
+      [
+        "WS-1042",
+        "Online",
+        "12 s ago",
+        "Windows 11",
+        "High",
+        "Isolation pending",
+      ],
       ["WS-1098", "Online", "8 s ago", "Windows 11", "Medium", "No action"],
-      ["SRV-FIN-02", "Online", "21 s ago", "Windows Server 2022", "Low", "No action"],
-      ["LAP-2041", "Offline", "2 h ago", "macOS 15", "Informational", "No action"],
+      [
+        "SRV-FIN-02",
+        "Online",
+        "21 s ago",
+        "Windows Server 2022",
+        "Low",
+        "No action",
+      ],
+      [
+        "LAP-2041",
+        "Offline",
+        "2 h ago",
+        "macOS 15",
+        "Informational",
+        "No action",
+      ],
     ],
   },
   kelpie: {
@@ -830,10 +1010,38 @@ export const integrationData = {
       ["Last sync", "42 s"],
     ],
     rows: [
-      ["KP-2026-0042", "Credential access and endpoint execution", "Containment", "Critical", "Priya Nair", "2 min ago"],
-      ["KP-2026-0039", "Exposed cloud service principal", "Investigation", "High", "Jordan Blake", "14 min ago"],
-      ["KP-2026-0037", "Suspicious mailbox forwarding rule", "Monitoring", "Medium", "Maya Chen", "1 h ago"],
-      ["KP-2026-0033", "Public storage container", "Resolved", "Low", "Daniel Brooks", "Yesterday"],
+      [
+        "KP-2026-0042",
+        "Credential access and endpoint execution",
+        "Containment",
+        "Critical",
+        "Priya Nair",
+        "2 min ago",
+      ],
+      [
+        "KP-2026-0039",
+        "Exposed cloud service principal",
+        "Investigation",
+        "High",
+        "Jordan Blake",
+        "14 min ago",
+      ],
+      [
+        "KP-2026-0037",
+        "Suspicious mailbox forwarding rule",
+        "Monitoring",
+        "Medium",
+        "Maya Chen",
+        "1 h ago",
+      ],
+      [
+        "KP-2026-0033",
+        "Public storage container",
+        "Resolved",
+        "Low",
+        "Daniel Brooks",
+        "Yesterday",
+      ],
     ],
   },
 } as const;
@@ -843,19 +1051,22 @@ const demoSearchResults = [
     group: "Messages",
     title: "Encoded PowerShell retrieved second-stage content",
     context: "#investigation-suspicious-powershell · Tawny Hunt Agent",
-    snippet: "Found a PowerShell process tree, two outbound connections, and one file write…",
+    snippet:
+      "Found a PowerShell process tree, two outbound connections, and one file write…",
   },
   {
     group: "Alerts",
     title: "ALT-2026-1042 · Suspicious PowerShell with encoded command",
     context: "Tawny · critical · WS-1042",
-    snippet: "Sigma rule sigma-123 matched powershell.exe with encoded command line.",
+    snippet:
+      "Sigma rule sigma-123 matched powershell.exe with encoded command line.",
   },
   {
     group: "Investigations",
     title: "INV-2026-0178 · Legacy portal credential access",
     context: "Awaiting approval · Maya Chen",
-    snippet: "Bower authentication failures and Tawny endpoint activity correlate on jsmith…",
+    snippet:
+      "Bower authentication failures and Tawny endpoint activity correlate on jsmith…",
   },
   {
     group: "Cases",
@@ -867,7 +1078,8 @@ const demoSearchResults = [
     group: "Findings",
     title: "FND-87 · Encoded PowerShell retrieved content",
     context: "94% confidence · 5 evidence references",
-    snippet: "Contacted cdn-auth-check.example and wrote update.dat before execution.",
+    snippet:
+      "Contacted cdn-auth-check.example and wrote update.dat before execution.",
   },
   {
     group: "Evidence",
