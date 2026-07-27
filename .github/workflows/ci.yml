@@ -226,11 +226,25 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           sbom-path: muster-sbom.cdx.json
           push-to-registry: true
+      - name: Verify anonymous staging pull
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          public_image="${{ steps.image.outputs.build_ref }}"
+          docker logout "$REGISTRY" || true
+          docker pull "$public_image"
+          docker image inspect "$public_image" \
+            --format '{{.Os}}/{{.Architecture}}' | grep -x 'linux/amd64'
+          docker buildx imagetools inspect "$public_image" --raw |
+            ./scripts/verify-image-platform.sh
 
   promote:
     if: github.event_name == 'push'
     needs: [container, release-security]
     runs-on: ubuntu-24.04
+    concurrency:
+      group: muster-release-tags-${{ github.repository }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -260,21 +274,28 @@ jobs:
         env:
           RELEASE_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
+          promotion_policy() {
+            case "${1##*:}" in
+              latest) printf 'movable\n' ;;
+              "sha-${GITHUB_SHA}" | v*) printf 'immutable\n' ;;
+              *)
+                printf 'Unexpected release tag: %s\n' "$1" >&2
+                return 1
+                ;;
+            esac
+          }
           while IFS= read -r tag; do
             [[ -n "$tag" ]] || continue
-            docker buildx imagetools create \
-              --tag "$tag" "${IMAGE_REF}@${IMAGE_DIGEST}"
+            policy="$(promotion_policy "$tag")"
+            ./scripts/promote-image-tag.sh \
+              "$tag" "${IMAGE_REF}@${IMAGE_DIGEST}" "$policy" check
           done <<< "$RELEASE_TAGS"
-      - name: Verify anonymous public pull
-        shell: bash
-        run: |
-          public_image="${IMAGE_REF}:sha-${GITHUB_SHA}"
-          docker logout "$REGISTRY" || true
-          docker pull "$public_image"
-          docker image inspect "$public_image" \
-            --format '{{.Os}}/{{.Architecture}}' | grep -x 'linux/amd64'
-          docker buildx imagetools inspect "$public_image" --raw |
-            ./scripts/verify-image-platform.sh
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] || continue
+            policy="$(promotion_policy "$tag")"
+            ./scripts/promote-image-tag.sh \
+              "$tag" "${IMAGE_REF}@${IMAGE_DIGEST}" "$policy" apply
+          done <<< "$RELEASE_TAGS"
       - name: Publication summary
         run: |
           {

@@ -8,11 +8,16 @@ GHCR pull after logout.
 
 The container job has an explicit `needs: quality` dependency. It pushes only a
 run-scoped staging tag, then performs Trivy, SBOM, checksum, attestation, and OCI
-platform verification against that digest. The security workflow is reusable:
-CI invokes it for the same commit, while its own weekly schedule remains
-available. A separate promotion job needs both the verified container and
-same-commit security jobs before creating `latest`, version, or SHA release
-tags.
+platform verification against that digest. It also logs out and proves the
+run-scoped staging tag is anonymously pullable before promotion. The security
+workflow is reusable: CI invokes it for the same commit, while its own weekly
+schedule remains available. A separate promotion job needs both the verified
+container and same-commit security jobs before creating release tags.
+
+Full-SHA and version tags are write-once. Promotion creates either tag only
+when absent, does nothing when it already resolves to the verified digest, and
+fails when it resolves elsewhere. A serialized preflight checks every release
+tag before mutation. Only `latest` may move to a newer verified digest.
 
 Before the first release, make the GitHub Container Registry package public in
 its package settings. CI deliberately logs out before pulling; it fails until

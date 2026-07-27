@@ -19,7 +19,7 @@
     "test:e2e:homelab": "playwright test --config=playwright.homelab.config.ts",
     "test:homelab-installer": "bash scripts/test-install-homelab.sh",
     "test:release-homelab": "bash tests/homelab/install-homelab.test.sh",
-    "test:release-image": "bash tests/homelab/verify-image-platform.test.sh",
+    "test:release-image": "bash tests/homelab/verify-image-platform.test.sh && bash tests/homelab/promote-image-tag.test.sh",
     "contracts:generate": "pnpm --filter @muster/contracts generate",
     "db:generate": "pnpm --filter @muster/database generate",
     "db:migrate": "pnpm --filter @muster/database migrate",
