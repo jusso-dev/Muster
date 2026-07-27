@@ -76,6 +76,7 @@ jobs:
               mc version enable ci/muster-evidence &&
               mc anonymous set none ci/muster-evidence'
       - run: pnpm install --frozen-lockfile
+      - run: pnpm test:release-homelab
       - name: Build database dependencies
         run: pnpm exec turbo build --filter=@muster/database
       - run: pnpm db:migrate
@@ -131,7 +132,7 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag
-            type=sha
+            type=sha,format=long
           labels: |
             org.opencontainers.image.title=Muster
             org.opencontainers.image.description=Shared workspace for human and agent-driven security operations
@@ -155,18 +156,38 @@ jobs:
             --volume /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:0.67.2 image \
             --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL \
-            "${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA::7}"
-      - name: Record immutable image digest
+            "${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}"
+      - name: Generate release SBOM
+        if: github.event_name == 'push'
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: muster-sbom.cdx.json
+          upload-artifact: false
+      - name: Generate pull request SBOM
+        if: github.event_name == 'pull_request'
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          format: cyclonedx-json
+          output-file: muster-sbom.cdx.json
+          upload-artifact: false
+      - name: Record immutable image evidence and checksums
         if: github.event_name == 'push'
         run: |
-          printf '%s  %s\n' "${{ steps.build.outputs.digest }}" \
-            "${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA::7}" > muster-image.sha256
-      - name: Upload immutable image checksum
+          printf '%s\n' \
+            "${REGISTRY}/${IMAGE_NAME}@${{ steps.build.outputs.digest }}" > muster-image.txt
+          sha256sum muster-sbom.cdx.json muster-image.txt > SHA256SUMS
+      - name: Upload release evidence
         if: github.event_name == 'push'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: muster-image-sha256
-          path: muster-image.sha256
+          name: muster-release-evidence
+          path: |
+            muster-sbom.cdx.json
+            muster-image.txt
+            SHA256SUMS
       - name: Verify container starts
         if: github.event_name == 'pull_request'
         shell: bash
@@ -180,15 +201,31 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+      - name: Attest published image SBOM
+        if: github.event_name == 'push'
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: muster-sbom.cdx.json
+          push-to-registry: true
       - name: Verify anonymous public pull
         if: github.event_name == 'push'
         shell: bash
         run: |
-          public_image="${REGISTRY}/${IMAGE_NAME,,}:sha-${GITHUB_SHA::7}"
-          docker logout "$REGISTRY"
+          public_image="${REGISTRY}/${IMAGE_NAME,,}:sha-${GITHUB_SHA}"
+          docker logout "$REGISTRY" || true
           docker pull "$public_image"
           docker image inspect "$public_image" \
             --format '{{.Os}}/{{.Architecture}}' | grep -x 'linux/amd64'
+          manifest="$(docker buildx imagetools inspect "$public_image" --raw)"
+          if jq -e '.manifests' >/dev/null <<<"$manifest"; then
+            jq -e '
+              .manifests | length == 1 and
+              .[0].platform.os == "linux" and
+              .[0].platform.architecture == "amd64"
+            ' >/dev/null <<<"$manifest"
+          fi
       - name: Publication summary
         if: github.event_name == 'push'
         run: |
