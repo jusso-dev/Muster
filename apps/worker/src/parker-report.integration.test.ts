@@ -118,7 +118,10 @@ describeIntegration("Parker asynchronous report execution", () => {
       idempotencyKey: `test:parker-run:${runId}`,
     });
 
-    await processParkerReport(organisationId, runId, newId(), false);
+    await Promise.all([
+      processParkerReport(organisationId, runId, newId(), false),
+      processParkerReport(organisationId, runId, newId(), true),
+    ]);
     await processParkerReport(organisationId, runId, newId(), false);
 
     const [run] = await db

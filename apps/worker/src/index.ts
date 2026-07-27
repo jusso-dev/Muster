@@ -469,6 +469,9 @@ async function processReportEmail(
     const manifest = ReportManifestSchema.parse(report.manifest);
     const text = manifest.narrative.slice(0, 10_000);
     try {
+      if (manifest.classification !== "internal") {
+        throw new Error("Report classification is not approved for email");
+      }
       const transport = nodemailer.createTransport({
         host,
         port: Number(process.env.SMTP_PORT ?? 587),
@@ -492,6 +495,9 @@ async function processReportEmail(
         subject: `Muster ${manifest.audience} report`.slice(0, 160),
         text,
       });
+      if (sent.accepted.length === 0 || sent.rejected.length > 0) {
+        throw new Error("SMTP rejected the report recipient");
+      }
       await db.transaction(async (tx) => {
         await tx
           .update(schema.reportDeliveries)
@@ -552,6 +558,16 @@ async function processReportEmail(
               eq(schema.reportDeliveries.organisationId, organisationId),
               eq(schema.reportDeliveries.id, deliveryId),
               eq(schema.reportDeliveries.status, "queued"),
+            ),
+          );
+        await tx
+          .update(schema.approvals)
+          .set({ status: "failed", executedAt: new Date() })
+          .where(
+            and(
+              eq(schema.approvals.organisationId, organisationId),
+              eq(schema.approvals.id, delivery.approvalId),
+              eq(schema.approvals.status, "approved"),
             ),
           );
         await appendAuditEvent(tx, {

@@ -513,8 +513,13 @@ export class ParkerReportDomainService {
         );
       }
       const request = z
-        .object({ reportId: z.uuid(), taskId: z.uuid() })
+        .object({
+          reportId: z.uuid(),
+          taskId: z.uuid(),
+          input: z.object({ roomId: z.uuid() }),
+        })
         .parse(existing.request);
+      await this.requireRoomMembership(subject, request.input.roomId);
       return {
         id: request.reportId,
         taskId: request.taskId,
@@ -980,34 +985,36 @@ export class ParkerReportDomainService {
           "Email unavailable",
           "Only reviewed reports can be emailed.",
         );
+      if (report.classification !== "internal")
+        throw new ApiProblem(
+          409,
+          "Email unavailable",
+          "Only internal reports may leave Muster through email.",
+        );
       const deliveryId = newId();
       const approvalId = newId();
       const policy = actionApprovalPolicy["report.email.dispatch"];
-      await tx
-        .insert(schema.approvals)
-        .values({
-          id: approvalId,
-          organisationId: subject.organisationId,
-          requestingActorId: subject.actorId,
-          actionType: "report.email.dispatch",
-          target: { deliveryId, reportId },
-          riskSummary: `Emailing reviewed report ${reportId} to ${input.recipient} requires approval.`,
-          expiresAt: new Date(Date.now() + 30 * 60_000),
-          requiredCapability: policy.capability,
-          requiredApprovalCount: policy.approvalCount,
-          idempotencyKey: `parker-email-approval:${input.idempotencyKey}`,
-        });
-      await tx
-        .insert(schema.reportDeliveries)
-        .values({
-          id: deliveryId,
-          organisationId: subject.organisationId,
-          reportId,
-          approvalId,
-          requestedByActorId: subject.actorId,
-          recipient: input.recipient,
-          idempotencyKey: input.idempotencyKey,
-        });
+      await tx.insert(schema.approvals).values({
+        id: approvalId,
+        organisationId: subject.organisationId,
+        requestingActorId: subject.actorId,
+        actionType: "report.email.dispatch",
+        target: { deliveryId, reportId },
+        riskSummary: `Emailing reviewed report ${reportId} to ${input.recipient} requires approval.`,
+        expiresAt: new Date(Date.now() + 30 * 60_000),
+        requiredCapability: policy.capability,
+        requiredApprovalCount: policy.approvalCount,
+        idempotencyKey: `parker-email-approval:${input.idempotencyKey}`,
+      });
+      await tx.insert(schema.reportDeliveries).values({
+        id: deliveryId,
+        organisationId: subject.organisationId,
+        reportId,
+        approvalId,
+        requestedByActorId: subject.actorId,
+        recipient: input.recipient,
+        idempotencyKey: input.idempotencyKey,
+      });
       await appendAuditEvent(tx, {
         organisationId: subject.organisationId,
         actorId: subject.actorId,
@@ -1083,19 +1090,17 @@ export class ParkerReportDomainService {
         };
       const id = newId();
       const nextRunAt = nextParkerScheduleRun(input.cadence);
-      await tx
-        .insert(schema.reportSchedules)
-        .values({
-          id,
-          organisationId: subject.organisationId,
-          roomId: input.roomId,
-          createdByActorId: subject.actorId,
-          cadence: input.cadence,
-          timezone: input.timezone,
-          audience: input.audience,
-          nextRunAt,
-          idempotencyKey: input.idempotencyKey,
-        });
+      await tx.insert(schema.reportSchedules).values({
+        id,
+        organisationId: subject.organisationId,
+        roomId: input.roomId,
+        createdByActorId: subject.actorId,
+        cadence: input.cadence,
+        timezone: input.timezone,
+        audience: input.audience,
+        nextRunAt,
+        idempotencyKey: input.idempotencyKey,
+      });
       await appendAuditEvent(tx, {
         organisationId: subject.organisationId,
         actorId: subject.actorId,
