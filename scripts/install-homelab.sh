@@ -104,6 +104,9 @@ elif [[ "$environment_created" == "false" && -n "$existing_origins" ]]; then
 else
   requested_origins="${requested_public_url},http://homelab:${requested_http_port}"
 fi
+upsert_env MUSTER_PUBLIC_URL "$requested_public_url"
+upsert_env MUSTER_HTTP_PORT "$requested_http_port"
+upsert_env AUTH_TRUSTED_ORIGINS "$requested_origins"
 
 if ! grep -q '^MUSTER_AGENT_GATEWAY_TOKEN=' "$env_file"; then
   printf 'MUSTER_AGENT_GATEWAY_TOKEN=%s\n' "$(openssl rand -hex 32)" \
@@ -226,7 +229,7 @@ fi
 printf '%s\n' \
   "Muster is ready: ${MUSTER_PUBLIC_URL:-$requested_public_url}" \
   "Administrator: ${admin_email}" \
-  "External products are local mocks and are labelled as such."
+  "External products use configured governed connectors."
 if [[ "$gateway_authentication" == "authenticated" ]]; then
   printf '%s\n' 'Codex authentication: verified.'
 else
