@@ -31,6 +31,30 @@ if [[ -n "$requested_image" && ! "$requested_image" =~ ^ghcr\.io/jusso-dev/muste
   exit 2
 fi
 
+env_value() {
+  local key="$1"
+  sed -n "s/^${key}=//p" "$env_file" | tail -n 1
+}
+
+upsert_env() {
+  local key="$1"
+  local value="$2"
+  local temporary_file="${env_file}.tmp"
+
+  if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+    printf 'Refusing multiline value for %s.\n' "$key" >&2
+    exit 2
+  fi
+
+  awk -v key="$key" -v value="$value" '
+    index($0, key "=") == 1 { print key "=" value; seen = 1; next }
+    { print }
+    END { if (!seen) print key "=" value }
+  ' "$env_file" > "$temporary_file"
+  mv "$temporary_file" "$env_file"
+}
+
+credentials_created=false
 if [[ ! -f "$env_file" ]]; then
   cp deploy/docker/.env.homelab.example "$env_file"
   postgres_password="$(openssl rand -hex 24)"
@@ -58,11 +82,16 @@ if [[ ! -f "$env_file" ]]; then
     printf 'MUSTER_LOCAL_ADMIN_PASSWORD=%s\n' "$admin_password"
   } >> "$env_file"
   chmod 600 "$env_file"
+  credentials_created=true
 fi
 
-if ! grep -q '^AUTH_TRUSTED_ORIGINS=' "$env_file"; then
-  printf 'AUTH_TRUSTED_ORIGINS=%s,http://homelab:%s\n' \
-    "$requested_public_url" "$requested_http_port" >> "$env_file"
+if [[ -z "$(env_value MUSTER_LOCAL_ADMIN_EMAIL)" ]]; then
+  upsert_env MUSTER_LOCAL_ADMIN_EMAIL "${MUSTER_LOCAL_ADMIN_EMAIL:-admin@muster.local}"
+  credentials_created=true
+fi
+if [[ -z "$(env_value MUSTER_LOCAL_ADMIN_PASSWORD)" ]]; then
+  upsert_env MUSTER_LOCAL_ADMIN_PASSWORD "Muster!$(openssl rand -hex 12)"
+  credentials_created=true
 fi
 
 if ! grep -q '^MUSTER_AGENT_GATEWAY_TOKEN=' "$env_file"; then
@@ -131,28 +160,52 @@ for external_network in tawny_default kelpie_default; do
   fi
 done
 
+http_port="$MUSTER_HTTP_PORT"
+admin_email="$MUSTER_LOCAL_ADMIN_EMAIL"
+admin_password="$MUSTER_LOCAL_ADMIN_PASSWORD"
+
 docker compose --env-file "$env_file" -f "$compose_file" pull
 docker compose --env-file "$env_file" -f "$compose_file" up -d
 
-health_url="http://127.0.0.1:${MUSTER_HTTP_PORT:-3004}/api/v1/health"
-for attempt in $(seq 1 60); do
-  if curl --fail --silent "$health_url" >/dev/null; then
-    break
-  fi
-  if [[ "$attempt" == "60" ]]; then
-    docker compose --env-file "$env_file" -f "$compose_file" ps
-    exit 1
-  fi
-  sleep 3
-done
+wait_for_endpoint() {
+  local endpoint="$1"
+  local label="$2"
+  local attempt
+
+  for attempt in $(seq 1 60); do
+    if curl --fail --silent "$endpoint" >/dev/null; then
+      return 0
+    fi
+    if [[ "$attempt" == "60" ]]; then
+      printf '%s failed after waiting for 180 seconds.\n' "$label" >&2
+      docker compose --env-file "$env_file" -f "$compose_file" ps
+      return 1
+    fi
+    sleep 3
+  done
+}
+
+base_url="http://127.0.0.1:${http_port}"
+wait_for_endpoint "${base_url}/api/v1/health" "Health check"
+wait_for_endpoint "${base_url}/api/v1/ready" "Readiness check"
+
+gateway_authentication="$(
+  docker compose --env-file "$env_file" -f "$compose_file" exec -T agent-gateway \
+    /nodejs/bin/node -e '
+      fetch("http://127.0.0.1:3002/ready")
+        .then((response) => response.json())
+        .then((body) => process.stdout.write(body.authenticated === true ? "authenticated" : "authentication_required"))
+        .catch(() => process.exit(1));
+    ' 2>/dev/null || true
+)"
 
 signup_status="$(
   curl --silent \
     --output /dev/null \
     --write-out '%{http_code}' \
     -H "content-type: application/json" \
-    -d "{\"name\":\"Muster Administrator\",\"email\":\"${MUSTER_LOCAL_ADMIN_EMAIL}\",\"password\":\"${MUSTER_LOCAL_ADMIN_PASSWORD}\"}" \
-    "http://127.0.0.1:${MUSTER_HTTP_PORT:-3004}/api/auth/sign-up/email"
+    -d "{\"name\":\"Muster Administrator\",\"email\":\"${admin_email}\",\"password\":\"${admin_password}\"}" \
+    "${base_url}/api/auth/sign-up/email"
 )"
 if [[ "$signup_status" != "200" && "$signup_status" != "201" && "$signup_status" != "422" ]]; then
   printf 'Administrator creation failed with HTTP %s.\n' "$signup_status" >&2
@@ -160,9 +213,15 @@ if [[ "$signup_status" != "200" && "$signup_status" != "201" && "$signup_status"
 fi
 
 printf '%s\n' \
-  "Muster is ready." \
-  "Web: ${MUSTER_PUBLIC_URL}" \
-  "Administrator: ${MUSTER_LOCAL_ADMIN_EMAIL}" \
-  "Password: ${MUSTER_LOCAL_ADMIN_PASSWORD}" \
-  "Codex: copy an authorised auth.json into the private codex-state volume or run the setup profile." \
+  "Muster is ready: ${MUSTER_PUBLIC_URL:-$requested_public_url}" \
+  "Administrator: ${admin_email}" \
   "External products are local mocks and are labelled as such."
+if [[ "$gateway_authentication" == "authenticated" ]]; then
+  printf '%s\n' 'Codex authentication: verified.'
+else
+  printf '%s\n' \
+    "Codex authentication: pending. Run docker compose --env-file .env.homelab -f ${compose_file} --profile setup run --rm codex-login."
+fi
+if [[ "$credentials_created" == "true" ]]; then
+  printf 'New private homelab administrator password: %s\n' "$admin_password"
+fi

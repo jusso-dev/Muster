@@ -34,7 +34,7 @@ x-muster-environment: &muster-environment
   CODEX_HOME: /var/lib/muster/codex
 
 x-muster-service: &muster-service
-  image: ${MUSTER_IMAGE:-ghcr.io/jusso-dev/muster:${MUSTER_VERSION:-latest}}
+  image: ${MUSTER_IMAGE:-ghcr.io/jusso-dev/muster:${MUSTER_VERSION:?Set MUSTER_IMAGE to a reviewed digest or MUSTER_VERSION to an immutable sha tag.}}
   pull_policy: always
   restart: unless-stopped
   environment: *muster-environment
