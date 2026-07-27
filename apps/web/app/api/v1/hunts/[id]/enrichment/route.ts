@@ -30,7 +30,7 @@ export async function POST(
     }
     const result = HuntResultSchema.parse(hunt.result);
     const proposal = result.enrichmentProposal;
-    if (!proposal?.caseId) {
+    if (!proposal || !hunt.linkedCaseId) {
       throw new ApiProblem(
         409,
         "Case link required",
@@ -77,7 +77,7 @@ export async function POST(
       {
         operation: "kelpie.timeline.comment",
         integrationId: kelpie.id,
-        caseId: proposal.caseId,
+        caseId: hunt.linkedCaseId,
         body: [
           proposal.timelineEntry,
           "",

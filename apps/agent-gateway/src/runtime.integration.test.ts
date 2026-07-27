@@ -7,7 +7,11 @@ import {
 } from "@muster/contracts";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { codexOutputSchemaFor, DurableAgentRuntime } from "./runtime.ts";
+import {
+  bindHuntResultToAuthoritativeCase,
+  codexOutputSchemaFor,
+  DurableAgentRuntime,
+} from "./runtime.ts";
 
 const integration = process.env.MUSTER_INTEGRATION_TESTS === "true";
 const describeIntegration = integration ? describe.sequential : describe.skip;
@@ -30,6 +34,50 @@ describe("Codex structured output schema", () => {
         "not a URI",
       ).success,
     ).toBe(false);
+  });
+
+  it("binds enrichment to the authoritative linked case instead of model output", () => {
+    const output = HuntResultSchema.parse({
+      title: "Synthetic hunt",
+      summary: "Synthetic result",
+      question: "What happened?",
+      trainingMode: false,
+      confidence: 0.5,
+      queries: [
+        {
+          source: "Synthetic source",
+          templateKey: "synthetic.query",
+          status: "succeeded",
+          recordCount: 1,
+          evidenceReferences: [],
+          gap: null,
+        },
+      ],
+      observedFacts: [],
+      inferences: [],
+      observables: [],
+      attackMappings: [],
+      evidenceReferences: [],
+      gaps: [],
+      recommendedNextSteps: [],
+      coachingNotes: [],
+      enrichmentProposal: {
+        caseId: "model-drifted-case",
+        finding: "Synthetic finding",
+        timelineEntry: "Synthetic timeline entry",
+        observables: [],
+        evidenceReferences: [],
+      },
+    });
+
+    expect(
+      bindHuntResultToAuthoritativeCase(output, "authoritative-case"),
+    ).toMatchObject({
+      enrichmentProposal: { caseId: "authoritative-case" },
+    });
+    expect(bindHuntResultToAuthoritativeCase(output, null)).toMatchObject({
+      enrichmentProposal: { caseId: null },
+    });
   });
 });
 
@@ -409,6 +457,7 @@ describeIntegration("durable agent runtime", () => {
         agentRunId: run.id,
         taskId,
         roomId,
+        linkedCaseId: "authoritative-kelpie-case",
         requestedByActorId,
         question: "Teach me what observed 192.0.2.40",
         trainingMode: true,
@@ -484,6 +533,7 @@ describeIntegration("durable agent runtime", () => {
       `integration-query:${queryRunId}`,
     );
     expect(output.coachingNotes.length).toBeGreaterThan(0);
+    expect(output.enrichmentProposal?.caseId).toBe("authoritative-kelpie-case");
     expect(JSON.stringify(output)).not.toContain("IGNORE ALL PRIOR");
     expect(JSON.stringify(output)).not.toContain(canary);
     const [hunt, task, message] = await Promise.all([
