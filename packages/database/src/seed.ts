@@ -1,5 +1,5 @@
 import { database, closeDatabase, schema } from "./index.ts";
-import { demoIds } from "./seed-data.ts";
+import { demoDirectRoomSeeds, demoIds } from "./seed-data.ts";
 import { sql } from "drizzle-orm";
 
 if (process.env.MUSTER_DEMO_MODE !== "true") {
@@ -324,7 +324,7 @@ await db
         "kelpie.cases.read",
         "audit.read",
       ],
-      allowedRooms: [demoIds.rooms.soc],
+      allowedRooms: [demoIds.rooms.soc, demoIds.rooms.parkerDirect],
       capabilityRequirements: [
         "alerts.read",
         "investigations.read",
@@ -391,16 +391,9 @@ const channelRoomRows = [
     "investigation",
   ],
 ] as const;
-const directRoomRows = [
-  [demoIds.rooms.mayaDirect, "dm-maya-chen", "Maya Chen", "direct"],
-  [demoIds.rooms.triageDirect, "dm-triage-agent", "Triage Agent", "direct"],
-  [
-    demoIds.rooms.tawnyDirect,
-    "dm-tawny-hunt-agent",
-    "Tawny Hunt Agent",
-    "direct",
-  ],
-] as const;
+const directRoomRows = demoDirectRoomSeeds.map(
+  ({ id, slug, displayName }) => [id, slug, displayName, "direct"] as const,
+);
 const roomRows = [...channelRoomRows, ...directRoomRows] as const;
 await db
   .insert(schema.rooms)
@@ -452,33 +445,14 @@ await db
 await db
   .insert(schema.roomMemberships)
   .values([
-    ...[demoIds.actors.jordan, demoIds.actors.maya].map((actorId) => ({
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.mayaDirect,
-      actorId,
-      membershipRole:
-        actorId === demoIds.actors.jordan
-          ? ("owner" as const)
-          : ("member" as const),
-    })),
-    ...[demoIds.actors.jordan, demoIds.actors.triage].map((actorId) => ({
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.triageDirect,
-      actorId,
-      membershipRole:
-        actorId === demoIds.actors.triage
-          ? ("agent_member" as const)
-          : ("owner" as const),
-    })),
-    ...[demoIds.actors.jordan, demoIds.actors.tawnyHunt].map((actorId) => ({
-      organisationId: demoIds.organisation,
-      roomId: demoIds.rooms.tawnyDirect,
-      actorId,
-      membershipRole:
-        actorId === demoIds.actors.tawnyHunt
-          ? ("agent_member" as const)
-          : ("owner" as const),
-    })),
+    ...demoDirectRoomSeeds.flatMap(({ id: roomId, members }) =>
+      members.map(({ actorId, membershipRole }) => ({
+        organisationId: demoIds.organisation,
+        roomId,
+        actorId,
+        membershipRole,
+      })),
+    ),
   ])
   .onConflictDoNothing();
 

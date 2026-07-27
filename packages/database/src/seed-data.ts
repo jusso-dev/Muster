@@ -51,3 +51,46 @@ export const starterIds = {
 } as const;
 
 export const demoIds = starterIds;
+
+/**
+ * Demonstration-only direct rooms. Keep this list aligned with the seed: the
+ * IDs are consumed by agent allow-lists and room memberships.
+ */
+export const demoDirectRoomSeeds = [
+  {
+    id: demoIds.rooms.mayaDirect,
+    slug: "dm-maya-chen",
+    displayName: "Maya Chen",
+    members: [
+      { actorId: demoIds.actors.jordan, membershipRole: "owner" },
+      { actorId: demoIds.actors.maya, membershipRole: "member" },
+    ],
+  },
+  {
+    id: demoIds.rooms.triageDirect,
+    slug: "dm-triage-agent",
+    displayName: "Triage Agent",
+    members: [
+      { actorId: demoIds.actors.jordan, membershipRole: "owner" },
+      { actorId: demoIds.actors.triage, membershipRole: "agent_member" },
+    ],
+  },
+  {
+    id: demoIds.rooms.tawnyDirect,
+    slug: "dm-tawny-hunt-agent",
+    displayName: "Tawny Hunt Agent",
+    members: [
+      { actorId: demoIds.actors.jordan, membershipRole: "owner" },
+      { actorId: demoIds.actors.tawnyHunt, membershipRole: "agent_member" },
+    ],
+  },
+  {
+    id: demoIds.rooms.parkerDirect,
+    slug: "dm-parker",
+    displayName: "Parker",
+    members: [
+      { actorId: demoIds.actors.jordan, membershipRole: "owner" },
+      { actorId: demoIds.actors.threatIntel, membershipRole: "agent_member" },
+    ],
+  },
+] as const;
