@@ -7,6 +7,7 @@ import {
   problemResponse,
   requestTraceId,
 } from "@/lib/api-context";
+import { agentGatewayHeaders } from "@/lib/agent-gateway";
 import { settleAgentRun, type AgentRunResult } from "@/lib/task-domain";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,10 @@ export async function GET(
           while (!request.signal.aborted) {
             const gateway = await fetch(
               `${process.env.AGENT_GATEWAY_URL ?? "http://agent-gateway:3002"}/v1/runs/${encodeURIComponent(task.agentRunId!)}`,
-              { signal: AbortSignal.timeout(5_000) },
+              {
+                headers: agentGatewayHeaders(subject.organisationId),
+                signal: AbortSignal.timeout(5_000),
+              },
             );
             const result = (await gateway.json()) as AgentRunResult & {
               status: "running" | "completed" | "failed" | "cancelled";

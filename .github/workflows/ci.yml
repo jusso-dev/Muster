@@ -76,6 +76,8 @@ jobs:
               mc version enable ci/muster-evidence &&
               mc anonymous set none ci/muster-evidence'
       - run: pnpm install --frozen-lockfile
+      - run: pnpm test:release-homelab
+      - run: pnpm test:release-image
       - name: Build database dependencies
         run: pnpm exec turbo build --filter=@muster/database
       - run: pnpm db:migrate
@@ -103,8 +105,18 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  release-security:
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/security.yml
+
   container:
+    needs: quality
     runs-on: ubuntu-24.04
+    outputs:
+      image_ref: ${{ steps.image.outputs.ref }}
+      image_digest: ${{ steps.build.outputs.digest }}
     permissions:
       contents: read
       packages: write
@@ -112,10 +124,23 @@ jobs:
       id-token: write
     env:
       REGISTRY: ghcr.io
-      IMAGE_NAME: ${{ github.repository }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Normalize image reference
+        id: image
+        shell: bash
+        run: |
+          image_ref="${REGISTRY}/${GITHUB_REPOSITORY,,}"
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            build_ref="${image_ref}:staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          else
+            build_ref="${image_ref}:verify-${GITHUB_SHA}"
+          fi
+          {
+            printf 'ref=%s\n' "$image_ref"
+            printf 'build_ref=%s\n' "$build_ref"
+          } >> "$GITHUB_OUTPUT"
       - name: Log in to GitHub Container Registry
         if: github.event_name == 'push'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -123,19 +148,6 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Generate image tags and OCI labels
-        id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=tag
-            type=sha
-          labels: |
-            org.opencontainers.image.title=Muster
-            org.opencontainers.image.description=Shared workspace for human and agent-driven security operations
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         id: build
         with:
@@ -143,37 +155,149 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           load: ${{ github.event_name == 'pull_request' }}
           platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          provenance: ${{ github.event_name == 'push' && 'mode=max' || 'false' }}
-          sbom: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.image.outputs.build_ref }}
+          labels: |
+            org.opencontainers.image.title=Muster
+            org.opencontainers.image.description=Shared workspace for human and agent-driven security operations
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Scan built image with Trivy
+        run: |
+          docker run --rm \
+            --volume /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.67.2 image \
+            --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL \
+            "${{ steps.image.outputs.build_ref }}"
+      - name: Generate release SBOM
+        if: github.event_name == 'push'
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ steps.image.outputs.ref }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: muster-sbom.cdx.json
+          upload-artifact: false
+      - name: Generate pull request SBOM
+        if: github.event_name == 'pull_request'
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ steps.image.outputs.build_ref }}
+          format: cyclonedx-json
+          output-file: muster-sbom.cdx.json
+          upload-artifact: false
+      - name: Verify staged OCI application platform
+        if: github.event_name == 'push'
+        run: |
+          docker buildx imagetools inspect \
+            "${{ steps.image.outputs.ref }}@${{ steps.build.outputs.digest }}" --raw |
+            ./scripts/verify-image-platform.sh
+      - name: Record immutable image evidence and checksums
+        if: github.event_name == 'push'
+        run: |
+          printf '%s\n' \
+            "${{ steps.image.outputs.ref }}@${{ steps.build.outputs.digest }}" > muster-image.txt
+          sha256sum muster-sbom.cdx.json muster-image.txt > SHA256SUMS
+      - name: Upload release evidence
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: muster-release-evidence
+          path: |
+            muster-sbom.cdx.json
+            muster-image.txt
+            SHA256SUMS
       - name: Verify container starts
         if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          image_ref="${REGISTRY}/${IMAGE_NAME,,}:sha-${GITHUB_SHA::7}"
-          docker image inspect "$image_ref"
-      - name: Attest published image
+        run: docker image inspect "${{ steps.image.outputs.build_ref }}"
+      - name: Attest published image provenance
         if: github.event_name == 'push'
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-name: ${{ steps.image.outputs.ref }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
-      - name: Verify anonymous public pull
+      - name: Attest published image SBOM
+        if: github.event_name == 'push'
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-name: ${{ steps.image.outputs.ref }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: muster-sbom.cdx.json
+          push-to-registry: true
+      - name: Verify anonymous staging pull
         if: github.event_name == 'push'
         shell: bash
         run: |
-          public_image="${REGISTRY}/${IMAGE_NAME,,}:sha-${GITHUB_SHA::7}"
-          docker logout "$REGISTRY"
+          public_image="${{ steps.image.outputs.build_ref }}"
+          docker logout "$REGISTRY" || true
           docker pull "$public_image"
+          docker image inspect "$public_image" \
+            --format '{{.Os}}/{{.Architecture}}' | grep -x 'linux/amd64'
+          docker buildx imagetools inspect "$public_image" --raw |
+            ./scripts/verify-image-platform.sh
+
+  promote:
+    if: github.event_name == 'push'
+    needs: [container, release-security]
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: muster-release-tags-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_REF: ${{ needs.container.outputs.image_ref }}
+      IMAGE_DIGEST: ${{ needs.container.outputs.image_digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Generate release tags
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ env.IMAGE_REF }}
+          tags: |
+            type=ref,event=tag
+            type=sha,format=long
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote verified digest to release tags
+        env:
+          RELEASE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          promotion_policy() {
+            case "${1##*:}" in
+              "sha-${GITHUB_SHA}" | v*) printf 'immutable\n' ;;
+              *)
+                printf 'Unexpected release tag: %s\n' "$1" >&2
+                return 1
+                ;;
+            esac
+          }
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] || continue
+            policy="$(promotion_policy "$tag")"
+            ./scripts/promote-image-tag.sh \
+              "$tag" "${IMAGE_REF}@${IMAGE_DIGEST}" "$policy" check
+          done <<< "$RELEASE_TAGS"
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] || continue
+            policy="$(promotion_policy "$tag")"
+            ./scripts/promote-image-tag.sh \
+              "$tag" "${IMAGE_REF}@${IMAGE_DIGEST}" "$policy" apply
+          done <<< "$RELEASE_TAGS"
       - name: Publication summary
-        if: github.event_name == 'push'
         run: |
           {
             echo "### Published container"
-            echo "\`${REGISTRY}/${IMAGE_NAME}\`"
+            echo "\`${IMAGE_REF}@${IMAGE_DIGEST}\`"
             echo "The workflow verified an anonymous pull after publication. GHCR visibility is configured once at the package level and retained by subsequent releases."
           } >> "$GITHUB_STEP_SUMMARY"

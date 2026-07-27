@@ -18,13 +18,10 @@ const describeIntegration = integration ? describe.sequential : describe.skip;
 
 describe("Codex structured output schema", () => {
   it("removes unsupported URI formats while preserving authoritative validation", () => {
-    const generated = z.toJSONSchema(
-      AgentStructuredOutputSchemas.HuntResult,
-      {
-        target: "draft-2020-12",
-        io: "output",
-      },
-    );
+    const generated = z.toJSONSchema(AgentStructuredOutputSchemas.HuntResult, {
+      target: "draft-2020-12",
+      io: "output",
+    });
     expect(JSON.stringify(generated)).toContain('"format":"uri"');
     expect(JSON.stringify(codexOutputSchemaFor("HuntResult"))).not.toContain(
       '"format":"uri"',
@@ -172,6 +169,42 @@ describeIntegration("durable agent runtime", () => {
     throw new Error(`Run ${runId} did not reach ${status}`);
   }
 
+  async function directMessageSource(suffix: string) {
+    const [room] = await database()
+      .select({ id: schema.rooms.id })
+      .from(schema.rooms)
+      .innerJoin(
+        schema.roomMemberships,
+        and(
+          eq(schema.roomMemberships.organisationId, organisationId),
+          eq(schema.roomMemberships.roomId, schema.rooms.id),
+          eq(schema.roomMemberships.actorId, agentId),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.rooms.organisationId, organisationId),
+          eq(schema.rooms.roomType, "direct"),
+        ),
+      )
+      .limit(1);
+    if (!room) throw new Error("Seeded agent direct room required");
+    const messageId = newId();
+    await database()
+      .insert(schema.messages)
+      .values({
+        id: messageId,
+        organisationId,
+        roomId: room.id,
+        authorActorId: requestedByActorId,
+        messageType: "text",
+        document: { type: "doc", content: [] },
+        plainText: `Synthetic direct request ${suffix}`,
+        idempotencyKey: `runtime-direct-source:${messageId}`,
+      });
+    return { messageId, roomId: room.id };
+  }
+
   it("recovers an expired lease without duplicating the run", async () => {
     const run = await insertRun("restart");
     const duplicateId = newId();
@@ -229,13 +262,33 @@ describeIntegration("durable agent runtime", () => {
       codexHome: "/tmp/muster-runtime-integration",
     });
     expect(
-      await runtime.cancel(run.id, "Synthetic operator cancellation"),
+      await runtime.cancel(
+        run.id,
+        organisationId,
+        "Synthetic operator cancellation",
+      ),
     ).toBe(true);
     const cancelled = await waitFor(run.id, "cancelled");
     expect(cancelled.cancellationRequestedAt).not.toBeNull();
     expect(cancelled.cancellationReason).toBe(
       "Synthetic operator cancellation",
     );
+  });
+
+  it("scopes run reads and cancellations by organisation", async () => {
+    const run = await insertRun("cross-organisation-guard");
+    const runtime = new DurableAgentRuntime({
+      executionRuntime: "mock",
+      codexHome: "/tmp/muster-runtime-integration",
+    });
+    const otherOrganisationId = newId();
+
+    await expect(runtime.read(run.id, otherOrganisationId)).resolves.toBeNull();
+    await expect(runtime.cancel(run.id, otherOrganisationId)).resolves.toBe(
+      false,
+    );
+    const persisted = await waitFor(run.id, "queued");
+    expect(persisted.organisationId).toBe(organisationId);
   });
 
   it("returns a redacted observer projection without changing the execution record", async () => {
@@ -269,7 +322,7 @@ describeIntegration("durable agent runtime", () => {
       codexHome: "/tmp/muster-runtime-integration",
     });
 
-    const projection = await runtime.read(run.id);
+    const projection = await runtime.read(run.id, organisationId);
     const serialisedProjection = JSON.stringify(projection);
     expect(serialisedProjection).not.toContain(canary);
     expect(serialisedProjection).toContain("[REDACTED]");
@@ -576,5 +629,311 @@ describeIntegration("durable agent runtime", () => {
       agentRunStatus: "completed",
     });
     expect(message?.relatedAgentRunId).toBe(run.id);
+  });
+
+  it("projects a completed direct-message run as one linked room reply", async () => {
+    const source = await directMessageSource("completed");
+    const run = await insertRun("direct-completed", {
+      roomId: source.roomId,
+      request: {
+        kind: "direct_message",
+        sourceMessageId: source.messageId,
+        humanRequest: "Review the synthetic direct request",
+        traceId: `integration-direct-${source.messageId}`,
+      },
+    });
+    const runtime = new DurableAgentRuntime({
+      executionRuntime: "mock",
+      codexHome: "/tmp/muster-runtime-integration",
+      mockDelayMs: 10,
+    });
+    await runtime.dispatch();
+    await waitFor(run.id, "completed");
+    runtime.stop();
+
+    const [replies, outbox] = await Promise.all([
+      database()
+        .select()
+        .from(schema.messages)
+        .where(
+          eq(
+            schema.messages.idempotencyKey,
+            `agent-direct-message-reply:${run.id}`,
+          ),
+        ),
+      database()
+        .select()
+        .from(schema.outboxEvents)
+        .where(
+          eq(
+            schema.outboxEvents.idempotencyKey,
+            `room.message.created:agent-direct-message:${run.id}`,
+          ),
+        ),
+    ]);
+    expect(replies).toHaveLength(1);
+    expect(outbox).toHaveLength(1);
+    const reply = replies[0];
+    expect(reply).toMatchObject({
+      roomId: source.roomId,
+      threadParentId: source.messageId,
+      authorActorId: agentId,
+      messageType: "agent-status",
+      relatedAgentRunId: run.id,
+    });
+    expect(reply?.document).toMatchObject({
+      type: "agent-direct-message-reply",
+      status: "completed",
+      sourceMessageId: source.messageId,
+      agentRunId: run.id,
+      trust: "agent-analysis",
+    });
+    expect(outbox[0]?.aggregateId).toBe(reply?.id);
+  });
+
+  it("projects a failed direct-message run as one linked room reply", async () => {
+    const source = await directMessageSource("failed");
+    const run = await insertRun("direct-failed", {
+      roomId: source.roomId,
+      maximumTokenBudget: 1,
+      request: {
+        kind: "direct_message",
+        sourceMessageId: source.messageId,
+        humanRequest: "Review the synthetic direct request",
+        traceId: `integration-direct-${source.messageId}`,
+      },
+    });
+    const runtime = new DurableAgentRuntime({
+      executionRuntime: "mock",
+      codexHome: "/tmp/muster-runtime-integration",
+      mockDelayMs: 10,
+    });
+    await runtime.dispatch();
+    await waitFor(run.id, "failed");
+    runtime.stop();
+
+    const replies = await database()
+      .select()
+      .from(schema.messages)
+      .where(
+        eq(
+          schema.messages.idempotencyKey,
+          `agent-direct-message-reply:${run.id}`,
+        ),
+      );
+    expect(replies).toHaveLength(1);
+    expect(replies[0]).toMatchObject({
+      roomId: source.roomId,
+      threadParentId: source.messageId,
+      authorActorId: agentId,
+      messageType: "agent-status",
+      relatedAgentRunId: run.id,
+    });
+    expect(replies[0]?.document).toMatchObject({
+      type: "agent-direct-message-reply",
+      status: "failed",
+      sourceMessageId: source.messageId,
+      agentRunId: run.id,
+      failureCode: "token_ceiling",
+    });
+    const outbox = await database()
+      .select()
+      .from(schema.outboxEvents)
+      .where(
+        eq(
+          schema.outboxEvents.idempotencyKey,
+          `room.message.created:agent-direct-message:${run.id}`,
+        ),
+      );
+    expect(outbox).toHaveLength(1);
+  });
+
+  it("projects a direct-message kill-switch failure before execution", async () => {
+    const source = await directMessageSource("kill-switch");
+    const run = await insertRun("direct-kill-switch", {
+      roomId: source.roomId,
+      request: {
+        kind: "direct_message",
+        sourceMessageId: source.messageId,
+        humanRequest: "Review the synthetic direct request",
+        traceId: `integration-direct-${source.messageId}`,
+      },
+    });
+    await database()
+      .update(schema.agentDefinitions)
+      .set({ killSwitch: true })
+      .where(eq(schema.agentDefinitions.id, agentId));
+    const runtime = new DurableAgentRuntime({
+      executionRuntime: "mock",
+      codexHome: "/tmp/muster-runtime-integration",
+      mockDelayMs: 10,
+    });
+    try {
+      await runtime.dispatch();
+      await waitFor(run.id, "failed");
+    } finally {
+      runtime.stop();
+      await database()
+        .update(schema.agentDefinitions)
+        .set({ killSwitch: false })
+        .where(eq(schema.agentDefinitions.id, agentId));
+    }
+
+    const [reply] = await database()
+      .select()
+      .from(schema.messages)
+      .where(
+        eq(
+          schema.messages.idempotencyKey,
+          `agent-direct-message-reply:${run.id}`,
+        ),
+      );
+    expect(reply).toMatchObject({
+      threadParentId: source.messageId,
+      messageType: "agent-status",
+      relatedAgentRunId: run.id,
+    });
+    expect(reply?.document).toMatchObject({
+      status: "failed",
+      failureCode: "agent_kill_switch",
+      sourceMessageId: source.messageId,
+      agentRunId: run.id,
+    });
+  });
+
+  it("projects a cancelled direct-message run exactly once", async () => {
+    const source = await directMessageSource("cancelled");
+    const run = await insertRun("direct-cancelled", {
+      roomId: source.roomId,
+      request: {
+        kind: "direct_message",
+        sourceMessageId: source.messageId,
+        humanRequest: "Review the synthetic direct request",
+        traceId: `integration-direct-${source.messageId}`,
+      },
+    });
+    const runtime = new DurableAgentRuntime({
+      executionRuntime: "mock",
+      codexHome: "/tmp/muster-runtime-integration",
+      mockDelayMs: 10,
+    });
+    expect(
+      await runtime.cancel(
+        run.id,
+        organisationId,
+        "Synthetic operator cancellation",
+      ),
+    ).toBe(true);
+    await waitFor(run.id, "cancelled");
+    runtime.stop();
+
+    const [replies, outbox] = await Promise.all([
+      database()
+        .select()
+        .from(schema.messages)
+        .where(
+          eq(
+            schema.messages.idempotencyKey,
+            `agent-direct-message-reply:${run.id}`,
+          ),
+        ),
+      database()
+        .select()
+        .from(schema.outboxEvents)
+        .where(
+          eq(
+            schema.outboxEvents.idempotencyKey,
+            `room.message.created:agent-direct-message:${run.id}`,
+          ),
+        ),
+    ]);
+    expect(replies).toHaveLength(1);
+    expect(replies[0]).toMatchObject({
+      roomId: source.roomId,
+      threadParentId: source.messageId,
+      authorActorId: agentId,
+      messageType: "agent-status",
+      relatedAgentRunId: run.id,
+    });
+    expect(replies[0]?.document).toMatchObject({
+      status: "cancelled",
+      failureCode: "operator_cancelled",
+      sourceMessageId: source.messageId,
+      agentRunId: run.id,
+    });
+    expect(outbox).toHaveLength(1);
+  });
+
+  it("fails queued direct messages when room authorisation is revoked", async () => {
+    const source = await directMessageSource("revoked-room");
+    const run = await insertRun("direct-revoked-room", {
+      roomId: source.roomId,
+      request: {
+        kind: "direct_message",
+        sourceMessageId: source.messageId,
+        humanRequest: "Review the synthetic direct request",
+        traceId: `integration-direct-${source.messageId}`,
+      },
+    });
+    const [definition] = await database()
+      .select({ allowedRooms: schema.agentDefinitions.allowedRooms })
+      .from(schema.agentDefinitions)
+      .where(eq(schema.agentDefinitions.id, agentId))
+      .limit(1);
+    await database()
+      .update(schema.agentDefinitions)
+      .set({ allowedRooms: [] })
+      .where(eq(schema.agentDefinitions.id, agentId));
+    const runtime = new DurableAgentRuntime({
+      executionRuntime: "mock",
+      codexHome: "/tmp/muster-runtime-integration",
+      mockDelayMs: 10,
+    });
+    try {
+      await runtime.dispatch();
+      const failed = await waitFor(run.id, "failed");
+      expect(failed.failureCode).toBe("direct_message_not_authorised");
+      expect(failed.startedAt).toBeNull();
+    } finally {
+      runtime.stop();
+      await database()
+        .update(schema.agentDefinitions)
+        .set({ allowedRooms: definition?.allowedRooms ?? [] })
+        .where(eq(schema.agentDefinitions.id, agentId));
+    }
+  });
+
+  it("reports inactive agents truthfully before execution", async () => {
+    const source = await directMessageSource("inactive");
+    const run = await insertRun("direct-inactive", {
+      roomId: source.roomId,
+      request: {
+        kind: "direct_message",
+        sourceMessageId: source.messageId,
+        humanRequest: "Review the synthetic direct request",
+        traceId: `integration-direct-${source.messageId}`,
+      },
+    });
+    await database()
+      .update(schema.agentDefinitions)
+      .set({ status: "inactive" })
+      .where(eq(schema.agentDefinitions.id, agentId));
+    const runtime = new DurableAgentRuntime({
+      executionRuntime: "mock",
+      codexHome: "/tmp/muster-runtime-integration",
+      mockDelayMs: 10,
+    });
+    try {
+      await runtime.dispatch();
+      const failed = await waitFor(run.id, "failed");
+      expect(failed.failureCode).toBe("agent_inactive");
+      expect(failed.startedAt).toBeNull();
+    } finally {
+      runtime.stop();
+      await database()
+        .update(schema.agentDefinitions)
+        .set({ status: "active" })
+        .where(eq(schema.agentDefinitions.id, agentId));
+    }
   });
 });

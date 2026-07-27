@@ -181,21 +181,87 @@ describeIntegration("governed agent learning", () => {
       .where(eq(schema.agentRuns.id, sourceRunId));
     if (!source) throw new Error("Source run missing");
     const queuedRunId = newId();
+    const directRunId = newId();
+    const directRoomId = newId();
+    const directMessageId = newId();
+    await database()
+      .insert(schema.rooms)
+      .values({
+        id: directRoomId,
+        organisationId,
+        name: `synthetic-learning-direct-${directRoomId}`,
+        slug: `synthetic-learning-direct-${directRoomId}`,
+        displayName: "Synthetic learning direct room",
+        roomType: "direct",
+        visibility: "private",
+        createdByActorId: actorId,
+      });
+    await database()
+      .insert(schema.roomMemberships)
+      .values([
+        {
+          organisationId,
+          roomId: directRoomId,
+          actorId,
+          membershipRole: "owner",
+        },
+        {
+          organisationId,
+          roomId: directRoomId,
+          actorId: agentId,
+          membershipRole: "agent_member",
+        },
+      ]);
+    await database()
+      .insert(schema.messages)
+      .values({
+        id: directMessageId,
+        organisationId,
+        roomId: directRoomId,
+        authorActorId: actorId,
+        messageType: "text",
+        document: { type: "doc", content: [] },
+        plainText: "Synthetic kill-switch direct request",
+        idempotencyKey: `learning-kill-switch-message:${directMessageId}`,
+      });
     await database()
       .insert(schema.agentRuns)
-      .values({
-        ...source,
-        id: queuedRunId,
-        status: "queued",
-        startedAt: null,
-        completedAt: null,
-        heartbeatAt: null,
-        leaseExpiresAt: null,
-        cancellationRequestedAt: null,
-        cancellationReason: null,
-        progress: { stage: "queued", percent: 0 },
-        idempotencyKey: `learning-kill-switch:${queuedRunId}`,
-      });
+      .values([
+        {
+          ...source,
+          id: queuedRunId,
+          status: "queued",
+          startedAt: null,
+          completedAt: null,
+          heartbeatAt: null,
+          leaseExpiresAt: null,
+          cancellationRequestedAt: null,
+          cancellationReason: null,
+          progress: { stage: "queued", percent: 0 },
+          idempotencyKey: `learning-kill-switch:${queuedRunId}`,
+        },
+        {
+          ...source,
+          id: directRunId,
+          roomId: directRoomId,
+          trigger: "direct_message",
+          status: "queued",
+          request: {
+            kind: "direct_message",
+            sourceMessageId: directMessageId,
+            humanRequest: "Synthetic kill-switch direct request",
+            traceId: `learning-kill-switch-direct:${directRunId}`,
+          },
+          startedAt: null,
+          completedAt: null,
+          heartbeatAt: null,
+          leaseExpiresAt: null,
+          cancellationRequestedAt: null,
+          cancellationReason: null,
+          progress: { stage: "queued", percent: 0 },
+          idempotencyKey: `learning-kill-switch:${directRunId}`,
+        },
+      ]);
     await mutateAgentLearning(context(), {
       action: "set_kill_switch",
       enabled: true,
@@ -215,6 +281,40 @@ describeIntegration("governed agent learning", () => {
       status: "cancelled",
       reason: expect.stringContaining("kill switch"),
     });
+    const [reply, outbox] = await Promise.all([
+      database()
+        .select()
+        .from(schema.messages)
+        .where(
+          eq(
+            schema.messages.idempotencyKey,
+            `agent-direct-message-reply:${directRunId}`,
+          ),
+        ),
+      database()
+        .select()
+        .from(schema.outboxEvents)
+        .where(
+          eq(
+            schema.outboxEvents.idempotencyKey,
+            `room.message.created:agent-direct-message:${directRunId}`,
+          ),
+        ),
+    ]);
+    expect(reply).toHaveLength(1);
+    expect(reply[0]).toMatchObject({
+      roomId: directRoomId,
+      threadParentId: directMessageId,
+      relatedAgentRunId: directRunId,
+      messageType: "agent-status",
+    });
+    expect(reply[0]?.document).toMatchObject({
+      status: "cancelled",
+      failureCode: "agent_kill_switch",
+      sourceMessageId: directMessageId,
+      agentRunId: directRunId,
+    });
+    expect(outbox).toHaveLength(1);
     await mutateAgentLearning(context(), {
       action: "set_kill_switch",
       enabled: false,

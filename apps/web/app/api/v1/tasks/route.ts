@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { requireCapability } from "@muster/authz";
 import { redactForObservation } from "@muster/config";
 import { TaskPrioritySchema, TaskStatusSchema } from "@muster/contracts";
@@ -28,7 +28,12 @@ async function taskView(organisationId: string, includeEvidence: boolean) {
   const rows = await db
     .select()
     .from(schema.tasks)
-    .where(eq(schema.tasks.organisationId, organisationId))
+    .where(
+      and(
+        eq(schema.tasks.organisationId, organisationId),
+        isNull(schema.tasks.archivedAt),
+      ),
+    )
     .orderBy(asc(schema.tasks.status), asc(schema.tasks.createdAt));
   const actorIds = rows
     .map((task) => task.assignedActorId)

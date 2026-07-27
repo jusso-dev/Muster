@@ -29,11 +29,14 @@
     "migrate": "tsx src/migrate.ts",
     "bootstrap": "tsx src/bootstrap.ts",
     "verify-clean": "tsx src/verify-clean-install.ts",
+    "verify:audit": "tsx src/verify-audit-integrity.ts",
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
     "@muster/audit": "workspace:*",
+    "@muster/authz": "workspace:*",
     "@muster/contracts": "workspace:*",
+    "@muster/integrations": "workspace:*",
     "drizzle-orm": "0.45.2",
     "pg": "^8.16.3",
     "uuid": "14.0.1",

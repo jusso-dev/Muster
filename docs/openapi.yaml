@@ -14,7 +14,7 @@ paths:
       operationId: getHealth
       responses:
         "200":
-          description: Process health
+          description: Web-process liveness and PostgreSQL reachability
           content:
             application/json:
               schema:
@@ -25,9 +25,9 @@ paths:
       operationId: getReadiness
       responses:
         "200":
-          description: Dependencies ready
+          description: Required serving dependencies ready
         "503":
-          description: Dependency unavailable
+          description: One or more required serving dependencies unavailable
   /metrics:
     get:
       security: []

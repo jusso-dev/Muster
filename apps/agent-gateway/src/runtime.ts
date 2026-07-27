@@ -27,19 +27,184 @@ import {
   TenantRepository,
   writeOutbox,
 } from "@muster/database";
-import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  ConnectorConfigurationSchema,
+  GovernedConnectorError,
+  QueryTemplateSchema,
+  decryptConnectorAuth,
+  encryptConnectorPayload,
+  executeGovernedQuery,
+  redactUntrusted,
+  type ConnectorAuth,
+  type ConnectorConfiguration,
+  type QueryTemplate,
+} from "@muster/integrations";
+import { and, asc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 type AgentRunRow = typeof schema.agentRuns.$inferSelect;
 type Context = Awaited<ReturnType<typeof loadAuthoritativeContext>>;
+type Db = ReturnType<typeof database>;
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 type PersistedRequest = {
-  kind?: "jessie_hunt" | undefined;
+  kind?: "jessie_hunt" | "direct_message" | undefined;
   huntId?: string | undefined;
   huntPlan?: unknown;
   humanRequest?: string | undefined;
+  sourceMessageId?: string | undefined;
   traceId?: string | undefined;
+  harness?: {
+    mode?: "slack" | "hermes" | "mcp" | "cli" | "http" | undefined;
+  };
 };
+
+type LiveConnectorEvidence = {
+  queryRunId?: string;
+  source: string;
+  product: string;
+  templateKey: string;
+  status: "succeeded" | "failed" | "unavailable";
+  result?: unknown;
+  responseMetadata?: unknown;
+  errorCode?: string;
+  errorMessage?: string;
+};
+
+function terminalSummary(output: unknown) {
+  if (!output || typeof output !== "object" || Array.isArray(output))
+    return "The agent completed the request with schema-valid output.";
+  const record = output as Record<string, unknown>;
+  for (const key of ["summary", "narrative", "headline", "title"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim())
+      return value.trim().slice(0, 10_000);
+  }
+  return "The agent completed the request with schema-valid output.";
+}
+
+async function projectDirectMessageTerminalReply(
+  tx: Tx,
+  run: AgentRunRow,
+  request: PersistedRequest,
+  terminal:
+    | {
+        status: "completed";
+        output: unknown;
+        outputHash: string;
+        outputSchema: AgentStructuredOutputName;
+      }
+    | {
+        status: "failed";
+        failureCode: string;
+        error: string;
+      }
+    | {
+        status: "cancelled";
+        failureCode: string;
+        error: string;
+      },
+) {
+  if (
+    request.kind !== "direct_message" ||
+    !request.sourceMessageId ||
+    !run.roomId
+  )
+    return;
+  const [source] = await tx
+    .select({ id: schema.messages.id })
+    .from(schema.messages)
+    .innerJoin(
+      schema.rooms,
+      and(
+        eq(schema.rooms.organisationId, run.organisationId),
+        eq(schema.rooms.id, run.roomId),
+        eq(schema.rooms.roomType, "direct"),
+        isNull(schema.rooms.archivedAt),
+      ),
+    )
+    .innerJoin(
+      schema.roomMemberships,
+      and(
+        eq(schema.roomMemberships.organisationId, run.organisationId),
+        eq(schema.roomMemberships.roomId, run.roomId),
+        eq(schema.roomMemberships.actorId, run.agentId),
+        or(
+          isNull(schema.roomMemberships.accessExpiresAt),
+          gt(schema.roomMemberships.accessExpiresAt, new Date()),
+        ),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.messages.organisationId, run.organisationId),
+        eq(schema.messages.id, request.sourceMessageId),
+        eq(schema.messages.roomId, run.roomId),
+        isNull(schema.messages.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!source) return;
+
+  const completed = terminal.status === "completed";
+  const plainText = completed
+    ? terminalSummary(terminal.output)
+    : terminal.status === "cancelled"
+      ? `The agent request was cancelled (${terminal.failureCode}).`
+      : `The agent could not complete this request (${terminal.failureCode}). Retry the request or contact an operator if the problem continues.`;
+  const messageId = newId();
+  const [message] = await tx
+    .insert(schema.messages)
+    .values({
+      id: messageId,
+      organisationId: run.organisationId,
+      roomId: run.roomId,
+      threadParentId: request.sourceMessageId,
+      authorActorId: run.agentId,
+      messageType: "agent-status",
+      document: completed
+        ? {
+            type: "agent-direct-message-reply",
+            status: terminal.status,
+            sourceMessageId: request.sourceMessageId,
+            agentRunId: run.id,
+            outputSchema: terminal.outputSchema,
+            outputHash: terminal.outputHash,
+            summary: plainText,
+            trust: "agent-analysis",
+          }
+        : {
+            type: "agent-direct-message-reply",
+            status: terminal.status,
+            sourceMessageId: request.sourceMessageId,
+            agentRunId: run.id,
+            failureCode: terminal.failureCode,
+          },
+      plainText,
+      dataClassification: "internal",
+      relatedInvestigationId: run.investigationId,
+      relatedAgentRunId: run.id,
+      idempotencyKey: `agent-direct-message-reply:${run.id}`,
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.messages.id });
+  if (!message) return;
+  await writeOutbox(tx, {
+    organisationId: run.organisationId,
+    eventType: "room.message.created",
+    aggregateType: "message",
+    aggregateId: message.id,
+    queueName: "muster-outbox",
+    payload: {
+      messageId: message.id,
+      roomId: run.roomId,
+      threadParentId: request.sourceMessageId,
+      agentRunId: run.id,
+    },
+    idempotencyKey: `room.message.created:agent-direct-message:${run.id}`,
+    traceId: redactObservationText(request.traceId ?? `agent-run-${run.id}`),
+  });
+}
 
 function removeUnsupportedCodexSchemaFormats(value: unknown): unknown {
   if (Array.isArray(value))
@@ -319,12 +484,17 @@ export class DurableAgentRuntime {
     this.lastReadinessSnapshotAt = now.getTime();
   }
 
-  async read(runId: string) {
+  async read(runId: string, organisationId: string) {
     const db = database();
     const [run] = await db
       .select()
       .from(schema.agentRuns)
-      .where(eq(schema.agentRuns.id, runId))
+      .where(
+        and(
+          eq(schema.agentRuns.organisationId, organisationId),
+          eq(schema.agentRuns.id, runId),
+        ),
+      )
       .limit(1);
     if (!run) return null;
     const events = await db
@@ -360,7 +530,11 @@ export class DurableAgentRuntime {
     return redactForObservation(projection) as typeof projection;
   }
 
-  async cancel(runId: string, reason = "Cancelled by operator") {
+  async cancel(
+    runId: string,
+    organisationId: string,
+    reason = "Cancelled by operator",
+  ) {
     const now = new Date();
     const [run] = await database().transaction(async (tx) => {
       const [updated] = await tx
@@ -376,6 +550,7 @@ export class DurableAgentRuntime {
         })
         .where(
           and(
+            eq(schema.agentRuns.organisationId, organisationId),
             eq(schema.agentRuns.id, runId),
             or(
               eq(schema.agentRuns.status, "awaiting_approval"),
@@ -403,6 +578,28 @@ export class DurableAgentRuntime {
         targetType: "agent_run",
         targetId: updated.id,
         metadata: { reason: redactObservationText(reason) },
+        traceId: redactObservationText(
+          this.request(updated).traceId ?? `agent-run-${updated.id}`,
+        ),
+      });
+      await projectDirectMessageTerminalReply(
+        tx,
+        updated,
+        this.request(updated),
+        {
+          status: "cancelled",
+          failureCode: "operator_cancelled",
+          error: reason,
+        },
+      );
+      await writeOutbox(tx, {
+        organisationId: updated.organisationId,
+        eventType: "agent.run.settled",
+        aggregateType: "agent_run",
+        aggregateId: updated.id,
+        queueName: "muster-notifications",
+        payload: { runId: updated.id, status: "cancelled" },
+        idempotencyKey: `agent.run.settled:${updated.id}`,
         traceId: redactObservationText(
           this.request(updated).traceId ?? `agent-run-${updated.id}`,
         ),
@@ -505,8 +702,20 @@ export class DurableAgentRuntime {
     const recovered = candidate.status === "running";
     const [run] = await database().transaction(async (tx) => {
       const [definition] = await tx
-        .select({ killSwitch: schema.agentDefinitions.killSwitch })
+        .select({
+          status: schema.agentDefinitions.status,
+          killSwitch: schema.agentDefinitions.killSwitch,
+          allowedRooms: schema.agentDefinitions.allowedRooms,
+          actorStatus: schema.actors.status,
+        })
         .from(schema.agentDefinitions)
+        .leftJoin(
+          schema.actors,
+          and(
+            eq(schema.actors.organisationId, candidate.organisationId),
+            eq(schema.actors.id, schema.agentDefinitions.id),
+          ),
+        )
         .where(
           and(
             eq(schema.agentDefinitions.id, candidate.agentId),
@@ -517,14 +726,92 @@ export class DurableAgentRuntime {
           ),
         )
         .limit(1);
-      if (!definition || definition.killSwitch) {
+      const request = this.request(candidate);
+      let eligibilityFailure: { code: string; message: string } | undefined;
+      if (!definition) {
+        eligibilityFailure = {
+          code: "agent_unavailable",
+          message: "Agent definition is unavailable",
+        };
+      } else if (definition.killSwitch) {
+        eligibilityFailure = {
+          code: "agent_kill_switch",
+          message: "Agent is disabled by its kill switch",
+        };
+      } else if (
+        definition.status !== "active" ||
+        definition.actorStatus !== "active"
+      ) {
+        eligibilityFailure = {
+          code: "agent_inactive",
+          message: "Agent is inactive",
+        };
+      } else if (request.kind === "direct_message") {
+        const sourceMessageId = request.sourceMessageId;
+        const roomId = candidate.roomId;
+        if (
+          !sourceMessageId ||
+          !roomId ||
+          !Array.isArray(definition.allowedRooms) ||
+          !definition.allowedRooms.includes(roomId)
+        ) {
+          eligibilityFailure = {
+            code: "direct_message_not_authorised",
+            message: "Direct-message room is no longer authorised",
+          };
+        } else {
+          const [authorisedRoom] = await tx
+            .select({ id: schema.messages.id })
+            .from(schema.messages)
+            .innerJoin(
+              schema.rooms,
+              and(
+                eq(schema.rooms.organisationId, candidate.organisationId),
+                eq(schema.rooms.id, roomId),
+                eq(schema.rooms.roomType, "direct"),
+                isNull(schema.rooms.archivedAt),
+              ),
+            )
+            .innerJoin(
+              schema.roomMemberships,
+              and(
+                eq(
+                  schema.roomMemberships.organisationId,
+                  candidate.organisationId,
+                ),
+                eq(schema.roomMemberships.roomId, roomId),
+                eq(schema.roomMemberships.actorId, candidate.agentId),
+                or(
+                  isNull(schema.roomMemberships.accessExpiresAt),
+                  gt(schema.roomMemberships.accessExpiresAt, now),
+                ),
+              ),
+            )
+            .where(
+              and(
+                eq(schema.messages.organisationId, candidate.organisationId),
+                eq(schema.messages.id, sourceMessageId),
+                eq(schema.messages.roomId, roomId),
+                isNull(schema.messages.deletedAt),
+              ),
+            )
+            .limit(1);
+          if (!authorisedRoom) {
+            eligibilityFailure = {
+              code: "direct_message_not_authorised",
+              message: "Direct-message room is no longer authorised",
+            };
+          }
+        }
+      }
+      if (eligibilityFailure) {
         const [disabled] = await tx
           .update(schema.agentRuns)
           .set({
             status: "failed",
             completedAt: now,
-            failureCode: "agent_kill_switch",
-            error: "Agent is disabled by its kill switch",
+            failureCode: eligibilityFailure.code,
+            error: eligibilityFailure.message,
             leaseExpiresAt: null,
           })
           .where(
@@ -540,9 +827,31 @@ export class DurableAgentRuntime {
             organisationId: disabled.organisationId,
             runId: disabled.id,
             eventType: "failed",
-            message: "Agent kill switch blocked execution",
-            payload: { failureCode: "agent_kill_switch" },
+            message: eligibilityFailure.message,
+            payload: { failureCode: eligibilityFailure.code },
           });
+          await appendAuditEvent(tx, {
+            organisationId: disabled.organisationId,
+            actorId: disabled.agentId,
+            actorType: "agent",
+            action: "agent.run.failed",
+            targetType: "agent_run",
+            targetId: disabled.id,
+            metadata: { failureCode: eligibilityFailure.code },
+            traceId: redactObservationText(
+              this.request(disabled).traceId ?? `agent-run-${disabled.id}`,
+            ),
+          });
+          await projectDirectMessageTerminalReply(
+            tx,
+            disabled,
+            this.request(disabled),
+            {
+              status: "failed",
+              failureCode: eligibilityFailure.code,
+              error: eligibilityFailure.message,
+            },
+          );
         }
         return [];
       }
@@ -681,7 +990,7 @@ export class DurableAgentRuntime {
           ),
         );
       } else if (controller.signal.aborted) {
-        if (!this.stopping) await this.cancel(run.id);
+        if (!this.stopping) await this.cancel(run.id, run.organisationId);
       } else {
         await this.fail(
           run,
@@ -802,8 +1111,10 @@ export class DurableAgentRuntime {
             evidence: [
               {
                 type: "fixture",
-                reference: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
-                sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+                reference:
+                  "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
+                sha256:
+                  "0000000000000000000000000000000000000000000000000000000000000000",
               },
             ],
           },
@@ -866,8 +1177,23 @@ export class DurableAgentRuntime {
           comparisonPeriod: null,
         },
         filters: { organisationScoped: true },
-        metricDefinitions: [{ key: "mtta", definition: "Synthetic", population: "Synthetic", exclusions: "Synthetic" }],
-        values: [{ key: "mtta", value: null, unit: "minutes", state: "unavailable", sampleSize: 0 }],
+        metricDefinitions: [
+          {
+            key: "mtta",
+            definition: "Synthetic",
+            population: "Synthetic",
+            exclusions: "Synthetic",
+          },
+        ],
+        values: [
+          {
+            key: "mtta",
+            value: null,
+            unit: "minutes",
+            state: "unavailable",
+            sampleSize: 0,
+          },
+        ],
         sourceReferences: [{ source: "synthetic", query: {} }],
         narrative: base.summary,
         caveats: ["Synthetic runtime output"],
@@ -889,21 +1215,39 @@ export class DurableAgentRuntime {
 
   private async heartbeat(runId: string) {
     const now = new Date();
-    const updated = await database()
-      .update(schema.agentRuns)
-      .set({
-        heartbeatAt: now,
-        leaseExpiresAt: new Date(now.getTime() + this.leaseMs),
-        progress: { stage: "executing", percent: 50 },
-      })
-      .where(
-        and(
-          eq(schema.agentRuns.id, runId),
-          eq(schema.agentRuns.status, "running"),
-          eq(schema.agentRuns.workerId, this.workerId),
-        ),
-      )
-      .returning({ id: schema.agentRuns.id });
+    const updated = await database().transaction(async (tx) => {
+      const rows = await tx
+        .update(schema.agentRuns)
+        .set({
+          heartbeatAt: now,
+          leaseExpiresAt: new Date(now.getTime() + this.leaseMs),
+          progress: { stage: "executing", percent: 50 },
+        })
+        .where(
+          and(
+            eq(schema.agentRuns.id, runId),
+            eq(schema.agentRuns.status, "running"),
+            eq(schema.agentRuns.workerId, this.workerId),
+          ),
+        )
+        .returning({
+          id: schema.agentRuns.id,
+          organisationId: schema.agentRuns.organisationId,
+        });
+      const run = rows[0];
+      if (run)
+        await writeOutbox(tx, {
+          organisationId: run.organisationId,
+          eventType: "agent.run.progress",
+          aggregateType: "agent_run",
+          aggregateId: run.id,
+          queueName: "muster-notifications",
+          payload: { runId: run.id, stage: "executing", percent: 50 },
+          idempotencyKey: `agent.run.progress:${run.id}:executing`,
+          traceId: `agent-run-${run.id}`,
+        });
+      return rows;
+    });
     if (updated.length === 0) this.activeRuns.get(runId)?.abort();
   }
 
@@ -1092,6 +1436,24 @@ export class DurableAgentRuntime {
           this.request(run).traceId ?? `agent-run-${run.id}`,
         ),
       });
+      await projectDirectMessageTerminalReply(tx, run, this.request(run), {
+        status: "completed",
+        output: result.output,
+        outputHash: result.outputHash,
+        outputSchema: result.schemaName,
+      });
+      await writeOutbox(tx, {
+        organisationId: updated.organisationId,
+        eventType: "agent.run.settled",
+        aggregateType: "agent_run",
+        aggregateId: updated.id,
+        queueName: "muster-notifications",
+        payload: { runId: updated.id, status: "completed" },
+        idempotencyKey: `agent.run.settled:${updated.id}`,
+        traceId: redactObservationText(
+          this.request(updated).traceId ?? `agent-run-${updated.id}`,
+        ),
+      });
       const [hunt] = await tx
         .update(schema.huntRuns)
         .set({
@@ -1265,6 +1627,23 @@ export class DurableAgentRuntime {
           this.request(run).traceId ?? `agent-run-${run.id}`,
         ),
       });
+      await projectDirectMessageTerminalReply(tx, run, this.request(run), {
+        status: "failed",
+        failureCode: failure.code,
+        error: failure.message,
+      });
+      await writeOutbox(tx, {
+        organisationId: updated.organisationId,
+        eventType: "agent.run.settled",
+        aggregateType: "agent_run",
+        aggregateId: updated.id,
+        queueName: "muster-notifications",
+        payload: { runId: updated.id, status: "failed" },
+        idempotencyKey: `agent.run.settled:${updated.id}`,
+        traceId: redactObservationText(
+          this.request(updated).traceId ?? `agent-run-${updated.id}`,
+        ),
+      });
       const [hunt] = await tx
         .update(schema.huntRuns)
         .set({
@@ -1327,10 +1706,11 @@ export class DurableAgentRuntime {
   private request(run: AgentRunRow): PersistedRequest {
     const parsed = z
       .object({
-        kind: z.literal("jessie_hunt").optional(),
+        kind: z.enum(["jessie_hunt", "direct_message"]).optional(),
         huntId: z.uuid().optional(),
         huntPlan: z.unknown().optional(),
         humanRequest: z.string().optional(),
+        sourceMessageId: z.uuid().optional(),
         traceId: z.string().optional(),
       })
       .safeParse(run.request);
@@ -1478,7 +1858,21 @@ async function loadAuthoritativeContext(
     );
   if (request.kind === "jessie_hunt" && !hunt)
     throw new RunFailure("Hunt not found in organisation", "hunt_not_found");
-  return { investigation, actor, alerts, findings, hunt, huntQueries };
+  const liveConnectorEvidence = await loadLiveConnectorEvidence({
+    db,
+    actor,
+    runId,
+    request,
+  });
+  return {
+    investigation,
+    actor,
+    alerts,
+    findings,
+    hunt,
+    huntQueries,
+    liveConnectorEvidence,
+  };
 }
 
 function outputSchemaFor(
@@ -1498,6 +1892,483 @@ function outputSchemaFor(
   if (identity.includes("post-incident")) return "PostIncidentSummary";
   if (identity.includes("executive")) return "ExecutiveUpdate";
   return "TriageRecommendation";
+}
+
+type LiveTemplateRow = {
+  integration: typeof schema.integrationRecords.$inferSelect;
+  template: typeof schema.integrationQueryTemplates.$inferSelect;
+  credential: typeof schema.integrationConnectorCredentials.$inferSelect;
+};
+
+function connectorFailure(error: unknown) {
+  if (error instanceof GovernedConnectorError)
+    return {
+      code: error.code,
+      message: redactObservationText(error.message),
+    };
+  return {
+    code: "source_unavailable",
+    message: redactObservationText(
+      error instanceof Error ? error.message : "Connector query failed",
+    ),
+  };
+}
+
+async function executeLiveContextQuery(input: {
+  db: Db;
+  row: LiveTemplateRow;
+  actor: typeof schema.actors.$inferSelect;
+  runId: string;
+  traceId: string;
+  values: Record<string, unknown>;
+  suffix?: string;
+}): Promise<LiveConnectorEvidence> {
+  const key = process.env.CONNECTOR_ENCRYPTION_KEY;
+  if (!key)
+    return {
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: input.row.template.templateKey,
+      status: "unavailable",
+      errorCode: "connector_encryption_unavailable",
+      errorMessage: "Connector encryption is not configured.",
+    };
+  const definition = QueryTemplateSchema.parse(input.row.template.definition);
+  const capabilities = Array.isArray(input.actor.capabilityAssignments)
+    ? input.actor.capabilityAssignments
+    : [];
+  if (!capabilities.includes(definition.requiredCapability))
+    return {
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: definition.key,
+      status: "unavailable",
+      errorCode: "capability_revoked",
+      errorMessage: "The agent lacks the connector read capability.",
+    };
+  const auth: ConnectorAuth = decryptConnectorAuth(
+    input.row.credential.encryptedCredential,
+    key,
+  );
+  const { authType: _storedAuthType, ...storedConfiguration } = input.row
+    .integration.configuration as Record<string, unknown>;
+  const configuration: ConnectorConfiguration =
+    ConnectorConfigurationSchema.parse({
+      ...storedConfiguration,
+      auth,
+    });
+  const suffix = input.suffix ? `:${input.suffix}` : "";
+  const idempotencyKey =
+    `agent-context:${input.runId}:${definition.key}${suffix}`.slice(0, 200);
+  const queryRunId = newId();
+  const [inserted] = await input.db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(schema.integrationQueryRuns)
+      .values({
+        id: queryRunId,
+        organisationId: input.actor.organisationId,
+        integrationId: input.row.integration.id,
+        templateId: input.row.template.id,
+        requestedByActorId: input.actor.id,
+        idempotencyKey,
+        traceId: input.traceId,
+        status: "running",
+        input: { envelope: encryptConnectorPayload(input.values, key) },
+        requestMetadata: {
+          source: "agent-live-context",
+          agentRunId: input.runId,
+          templateKey: definition.key,
+        },
+        startedAt: new Date(),
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (created) {
+      await appendAuditEvent(tx, {
+        organisationId: input.actor.organisationId,
+        actorId: input.actor.id,
+        actorType: input.actor.actorType,
+        action: "connector.query.started",
+        targetType: "integration_query",
+        targetId: created.id,
+        metadata: {
+          source: "agent-live-context",
+          agentRunId: input.runId,
+          integrationId: input.row.integration.id,
+          templateKey: definition.key,
+          templateVersion: definition.version,
+        },
+        traceId: input.traceId,
+      });
+      await writeOutbox(tx, {
+        organisationId: input.actor.organisationId,
+        eventType: "connector.query.started",
+        aggregateType: "integration_query",
+        aggregateId: created.id,
+        queueName: "muster-outbox",
+        payload: {
+          queryRunId: created.id,
+          agentRunId: input.runId,
+          templateKey: definition.key,
+        },
+        idempotencyKey: `connector.query.started:${created.id}`,
+        traceId: input.traceId,
+      });
+    }
+    return [created] as const;
+  });
+  const run =
+    inserted ??
+    (
+      await input.db
+        .select()
+        .from(schema.integrationQueryRuns)
+        .where(
+          and(
+            eq(
+              schema.integrationQueryRuns.organisationId,
+              input.actor.organisationId,
+            ),
+            eq(schema.integrationQueryRuns.idempotencyKey, idempotencyKey),
+          ),
+        )
+        .limit(1)
+    )[0];
+  if (!run)
+    return {
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: definition.key,
+      status: "unavailable",
+      errorCode: "query_state_unavailable",
+      errorMessage: "Connector query state could not be created.",
+    };
+  if (run.status === "succeeded")
+    return {
+      queryRunId: run.id,
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: definition.key,
+      status: "succeeded",
+      result: run.result,
+      responseMetadata: run.responseMetadata,
+    };
+  if (run.status === "failed")
+    return {
+      queryRunId: run.id,
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: definition.key,
+      status: "failed",
+      errorCode: run.errorCode ?? "source_unavailable",
+      errorMessage: run.errorMessage ?? "Connector query failed.",
+    };
+  try {
+    const result = await executeGovernedQuery({
+      configuration,
+      auth,
+      template: definition,
+      values: input.values,
+    });
+    const safeResult = redactUntrusted(result.data);
+    await input.db.transaction(async (tx) => {
+      await tx
+        .update(schema.integrationQueryRuns)
+        .set({
+          status: "succeeded",
+          result: safeResult,
+          responseMetadata: result.metadata,
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(
+              schema.integrationQueryRuns.organisationId,
+              input.actor.organisationId,
+            ),
+            eq(schema.integrationQueryRuns.id, run.id),
+          ),
+        );
+      await tx
+        .update(schema.integrationRecords)
+        .set({
+          status: "healthy",
+          health: {
+            status: "healthy",
+            checkedAt: new Date().toISOString(),
+            lastQueryRunId: run.id,
+          },
+          lastSyncAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(
+              schema.integrationRecords.organisationId,
+              input.actor.organisationId,
+            ),
+            eq(schema.integrationRecords.id, input.row.integration.id),
+          ),
+        );
+      await appendAuditEvent(tx, {
+        organisationId: input.actor.organisationId,
+        actorId: input.actor.id,
+        actorType: input.actor.actorType,
+        action: "connector.query.succeeded",
+        targetType: "integration_query",
+        targetId: run.id,
+        metadata: {
+          source: "agent-live-context",
+          agentRunId: input.runId,
+          integrationId: input.row.integration.id,
+          templateKey: definition.key,
+          templateVersion: definition.version,
+          ...result.metadata,
+        },
+        traceId: input.traceId,
+      });
+      await writeOutbox(tx, {
+        organisationId: input.actor.organisationId,
+        eventType: "connector.query.succeeded",
+        aggregateType: "integration_query",
+        aggregateId: run.id,
+        queueName: "muster-outbox",
+        payload: {
+          queryRunId: run.id,
+          agentRunId: input.runId,
+          templateKey: definition.key,
+        },
+        idempotencyKey: `connector.query.succeeded:${run.id}`,
+        traceId: input.traceId,
+      });
+    });
+    return {
+      queryRunId: run.id,
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: definition.key,
+      status: "succeeded",
+      result: safeResult,
+      responseMetadata: result.metadata,
+    };
+  } catch (error) {
+    const failure = connectorFailure(error);
+    await input.db.transaction(async (tx) => {
+      await tx
+        .update(schema.integrationQueryRuns)
+        .set({
+          status: "failed",
+          errorCode: failure.code,
+          errorMessage: failure.message,
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(
+              schema.integrationQueryRuns.organisationId,
+              input.actor.organisationId,
+            ),
+            eq(schema.integrationQueryRuns.id, run.id),
+          ),
+        );
+      await appendAuditEvent(tx, {
+        organisationId: input.actor.organisationId,
+        actorId: input.actor.id,
+        actorType: input.actor.actorType,
+        action: "connector.query.failed",
+        targetType: "integration_query",
+        targetId: run.id,
+        metadata: {
+          source: "agent-live-context",
+          agentRunId: input.runId,
+          integrationId: input.row.integration.id,
+          templateKey: definition.key,
+          errorCode: failure.code,
+        },
+        traceId: input.traceId,
+      });
+      await writeOutbox(tx, {
+        organisationId: input.actor.organisationId,
+        eventType: "connector.query.failed",
+        aggregateType: "integration_query",
+        aggregateId: run.id,
+        queueName: "muster-outbox",
+        payload: {
+          queryRunId: run.id,
+          agentRunId: input.runId,
+          templateKey: definition.key,
+          errorCode: failure.code,
+        },
+        idempotencyKey: `connector.query.failed:${run.id}`,
+        traceId: input.traceId,
+      });
+    });
+    return {
+      queryRunId: run.id,
+      source: input.row.integration.displayName,
+      product: input.row.integration.product,
+      templateKey: definition.key,
+      status: "failed",
+      errorCode: failure.code,
+      errorMessage: failure.message,
+    };
+  }
+}
+
+async function loadLiveConnectorEvidence(input: {
+  db: Db;
+  actor: typeof schema.actors.$inferSelect;
+  runId: string;
+  request: PersistedRequest;
+}): Promise<LiveConnectorEvidence[]> {
+  if (
+    input.request.harness?.mode !== "slack" ||
+    !input.request.humanRequest?.trim()
+  )
+    return [];
+  const prompt = input.request.humanRequest.toLowerCase();
+  const requestedProducts = new Set<string>();
+  if (/\b(tawny|host|hosts|endpoint|endpoints|machine|machines)\b/.test(prompt))
+    requestedProducts.add("tawny");
+  if (/\b(kelpie|case|cases|incident|incidents)\b/.test(prompt))
+    requestedProducts.add("kelpie");
+  if (
+    /\b(unifi|network|traffic|client|clients|device|devices|bandwidth)\b/.test(
+      prompt,
+    )
+  )
+    requestedProducts.add("unifi");
+  const products = requestedProducts.size
+    ? [...requestedProducts]
+    : ["tawny", "kelpie", "unifi"];
+  const rows = await input.db
+    .select({
+      integration: schema.integrationRecords,
+      template: schema.integrationQueryTemplates,
+      credential: schema.integrationConnectorCredentials,
+    })
+    .from(schema.integrationRecords)
+    .innerJoin(
+      schema.integrationQueryTemplates,
+      and(
+        eq(
+          schema.integrationQueryTemplates.organisationId,
+          input.actor.organisationId,
+        ),
+        eq(
+          schema.integrationQueryTemplates.integrationId,
+          schema.integrationRecords.id,
+        ),
+        eq(schema.integrationQueryTemplates.enabled, true),
+      ),
+    )
+    .innerJoin(
+      schema.integrationConnectorCredentials,
+      and(
+        eq(
+          schema.integrationConnectorCredentials.organisationId,
+          input.actor.organisationId,
+        ),
+        eq(
+          schema.integrationConnectorCredentials.integrationId,
+          schema.integrationRecords.id,
+        ),
+      ),
+    )
+    .where(
+      and(
+        eq(
+          schema.integrationRecords.organisationId,
+          input.actor.organisationId,
+        ),
+        inArray(schema.integrationRecords.product, products),
+        inArray(schema.integrationRecords.status, ["configured", "healthy"]),
+        eq(schema.integrationRecords.mock, false),
+        isNull(schema.integrationRecords.archivedAt),
+      ),
+    )
+    .orderBy(asc(schema.integrationRecords.createdAt));
+  const evidence: LiveConnectorEvidence[] = [];
+  const traceId = redactObservationText(
+    input.request.traceId ?? `agent-run-${input.runId}`,
+  );
+  const execute = async (
+    product: string,
+    templateKey: string,
+    values: Record<string, unknown>,
+    suffix?: string,
+  ) => {
+    const row = rows.find(
+      (candidate) =>
+        candidate.integration.product === product &&
+        candidate.template.templateKey === templateKey,
+    );
+    if (!row) {
+      const unavailable: LiveConnectorEvidence = {
+        source: product,
+        product,
+        templateKey,
+        status: "unavailable",
+        errorCode: "integration_unavailable",
+        errorMessage: `No healthy ${product} connector template is configured.`,
+      };
+      evidence.push(unavailable);
+      return unavailable;
+    }
+    const result = await executeLiveContextQuery({
+      db: input.db,
+      row,
+      actor: input.actor,
+      runId: input.runId,
+      traceId,
+      values,
+      ...(suffix ? { suffix } : {}),
+    });
+    evidence.push(result);
+    return result;
+  };
+  await Promise.all([
+    ...(requestedProducts.has("tawny") || requestedProducts.size === 0
+      ? [execute("tawny", "tawny.inventory.list", {})]
+      : []),
+    ...(requestedProducts.has("kelpie") || requestedProducts.size === 0
+      ? [execute("kelpie", "kelpie.cases.list", {})]
+      : []),
+  ]);
+  if (!requestedProducts.has("unifi") && requestedProducts.size !== 0)
+    return evidence;
+  const [sites] = await Promise.all([
+    execute("unifi", "unifi.sites.list", {
+      offset: 0,
+      limit: 10,
+    }),
+    execute("unifi", "unifi.traffic.clients", {
+      siteName: "default",
+    }),
+  ]);
+  const siteIds = Array.isArray(sites.result)
+    ? sites.result
+        .map((site) =>
+          site && typeof site === "object"
+            ? (site as Record<string, unknown>).id
+            : undefined,
+        )
+        .filter((siteId): siteId is string => typeof siteId === "string")
+        .slice(0, 3)
+    : [];
+  await Promise.all(
+    siteIds.map((siteId) =>
+      execute(
+        "unifi",
+        "unifi.clients.list",
+        { siteId, offset: 0, limit: 50 },
+        siteId,
+      ),
+    ),
+  );
+  return evidence;
 }
 
 function promptParts(
@@ -1565,6 +2436,20 @@ function promptParts(
               trust: "untrusted-evidence",
             },
       ),
+    })),
+    ...context.liveConnectorEvidence.map((query) => ({
+      kind: "tool_result" as const,
+      tool: `${query.product}.${query.templateKey}`,
+      content: JSON.stringify({
+        queryRunId: query.queryRunId,
+        source: query.source,
+        status: query.status,
+        result: query.result,
+        responseMetadata: query.responseMetadata,
+        errorCode: query.errorCode,
+        errorMessage: query.errorMessage,
+        trust: "untrusted-evidence",
+      }),
     })),
   ];
 }

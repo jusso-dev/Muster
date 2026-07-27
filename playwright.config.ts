@@ -7,6 +7,7 @@ const testRedisUrl =
   process.env.MUSTER_TEST_REDIS_URL ?? "redis://localhost:6379";
 
 process.env.DATABASE_URL ??= testDatabaseUrl;
+process.env.REDIS_URL ??= testRedisUrl;
 
 export default defineConfig({
   testDir: "./tests",
@@ -46,21 +47,21 @@ export default defineConfig({
     },
     {
       name: "Muster worker",
-      command: `MUSTER_RESEARCH_TEST_MODE=true CONNECTOR_ENCRYPTION_KEY=0707070707070707070707070707070707070707070707070707070707070707 DATABASE_URL=${testDatabaseUrl} REDIS_URL=${testRedisUrl} AGENT_GATEWAY_URL=http://127.0.0.1:3002 pnpm --dir apps/worker dev`,
+      command: `MUSTER_RESEARCH_TEST_MODE=true MUSTER_AGENT_GATEWAY_TOKEN=0707070707070707070707070707070707070707070707070707070707070707 CONNECTOR_ENCRYPTION_KEY=0707070707070707070707070707070707070707070707070707070707070707 DATABASE_URL=${testDatabaseUrl} REDIS_URL=${testRedisUrl} AGENT_GATEWAY_URL=http://127.0.0.1:3002 pnpm --dir apps/worker dev`,
       url: "http://127.0.0.1:3001/ready",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
     {
       name: "Muster agent gateway",
-      command: `MUSTER_AGENT_RUNTIME=mock MUSTER_MOCK_AGENT_DELAY_MS=5000 DATABASE_URL=${testDatabaseUrl} pnpm --dir apps/agent-gateway dev`,
+      command: `MUSTER_AGENT_RUNTIME=mock MUSTER_AGENT_GATEWAY_TOKEN=0707070707070707070707070707070707070707070707070707070707070707 MUSTER_MOCK_AGENT_DELAY_MS=5000 DATABASE_URL=${testDatabaseUrl} pnpm --dir apps/agent-gateway dev`,
       url: "http://127.0.0.1:3002/ready",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
     {
       name: "Muster web",
-      command: `MUSTER_RESEARCH_TEST_MODE=true MUSTER_DEMO_MODE=true NEXT_PUBLIC_MUSTER_DEMO_MODE=true CONNECTOR_ENCRYPTION_KEY=0707070707070707070707070707070707070707070707070707070707070707 BETTER_AUTH_SECRET=muster-playwright-secret-at-least-32-characters AUTH_RATE_LIMIT_MAX=10000 DATABASE_URL=${testDatabaseUrl} REDIS_URL=${testRedisUrl} AGENT_GATEWAY_URL=http://127.0.0.1:3002 pnpm --dir apps/web dev`,
+      command: `MUSTER_RESEARCH_TEST_MODE=true MUSTER_DEMO_MODE=true NEXT_PUBLIC_MUSTER_DEMO_MODE=true MUSTER_AGENT_GATEWAY_TOKEN=0707070707070707070707070707070707070707070707070707070707070707 CONNECTOR_ENCRYPTION_KEY=0707070707070707070707070707070707070707070707070707070707070707 BETTER_AUTH_SECRET=muster-playwright-secret-at-least-32-characters AUTH_RATE_LIMIT_MAX=10000 DATABASE_URL=${testDatabaseUrl} REDIS_URL=${testRedisUrl} AGENT_GATEWAY_URL=http://127.0.0.1:3002 pnpm --dir apps/web dev`,
       url: "http://127.0.0.1:3000/api/v1/health",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

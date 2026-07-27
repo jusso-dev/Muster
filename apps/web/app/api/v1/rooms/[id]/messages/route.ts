@@ -4,6 +4,7 @@ import { PostMessageSchema, RoomService } from "@muster/rooms";
 import { apiSubject, problemResponse, requestTraceId } from "@/lib/api-context";
 import { enforceApiRateLimit } from "@/lib/api-rate-limit";
 import { publishRealtime } from "@/lib/realtime";
+import { AgentDirectMessageDomainService } from "@/lib/agent-direct-message-domain";
 import { JessieHuntDomainService } from "@/lib/jessie-hunt-domain";
 
 export async function GET(
@@ -48,11 +49,28 @@ export async function POST(
       roomId: id,
     });
     const result = await new RoomService().postMessage(subject, input, traceId);
+    let agentInvocation: Awaited<
+      ReturnType<AgentDirectMessageDomainService["maybeQueue"]>
+    > = null;
+    let agentInvocationError: string | null = null;
     let jessieHunt: Awaited<
       ReturnType<JessieHuntDomainService["maybeCreateFromMention"]>
     > = null;
     let jessieHuntError: string | null = null;
-    if (result.created) {
+    try {
+      agentInvocation = await new AgentDirectMessageDomainService().maybeQueue(
+        subject,
+        { messageId: result.message.id, roomId: id },
+        traceId,
+      );
+    } catch (error) {
+      agentInvocationError = redactObservationText(
+        error instanceof Error
+          ? error.message
+          : "The direct-message agent could not be queued.",
+      );
+    }
+    if (result.created && !agentInvocation && !agentInvocationError) {
       try {
         jessieHunt = await new JessieHuntDomainService().maybeCreateFromMention(
           subject,
@@ -91,6 +109,8 @@ export async function POST(
       {
         data: result.message,
         duplicate: !result.created,
+        agentInvocation,
+        agentInvocationError,
         jessieHunt,
         jessieHuntError,
         realtimeDegraded: !realtimeDelivered,

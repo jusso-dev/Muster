@@ -177,8 +177,10 @@ that will use the service. When using HTTPS behind a reverse proxy, set
 `AUTH_SECURE_COOKIES=true`; do not add broad wildcard origins.
 
 The installer creates `.env.homelab` with mode `600`. Keep it out of source
-control. The generated topology still uses synthetic connector endpoints until
-you deliberately configure governed real connectors.
+control. Its generated `MUSTER_AGENT_GATEWAY_TOKEN` authenticates internal
+web/worker calls to the unexposed agent gateway; do not reuse or publish it.
+The generated topology still uses synthetic connector endpoints until you
+deliberately configure governed real connectors.
 
 ### Codex subscription authentication
 

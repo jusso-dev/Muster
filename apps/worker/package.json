@@ -14,8 +14,10 @@
   "dependencies": {
     "@muster/agents": "workspace:*",
     "@muster/config": "workspace:*",
+    "@muster/agent-harness": "workspace:*",
     "@muster/contracts": "workspace:*",
     "@muster/database": "workspace:*",
+    "@muster/evidence": "workspace:*",
     "@muster/integrations": "workspace:*",
     "bullmq": "5.81.2",
     "drizzle-orm": "0.45.2",

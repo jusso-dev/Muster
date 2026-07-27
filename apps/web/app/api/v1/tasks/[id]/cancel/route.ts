@@ -7,6 +7,7 @@ import {
   problemResponse,
   requestTraceId,
 } from "@/lib/api-context";
+import { agentGatewayHeaders } from "@/lib/agent-gateway";
 import { settleAgentRun } from "@/lib/task-domain";
 
 export async function POST(
@@ -49,6 +50,7 @@ export async function POST(
     const gateway = await fetch(
       `${process.env.AGENT_GATEWAY_URL ?? "http://agent-gateway:3002"}/v1/runs/${encodeURIComponent(task.agentRunId)}/cancel`,
       {
+        headers: agentGatewayHeaders(subject.organisationId),
         method: "POST",
         signal: AbortSignal.timeout(5_000),
       },

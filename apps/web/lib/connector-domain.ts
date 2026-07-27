@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { requireCapability, type AuthorisationSubject } from "@muster/authz";
 import {
   appendAuditEvent,
@@ -43,7 +43,10 @@ export class ConnectorDomainService {
       .select()
       .from(schema.integrationRecords)
       .where(
-        eq(schema.integrationRecords.organisationId, subject.organisationId),
+        and(
+          eq(schema.integrationRecords.organisationId, subject.organisationId),
+          isNull(schema.integrationRecords.archivedAt),
+        ),
       )
       .orderBy(desc(schema.integrationRecords.updatedAt));
     return records.map((record) => ({

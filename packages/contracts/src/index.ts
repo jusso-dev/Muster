@@ -228,6 +228,68 @@ export const AgentInvestigationJobSchema = z.object({
 });
 export type AgentInvestigationJob = z.infer<typeof AgentInvestigationJobSchema>;
 
+// Portable agent harness contracts deliberately describe only callable
+// capabilities. Prompts, credentials and connector configuration never leave
+// the authoritative runtime.
+export const AgentHarnessInvocationModeSchema = z.enum([
+  "slack",
+  "hermes",
+  "mcp",
+  "cli",
+  "http",
+]);
+export type AgentHarnessInvocationMode = z.infer<
+  typeof AgentHarnessInvocationModeSchema
+>;
+
+export const AgentHarnessManifestSchema = z.object({
+  protocolVersion: z.literal("muster.agent-harness/v1"),
+  key: z.string().min(1).max(120),
+  version: z.string().min(1).max(120),
+  name: z.string().min(1).max(160),
+  description: z.string().min(1).max(2_000),
+  invocationModes: z.array(AgentHarnessInvocationModeSchema).min(1),
+  inputSchema: z.literal("muster.agent-harness.input/v1"),
+  outputSchema: z.string().min(1).max(160),
+  requiredCapabilities: z.array(z.string().min(1).max(160)),
+  approvalBehavior: z.enum(["none", "governed_actions"]),
+  lifecycle: z.enum(["active", "disabled"]),
+});
+export type AgentHarnessManifest = z.infer<typeof AgentHarnessManifestSchema>;
+
+export const AgentHarnessInvokeSchema = z.object({
+  agentKey: z.string().trim().min(1).max(120),
+  input: z.object({
+    prompt: z.string().trim().min(1).max(4_000),
+    roomId: z.string().uuid().optional(),
+    investigationId: z.string().uuid().optional(),
+    taskId: z.string().uuid().optional(),
+    caseId: z.string().trim().min(1).max(200).optional(),
+  }),
+  mode: AgentHarnessInvocationModeSchema,
+  correlationId: z.string().trim().min(8).max(160).optional(),
+});
+export type AgentHarnessInvoke = z.infer<typeof AgentHarnessInvokeSchema>;
+
+export const AgentHarnessRunSchema = z.object({
+  protocolVersion: z.literal("muster.agent-harness/v1"),
+  runId: z.string().uuid(),
+  status: z.enum([
+    "queued",
+    "running",
+    "awaiting_approval",
+    "waiting_sources",
+    "completed",
+    "failed",
+    "cancelled",
+  ]),
+  agentKey: z.string().min(1).max(120),
+  correlationId: z.string().min(8).max(160),
+  duplicate: z.boolean(),
+  result: z.unknown().nullable(),
+});
+export type AgentHarnessRun = z.infer<typeof AgentHarnessRunSchema>;
+
 export const queueNames = [
   "muster-ingestion",
   "muster-integrations",

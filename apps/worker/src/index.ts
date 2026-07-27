@@ -3,6 +3,15 @@ import { createHash } from "node:crypto";
 import nodemailer from "nodemailer";
 import { Queue, Worker, type JobsOptions, type Processor } from "bullmq";
 import {
+  processSlackNotificationJob,
+  slackHarnessMetrics,
+  SlackGovernanceAdapter,
+} from "@muster/agent-harness";
+import {
+  runSlackSocketMode,
+  slackSocketMetrics,
+} from "@muster/agent-harness/slack-socket";
+import {
   queueNames,
   ReportManifestSchema,
   ResearchBriefSchema,
@@ -20,6 +29,7 @@ import {
   schema,
   writeOutbox,
 } from "@muster/database";
+import { processSyntheticCleanupObjectDeletion } from "./synthetic-cleanup-object.ts";
 import {
   ConnectorConfigurationSchema,
   GovernedConnectorError,
@@ -47,6 +57,7 @@ import {
   researchRunIdempotencyKey,
   staleResearchEvidence,
 } from "./research-scheduler.ts";
+import { appendResearchTerminalMessage } from "./research-status.ts";
 import { queueDueParkerReports } from "./parker-scheduler.ts";
 import { processParkerReport } from "./parker-report.ts";
 
@@ -112,6 +123,17 @@ const authoritativeProcessor: Processor = async (job) => {
   }
   if (
     job.queueName === "muster-maintenance" &&
+    job.name === "maintenance.synthetic_cleanup.object_delete.queued"
+  ) {
+    await processSyntheticCleanupObjectDeletion({
+      organisationId: job.data.organisationId,
+      aggregateType: job.data.aggregateType,
+      aggregateId: job.data.aggregateId,
+      traceId: job.data.traceId,
+    });
+  }
+  if (
+    job.queueName === "muster-maintenance" &&
     job.name === "research.run.queued"
   ) {
     await processResearchRun(
@@ -120,6 +142,14 @@ const authoritativeProcessor: Processor = async (job) => {
       job.data.traceId,
       finalResearchAttempt(job.attemptsMade, job.opts.attempts ?? 1),
     );
+  }
+  if (
+    job.queueName === "muster-notifications" &&
+    (job.name === "slack.event.received" ||
+      job.name === "agent.run.settled" ||
+      job.name === "agent.run.progress")
+  ) {
+    await processSlackNotificationJob(job.name, job.data.aggregateId);
   }
   if (
     job.queueName === "muster-integrations" &&
@@ -146,9 +176,12 @@ const authoritativeProcessor: Processor = async (job) => {
     job.queueName === "muster-agents" &&
     job.name !== "report.generate.queued"
   ) {
+    const gatewayToken = process.env.MUSTER_AGENT_GATEWAY_TOKEN?.trim();
+    if (!gatewayToken) throw new Error("Agent gateway token is not configured");
     const response = await fetch(
       `${process.env.AGENT_GATEWAY_URL ?? "http://agent-gateway:3002"}/v1/runs/dispatch`,
       {
+        headers: { authorization: `Bearer ${gatewayToken}` },
         method: "POST",
         signal: AbortSignal.timeout(10_000),
       },
@@ -1648,7 +1681,7 @@ async function processResearchRun(
     )
     .limit(1);
   if (!run) throw new Error("Authoritative research run not found");
-  if (run.run.status === "completed") return;
+  if (run.run.status === "completed" || run.run.status === "failed") return;
   if (!strings(run.agent.allowedTools).includes("research.feeds.read"))
     throw new Error("Alfie feed tool is revoked");
   await db.transaction(async (tx) => {
@@ -1911,6 +1944,14 @@ async function processResearchRun(
             eq(schema.agentRuns.id, run.run.agentRunId),
           ),
         );
+      if (posted === 0) {
+        await appendResearchTerminalMessage(tx, {
+          organisationId,
+          researchRunId,
+          kind: "no_changes",
+          traceId,
+        });
+      }
       await appendAuditEvent(tx, {
         organisationId,
         actorId: run.agent.id,
@@ -1973,6 +2014,12 @@ async function processResearchRun(
               eq(schema.agentRuns.id, run.run.agentRunId),
             ),
           );
+        await appendResearchTerminalMessage(tx, {
+          organisationId,
+          researchRunId,
+          kind: "failed",
+          traceId,
+        });
         await appendAuditEvent(tx, {
           organisationId,
           actorId: run.agent.id,
@@ -2102,13 +2149,45 @@ async function dispatchOutbox() {
 const dispatcher = setInterval(() => void dispatchOutbox(), 1_000);
 dispatcher.unref();
 await dispatchOutbox();
+
+const slackSocketAbort = new AbortController();
+let slackSocketTask: Promise<void> | undefined;
+if (process.env.SLACK_SOCKET_MODE_ENABLED === "true") {
+  const appToken = process.env.SLACK_APP_TOKEN;
+  if (!appToken)
+    throw new Error(
+      "SLACK_APP_TOKEN is required when SLACK_SOCKET_MODE_ENABLED=true",
+    );
+  const adapter = new SlackGovernanceAdapter();
+  slackSocketTask = runSlackSocketMode({
+    appToken,
+    signal: slackSocketAbort.signal,
+    recordEnvelope: (envelope) => adapter.recordSocketEnvelope(envelope),
+    onError: (error) =>
+      jsonLog("error", "slack.socket.error", {
+        error: error instanceof Error ? error.message : "Socket Mode failed",
+      }),
+  });
+}
 ready = true;
 
 const healthServer = createServer((request, response) => {
   if (request.url === "/metrics") {
+    const slack = slackHarnessMetrics();
+    const socket = slackSocketMetrics();
     response.writeHead(200, { "content-type": "text/plain; version=0.0.4" });
     response.end(
-      `muster_worker_ready ${ready ? 1 : 0}\nmuster_worker_queues ${queueNames.length}\n`,
+      [
+        `muster_worker_ready ${ready ? 1 : 0}`,
+        `muster_worker_queues ${queueNames.length}`,
+        `muster_slack_api_rate_limits ${slack.apiRateLimits}`,
+        `muster_slack_delivery_failures ${slack.deliveryFailures}`,
+        `muster_slack_delivery_dead_letters ${slack.deliveryDeadLetters}`,
+        `muster_slack_socket_connections ${socket.connections}`,
+        `muster_slack_socket_reconnects ${socket.reconnects}`,
+        `muster_slack_socket_envelope_failures ${socket.envelopeFailures}`,
+        "",
+      ].join("\n"),
     );
     return;
   }
@@ -2127,7 +2206,9 @@ async function shutdown(signal: string) {
   jsonLog("info", "worker.shutdown", { signal });
   clearInterval(dispatcher);
   clearInterval(researchScheduler);
+  slackSocketAbort.abort();
   healthServer.close();
+  if (slackSocketTask) await slackSocketTask;
   await Promise.all(workers.map((worker) => worker.close()));
   await Promise.all([...queues.values()].map((queue) => queue.close()));
   await closeDatabase();
