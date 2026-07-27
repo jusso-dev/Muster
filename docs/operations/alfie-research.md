@@ -1,6 +1,6 @@
 # Alfie governed research
 
-Alfie reads only allowlisted HTTPS feeds. CISA KEV is built in. Additional origins require `MUSTER_RESEARCH_ALLOWED_FEED_ORIGINS` as a comma-separated origin allowlist before an administrator creates a watchlist.
+Alfie reads only allowlisted HTTPS feeds. CISA KEV is built in. Additional origins require `MUSTER_RESEARCH_ALLOWED_FEED_ORIGINS` as a comma-separated origin allowlist before an administrator creates a watchlist. Homelab Compose passes this value unchanged to web and worker services; leave it empty when no additional feed origin is approved.
 
 `POST /api/v1/research-watchlists` requires `agents.manage`. A watchlist has vendor/technology terms, a room, a 15-minute to 7-day cadence, and bounded source count. PostgreSQL stores watchlists, runs, source-backed briefs, feedback, and audit events; BullMQ only carries durable identifiers.
 

@@ -47,6 +47,7 @@ import {
   researchRunIdempotencyKey,
   staleResearchEvidence,
 } from "./research-scheduler.ts";
+import { appendResearchTerminalMessage } from "./research-status.ts";
 import { queueDueParkerReports } from "./parker-scheduler.ts";
 import { processParkerReport } from "./parker-report.ts";
 
@@ -1648,7 +1649,7 @@ async function processResearchRun(
     )
     .limit(1);
   if (!run) throw new Error("Authoritative research run not found");
-  if (run.run.status === "completed") return;
+  if (run.run.status === "completed" || run.run.status === "failed") return;
   if (!strings(run.agent.allowedTools).includes("research.feeds.read"))
     throw new Error("Alfie feed tool is revoked");
   await db.transaction(async (tx) => {
@@ -1911,6 +1912,14 @@ async function processResearchRun(
             eq(schema.agentRuns.id, run.run.agentRunId),
           ),
         );
+      if (posted === 0) {
+        await appendResearchTerminalMessage(tx, {
+          organisationId,
+          researchRunId,
+          kind: "no_changes",
+          traceId,
+        });
+      }
       await appendAuditEvent(tx, {
         organisationId,
         actorId: run.agent.id,
@@ -1973,6 +1982,12 @@ async function processResearchRun(
               eq(schema.agentRuns.id, run.run.agentRunId),
             ),
           );
+        await appendResearchTerminalMessage(tx, {
+          organisationId,
+          researchRunId,
+          kind: "failed",
+          traceId,
+        });
         await appendAuditEvent(tx, {
           organisationId,
           actorId: run.agent.id,
