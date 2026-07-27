@@ -121,18 +121,24 @@ Never run that command against a production or clean-install database.
 ## Homelab image install (port 3004)
 
 The public image is built for `linux/amd64`; CI publishes SBOM/provenance and
-verifies an anonymous GHCR pull on `main`. Use an immutable SHA tag or digest
-in production, not `latest`. For example, set `MUSTER_VERSION` to the published
-`sha-<short-commit>` tag for the release you have reviewed.
+verifies an anonymous GHCR pull on `main`. Use a reviewed OCI digest, not
+`latest`. At this README revision, the published `sha-e13bb3b` image resolves to
+`ghcr.io/jusso-dev/muster@sha256:8f34bcfe021343d800869f6f4c28889ba4510caafb948c2da4bb95992ff9e734`.
+Verify that digest or replace it with a newer reviewed release before deployment.
 
 ```bash
 git clone https://github.com/jusso-dev/Muster.git
 cd Muster
 MUSTER_PUBLIC_URL=http://muster.example.lan:3004 \
 AUTH_TRUSTED_ORIGINS=http://muster.example.lan:3004 \
-MUSTER_VERSION=sha-REPLACE_WITH_REVIEWED_COMMIT \
+MUSTER_IMAGE=ghcr.io/jusso-dev/muster@sha256:8f34bcfe021343d800869f6f4c28889ba4510caafb948c2da4bb95992ff9e734 \
 ./scripts/install-homelab.sh
 ```
+
+`install-homelab.sh` persists an explicitly supplied `MUSTER_IMAGE` or legacy
+`MUSTER_VERSION` in `.env.homelab`; inspect that file before later upgrades.
+For a newer release, change the persisted reference only after its image,
+SBOM/provenance, migrations, and rollback path have been reviewed.
 
 The homelab Compose file publishes only web port `3004` by default and keeps
 PostgreSQL, Redis, MinIO, Mailpit, worker, gateway, and mocks internal. Set
@@ -248,6 +254,11 @@ certification. Run `pnpm screenshots` only against synthetic data. Before
 submitting a change, follow [CONTRIBUTING.md](CONTRIBUTING.md), keep the
 organisation/capability/approval boundaries intact, and include the relevant
 unit, integration, browser, migration, and rollback evidence.
+
+CI currently runs clean-install and synthetic-demo browser checks with Chromium
+on Ubuntu `linux/amd64`. `pnpm test:e2e` also defines local Firefox, WebKit, and
+iPhone 13-emulation projects; those projects are useful regression checks, not
+a claim of a production-browser support or connector-certification matrix.
 
 ## Additional verification commands
 

@@ -23,7 +23,8 @@ The Codex credential is runtime state, not image content. Authenticate once:
 docker compose --profile setup run --rm codex-login
 ```
 
-Compose stores the resulting `auth.json` in the private `codex-state` volume.
+The root Compose topology stores `auth.json` in private `muster-codex` volume;
+the homelab topology calls its corresponding private volume `codex-state`.
 Restrict Docker access, never publish or log this file, and revoke the Codex
 session if the host is compromised. The gateway reports
 `authentication_required` until the credential exists.

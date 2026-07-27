@@ -33,7 +33,7 @@ x-muster-environment: &muster-environment
   CODEX_HOME: /var/lib/muster/codex
 
 x-muster-service: &muster-service
-  image: ghcr.io/jusso-dev/muster:${MUSTER_VERSION:-latest}
+  image: ${MUSTER_IMAGE:-ghcr.io/jusso-dev/muster:${MUSTER_VERSION:-latest}}
   pull_policy: always
   restart: unless-stopped
   environment: *muster-environment

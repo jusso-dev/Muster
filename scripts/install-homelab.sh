@@ -7,6 +7,8 @@ env_file=".env.homelab"
 compose_file="deploy/docker/docker-compose.homelab.yml"
 requested_public_url="${MUSTER_PUBLIC_URL:-http://192.168.1.19:3004}"
 requested_http_port="${MUSTER_HTTP_PORT:-3004}"
+requested_version="${MUSTER_VERSION:-}"
+requested_image="${MUSTER_IMAGE:-}"
 
 if [[ ! -f "$env_file" ]]; then
   cp deploy/docker/.env.homelab.example "$env_file"
@@ -37,6 +39,25 @@ fi
 if ! grep -q '^AUTH_TRUSTED_ORIGINS=' "$env_file"; then
   printf 'AUTH_TRUSTED_ORIGINS=%s,http://homelab:%s\n' \
     "$requested_public_url" "$requested_http_port" >> "$env_file"
+fi
+
+# Persist an explicitly requested reviewed image tag before sourcing the env
+# file. Otherwise the template's `latest` value would silently win.
+if [[ -n "$requested_version" ]]; then
+  sed -i.bak \
+    -e "s|^MUSTER_VERSION=.*|MUSTER_VERSION=${requested_version}|" \
+    "$env_file"
+  rm "$env_file.bak"
+fi
+
+if [[ -n "$requested_image" ]]; then
+  sed -i.bak \
+    -e "s|^MUSTER_IMAGE=.*|MUSTER_IMAGE=${requested_image}|" \
+    "$env_file"
+  if ! grep -q '^MUSTER_IMAGE=' "$env_file"; then
+    printf 'MUSTER_IMAGE=%s\n' "$requested_image" >> "$env_file"
+  fi
+  rm "$env_file.bak"
 fi
 
 set -a
