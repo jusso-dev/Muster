@@ -108,14 +108,12 @@ upsert_env MUSTER_PUBLIC_URL "$requested_public_url"
 upsert_env MUSTER_HTTP_PORT "$requested_http_port"
 upsert_env AUTH_TRUSTED_ORIGINS "$requested_origins"
 
-if ! grep -q '^MUSTER_AGENT_GATEWAY_TOKEN=' "$env_file"; then
-  printf 'MUSTER_AGENT_GATEWAY_TOKEN=%s\n' "$(openssl rand -hex 32)" \
-    >> "$env_file"
+if ! grep -Eq '^MUSTER_AGENT_GATEWAY_TOKEN=[a-f0-9]{64}$' "$env_file"; then
+  upsert_env MUSTER_AGENT_GATEWAY_TOKEN "$(openssl rand -hex 32)"
   chmod 600 "$env_file"
 fi
-if ! grep -q '^SLACK_OAUTH_STATE_SECRET=' "$env_file"; then
-  printf 'SLACK_OAUTH_STATE_SECRET=%s\n' "$(openssl rand -hex 32)" \
-    >> "$env_file"
+if ! grep -Eq '^SLACK_OAUTH_STATE_SECRET=[a-f0-9]{64}$' "$env_file"; then
+  upsert_env SLACK_OAUTH_STATE_SECRET "$(openssl rand -hex 32)"
   chmod 600 "$env_file"
 fi
 
