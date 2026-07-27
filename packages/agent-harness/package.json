@@ -3,20 +3,37 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "muster-agent-harness": "./dist/cli.js",
+    "muster-agent-harness-mcp": "./dist/mcp.js"
+  },
   "exports": {
     ".": {
       "types": "./src/index.ts",
       "development": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./portable-client": {
+      "types": "./src/portable-client.ts",
+      "development": "./src/portable-client.ts",
+      "default": "./dist/portable-client.js"
+    },
+    "./mcp": {
+      "types": "./src/mcp.ts",
+      "development": "./src/mcp.ts",
+      "default": "./dist/mcp.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "cli": "node dist/cli.js",
+    "mcp": "node dist/mcp.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@muster/authz": "workspace:*",
     "@muster/config": "workspace:*",
     "@muster/contracts": "workspace:*",

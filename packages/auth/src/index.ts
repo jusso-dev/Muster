@@ -1,7 +1,7 @@
 import { passkey } from "@better-auth/passkey";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { betterAuth } from "better-auth";
-import { twoFactor } from "better-auth/plugins";
+import { bearer, twoFactor } from "better-auth/plugins";
 import nodemailer from "nodemailer";
 import { database, schema } from "@muster/database";
 
@@ -111,6 +111,7 @@ export const auth = betterAuth({
   },
   socialProviders: microsoft,
   plugins: [
+    bearer(),
     twoFactor({
       issuer: "Muster",
       totpOptions: { digits: 6, period: 30 },

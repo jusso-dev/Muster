@@ -29,6 +29,57 @@ same HTTP contract and must supply a new idempotency key per logical request.
 Adapters must never pass prompts, connector tokens, or restricted evidence to a
 different tenant.
 
+### CLI, MCP, Hermes, and custom tools
+
+`@muster/agent-harness` ships two first-party executables after its normal
+build: `muster-agent-harness` and `muster-agent-harness-mcp`. Both require an
+already authenticated Muster session forwarded as an opaque header or cookie;
+they do not perform login, mint identities, or store credentials. Configure the
+process environment outside source control:
+
+```sh
+export MUSTER_HARNESS_URL="https://muster.example"
+export MUSTER_HARNESS_AUTHORIZATION="Bearer <session-token>"
+# Or: export MUSTER_HARNESS_COOKIE="muster.session_token=<session-cookie>"
+```
+
+The CLI exposes every agent the authoritative manifest allows for that actor:
+
+```sh
+muster-agent-harness list
+muster-agent-harness invoke --agent=Jessie --prompt="Summarise this bounded investigation." --idempotency=case-123:jessie:1
+muster-agent-harness get 00000000-0000-4000-8000-000000000001
+muster-agent-harness cancel 00000000-0000-4000-8000-000000000001
+```
+
+The MCP executable uses stdio and provides `muster_agents_list`,
+`muster_agents_invoke`, `muster_agents_get`, and `muster_agents_cancel`.
+`muster_agents_invoke` requires an idempotency key so a client can reconnect or
+retry without creating another run. Example client configuration:
+
+```json
+{
+  "mcpServers": {
+    "muster": {
+      "command": "muster-agent-harness-mcp",
+      "env": {
+        "MUSTER_HARNESS_URL": "https://muster.example",
+        "MUSTER_HARNESS_AUTHORIZATION": "Bearer <session-token>"
+      }
+    }
+  }
+}
+```
+
+There is no direct Hermes wire protocol in this repository. Hermes and custom
+tools use `AgentHarnessHttpClient` from
+`@muster/agent-harness/portable-client`, forward their actor's opaque session
+credentials, and invoke the same endpoint with `mode: "hermes"` or
+`mode: "http"`. This preserves the server-side identity, organisation scope,
+capability checks, approval records, idempotency key, and durable run state.
+Never put a token in an MCP config committed to source control or in tool
+arguments, logs, manifests, prompts, or Slack metadata.
+
 ## Slack
 
 An organisation administrator starts OAuth at `GET /api/v1/slack/install`.
