@@ -23,9 +23,10 @@ Poll `GET /api/v1/agent-harness/runs/:id`; `DELETE` on that resource requests a
 capability-checked cancellation. Hermes, MCP, and CLI adapters use the same
 manifest and invocation shape, changing only `mode` to `hermes`, `mcp`, or `cli`.
 For example, Hermes submits the signed actor's `agentKey`, structured input, and
-`mode: "hermes"`; an MCP server exposes `agents/list`, `agents/invoke`,
-`agents/get`, and `agents/cancel` as thin calls to these routes. A CLI uses the
-same HTTP contract and must supply a new idempotency key per logical request.
+`mode: "hermes"`; the MCP server exposes `muster_agents_list`,
+`muster_agents_invoke`, `muster_agents_get`, and `muster_agents_cancel` as thin
+calls to these routes. A CLI uses the same HTTP contract and must supply a new
+idempotency key per logical request.
 Adapters must never pass prompts, connector tokens, or restricted evidence to a
 different tenant.
 
