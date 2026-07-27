@@ -1,4 +1,5 @@
 export {
+  checkObjectStorage,
   defaultEvidenceObjectStorage,
   defaultObjectStorage,
   type CleanupObjectStorage,

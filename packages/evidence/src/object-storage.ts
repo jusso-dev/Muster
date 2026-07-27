@@ -37,14 +37,20 @@ function hmac(key: string | Buffer, value: string) {
   return createHmac("sha256", key).update(value).digest();
 }
 
-function objectUrl(endpoint: string, bucket: string, storageKey: string) {
+function bucketUrl(endpoint: string, bucket: string) {
   const url = new URL(endpoint);
   const basePath = url.pathname.replace(/\/$/, "");
+  url.pathname = `${basePath}/${encodeURIComponent(bucket)}`;
+  return url;
+}
+
+function objectUrl(endpoint: string, bucket: string, storageKey: string) {
+  const url = bucketUrl(endpoint, bucket);
   const encodedKey = storageKey
     .split("/")
     .map((part) => encodeURIComponent(part))
     .join("/");
-  url.pathname = `${basePath}/${encodeURIComponent(bucket)}/${encodedKey}`;
+  url.pathname = `${url.pathname}/${encodedKey}`;
   return url;
 }
 
@@ -117,6 +123,30 @@ function storageConfiguration() {
     accessKey: process.env.OBJECT_STORAGE_ACCESS_KEY ?? "muster",
     secretKey: process.env.OBJECT_STORAGE_SECRET_KEY ?? "local-minio-secret",
   };
+}
+
+export async function checkObjectStorage(signal?: AbortSignal) {
+  const { endpoint, bucket, region, accessKey, secretKey } =
+    storageConfiguration();
+  const url = bucketUrl(endpoint, bucket);
+  const emptyBody = new Uint8Array();
+  const response = await fetch(url, {
+    method: "HEAD",
+    headers: signingHeaders(
+      "HEAD",
+      url,
+      emptyBody,
+      region,
+      accessKey,
+      secretKey,
+    ),
+    ...(signal ? { signal } : {}),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Object storage rejected readiness check with ${response.status}`,
+    );
+  }
 }
 
 export const defaultObjectStorage: CleanupObjectStorage = {

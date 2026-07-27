@@ -22,6 +22,11 @@ curl --fail http://127.0.0.1:3004/api/v1/health
 curl --fail http://127.0.0.1:3004/api/v1/ready
 ```
 
+`/health` is liveness: it only proves the web process can reach PostgreSQL.
+`/ready` is a serving-readiness gate: it reports PostgreSQL, Redis/queue,
+object storage, and the configured agent gateway without exposing endpoints or
+credentials. Any unavailable required dependency returns HTTP 503.
+
 The installer requires a full immutable `sha-<40-hex-commit>` tag. It writes
 the provided tag into `.env.homelab`, so upgrade and rollback commands cannot
 silently retain an old tag. It creates a private administrator only for this
