@@ -26,3 +26,4 @@ export * from "./ids.ts";
 export * from "./domain-transaction.ts";
 export * from "./outbox.ts";
 export * from "./repository.ts";
+export * from "./synthetic-cleanup.ts";
