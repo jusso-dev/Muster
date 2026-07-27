@@ -23,6 +23,7 @@
     "db:bootstrap": "pnpm --filter @muster/database bootstrap",
     "db:verify-clean": "pnpm --filter @muster/database verify-clean",
     "db:seed": "pnpm --filter @muster/database seed",
+    "alfie:cisa-smoke": "node scripts/alfie-cisa-smoke.mjs",
     "screenshots": "playwright test tests/screenshots.spec.ts",
     "format": "prettier --write .",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"

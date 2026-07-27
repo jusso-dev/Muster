@@ -40,6 +40,12 @@ export function SettingsView() {
               Reaction packs
             </Link>
             <Link
+              href="/settings/alfie-research"
+              className={buttonVariants({ variant: "outline" })}
+            >
+              Alfie research
+            </Link>
+            <Link
               href="/integrations/connectors"
               className={buttonVariants({ variant: "default" })}
             >
@@ -58,6 +64,14 @@ export function SettingsView() {
                 className="block h-9 w-full rounded px-2 py-2 text-left text-xs text-muted-foreground hover:bg-muted"
               >
                 {section}
+              </Link>
+            ) : section === "Agents" ? (
+              <Link
+                key={section}
+                href="/settings/alfie-research"
+                className="block h-9 w-full rounded px-2 py-2 text-left text-xs text-muted-foreground hover:bg-muted"
+              >
+                Alfie research
               </Link>
             ) : (
               <button

@@ -10,12 +10,10 @@ Analysts mark a brief `useful`, `irrelevant`, or `duplicate` through `POST /api/
 
 ## Live-source smoke
 
-Run from an environment with outbound HTTPS and save output as deployment evidence:
+Run from an environment with outbound HTTPS. It refuses unless explicitly opted in and writes a timestamped citation JSON artifact with source URL, retrieval time, feed SHA-256, catalog version, and cited CVE IDs:
 
 ```sh
-curl --fail --silent --show-error \
-  https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json \
-  | shasum -a 256
+MUSTER_ALFIE_LIVE_SMOKE=true pnpm alfie:cisa-smoke
 ```
 
-Record test time, SHA-256, CISA URL, and one cited `cveID` in deployment audit. Do not commit live feed contents or credentials.
+Attach generated `artifacts/alfie-cisa-smoke-*.json` to deployment evidence. Do not commit live feed contents or credentials.

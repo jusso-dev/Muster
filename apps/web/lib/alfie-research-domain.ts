@@ -31,11 +31,25 @@ export const ResearchWatchlistInputSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
-export type ResearchWatchlistInput = z.infer<typeof ResearchWatchlistInputSchema>;
+export type ResearchWatchlistInput = z.infer<
+  typeof ResearchWatchlistInputSchema
+>;
 
 function allowedOrigins() {
+  const testOrigins =
+    process.env.MUSTER_RESEARCH_TEST_MODE === "true"
+      ? [
+          "http://127.0.0.1:4123",
+          "http://localhost:4123",
+          ...(process.env.MUSTER_RESEARCH_TEST_ORIGINS ?? "")
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean),
+        ]
+      : [];
   return new Set([
     "https://www.cisa.gov",
+    ...testOrigins,
     ...(process.env.MUSTER_RESEARCH_ALLOWED_FEED_ORIGINS ?? "")
       .split(",")
       .map((value) => value.trim())
@@ -48,7 +62,11 @@ export function governedFeeds(input: ResearchWatchlistInput) {
   const allowed = allowedOrigins();
   for (const feed of feeds) {
     const parsed = new URL(feed.url);
-    if (parsed.protocol !== "https:" || !allowed.has(parsed.origin)) {
+    if (
+      (parsed.protocol !== "https:" &&
+        process.env.MUSTER_RESEARCH_TEST_MODE !== "true") ||
+      !allowed.has(parsed.origin)
+    ) {
       throw new ApiProblem(
         400,
         "Source not allowlisted",
@@ -71,14 +89,12 @@ export class AlfieResearchDomainService {
     return this.db
       .select()
       .from(schema.researchWatchlists)
-      .where(eq(schema.researchWatchlists.organisationId, subject.organisationId));
+      .where(
+        eq(schema.researchWatchlists.organisationId, subject.organisationId),
+      );
   }
 
-  async create(
-    subject: AuthorisationSubject,
-    raw: unknown,
-    traceId: string,
-  ) {
+  async create(subject: AuthorisationSubject, raw: unknown, traceId: string) {
     requireCapability(subject, "agents.manage");
     const input = ResearchWatchlistInputSchema.parse(raw);
     const feeds = governedFeeds(input);
@@ -93,7 +109,8 @@ export class AlfieResearchDomainService {
           ),
         )
         .limit(1);
-      if (!room) throw new ApiProblem(404, "Room not found", "Room does not exist.");
+      if (!room)
+        throw new ApiProblem(404, "Room not found", "Room does not exist.");
       const id = newId();
       const [created] = await tx
         .insert(schema.researchWatchlists)
@@ -118,7 +135,11 @@ export class AlfieResearchDomainService {
         })
         .returning();
       if (!created) {
-        throw new ApiProblem(409, "Watchlist exists", "Watchlist name already exists.");
+        throw new ApiProblem(
+          409,
+          "Watchlist exists",
+          "Watchlist name already exists.",
+        );
       }
       await appendAuditEvent(tx, {
         organisationId: subject.organisationId,
@@ -127,7 +148,10 @@ export class AlfieResearchDomainService {
         action: "research.watchlist.created",
         targetType: "research_watchlist",
         targetId: id,
-        metadata: { feeds: feeds.map((feed) => feed.url), cadenceMinutes: input.cadenceMinutes },
+        metadata: {
+          feeds: feeds.map((feed) => feed.url),
+          cadenceMinutes: input.cadenceMinutes,
+        },
         traceId,
       });
       await writeOutbox(tx, {
@@ -154,7 +178,11 @@ export class AlfieResearchDomainService {
     return this.db.transaction(async (tx) => {
       const [item] = await tx
         .update(schema.researchItems)
-        .set({ feedback, feedbackByActorId: subject.actorId, feedbackAt: new Date() })
+        .set({
+          feedback,
+          feedbackByActorId: subject.actorId,
+          feedbackAt: new Date(),
+        })
         .where(
           and(
             eq(schema.researchItems.organisationId, subject.organisationId),
@@ -162,7 +190,12 @@ export class AlfieResearchDomainService {
           ),
         )
         .returning();
-      if (!item) throw new ApiProblem(404, "Brief not found", "Research brief does not exist.");
+      if (!item)
+        throw new ApiProblem(
+          404,
+          "Brief not found",
+          "Research brief does not exist.",
+        );
       await appendAuditEvent(tx, {
         organisationId: subject.organisationId,
         actorId: subject.actorId,
