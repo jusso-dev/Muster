@@ -15,8 +15,7 @@ export interface HashableAuditEvent {
 }
 
 export type AuditChainVerification =
-  | { valid: true }
-  | { valid: false; brokenAt: number };
+  { valid: true } | { valid: false; brokenAt: number };
 
 export interface AuditLegacyCompatibilityMatch {
   sequence: number;
@@ -32,6 +31,10 @@ export interface AuditIntegrityReport {
 }
 
 type PersistedAuditEvent = HashableAuditEvent & { eventHash: string };
+const legacyApprovalIdActions = new Set([
+  "integration.action.queued",
+  "integration.action.succeeded",
+]);
 
 function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -54,6 +57,7 @@ export function normaliseAuditMetadata(metadata: unknown): unknown {
 
 function isLegacyApprovalIdOmission(event: PersistedAuditEvent): boolean {
   if (
+    !legacyApprovalIdActions.has(event.action) ||
     event.metadata === null ||
     typeof event.metadata !== "object" ||
     Array.isArray(event.metadata) ||
@@ -79,8 +83,12 @@ function verify(
 } {
   const legacyApprovalIdOmissions: AuditLegacyCompatibilityMatch[] = [];
   let previousHash = "0".repeat(64);
+  let expectedSequence = 1;
   for (const event of events) {
-    if (event.previousHash !== previousHash) {
+    if (
+      event.sequence !== expectedSequence ||
+      event.previousHash !== previousHash
+    ) {
       return {
         verification: { valid: false, brokenAt: event.sequence },
         legacyApprovalIdOmissions,
@@ -100,6 +108,7 @@ function verify(
       legacyApprovalIdOmissions.push({ sequence: event.sequence });
     }
     previousHash = eventHash;
+    expectedSequence += 1;
   }
   return { verification: { valid: true }, legacyApprovalIdOmissions };
 }
@@ -128,7 +137,10 @@ export function verifyAuditIntegrity(
     };
   }
 
-  if (legacy.verification.valid && legacy.legacyApprovalIdOmissions.length > 0) {
+  if (
+    legacy.verification.valid &&
+    legacy.legacyApprovalIdOmissions.length > 0
+  ) {
     return {
       outcome: "legacy-compatible-not-strict",
       strict,

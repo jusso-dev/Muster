@@ -117,4 +117,40 @@ describe("audit chain", () => {
       historicalChainRepaired: false,
     });
   });
+
+  it("rejects sequence gaps even when event hashes link", () => {
+    const first = { ...base, eventHash: hashAuditEvent(base) };
+    const thirdInput = {
+      ...base,
+      sequence: 3,
+      previousHash: first.eventHash,
+    };
+    const third = { ...thirdInput, eventHash: hashAuditEvent(thirdInput) };
+
+    expect(verifyAuditIntegrity([first, third])).toMatchObject({
+      outcome: "invalid",
+      strict: { valid: false, brokenAt: 3 },
+      legacyCompatible: { valid: false, brokenAt: 3 },
+    });
+  });
+
+  it("limits legacy compatibility to known integration-action events", () => {
+    const historicalInput = {
+      ...base,
+      action: "unexpected.action",
+      metadata: { operation: "alerts.list", approvalId: undefined },
+    };
+    const persisted = {
+      ...historicalInput,
+      metadata: { operation: "alerts.list" },
+      eventHash: hashAuditEvent(historicalInput),
+    };
+
+    expect(verifyAuditIntegrity([persisted])).toMatchObject({
+      outcome: "invalid",
+      strict: { valid: false, brokenAt: 1 },
+      legacyCompatible: { valid: false, brokenAt: 1 },
+      legacyApprovalIdOmissions: [],
+    });
+  });
 });
