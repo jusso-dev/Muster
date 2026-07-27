@@ -92,6 +92,15 @@ function encryptionKey() {
   return key;
 }
 
+function agentGatewayHeaders(organisationId: string) {
+  const token = process.env.MUSTER_AGENT_GATEWAY_TOKEN?.trim();
+  if (!token) throw new Error("Agent gateway token is not configured");
+  return {
+    authorization: `Bearer ${token}`,
+    "x-muster-organisation-id": organisationId,
+  };
+}
+
 function traceId(value: string | undefined) {
   return redactObservationText(value ?? crypto.randomUUID(), {
     maxStringLength: 160,
@@ -1473,7 +1482,11 @@ export async function processSlackInboxEvent(inboxEventId: string) {
     const run = await new GovernedAgentHarness(db).read(subject, action.value);
     const gateway = await fetch(
       `${process.env.AGENT_GATEWAY_URL ?? "http://agent-gateway:3002"}/v1/runs/${encodeURIComponent(run.runId)}/cancel`,
-      { method: "POST", signal: AbortSignal.timeout(5_000) },
+      {
+        headers: agentGatewayHeaders(row.inbox.organisationId),
+        method: "POST",
+        signal: AbortSignal.timeout(5_000),
+      },
     );
     if (!gateway.ok) throw new Error("Agent runtime did not accept cancellation");
     await db
