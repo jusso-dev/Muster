@@ -143,7 +143,7 @@ const authoritativeProcessor: Processor = async (job) => {
   }
   if (
     job.queueName === "muster-notifications" &&
-    job.name === "agent.run.settled"
+    (job.name === "agent.run.settled" || job.name === "agent.run.progress")
   ) {
     await deliverSlackRun(job.data.aggregateId);
   }

@@ -510,6 +510,53 @@ export class SlackGovernanceAdapter {
 
   async health(subject: AuthorisationSubject) {
     requireCapability(subject, "administration.manage");
+    const installations = await this.db
+      .select({
+        id: schema.slackInstallations.id,
+        teamId: schema.slackInstallations.teamId,
+        teamName: schema.slackInstallations.teamName,
+        scopes: schema.slackInstallations.scopes,
+        status: schema.slackInstallations.status,
+        lastHealthAt: schema.slackInstallations.lastHealthAt,
+        lastDeliveryAt: schema.slackInstallations.lastDeliveryAt,
+        lastError: schema.slackInstallations.lastError,
+      })
+      .from(schema.slackInstallations)
+      .where(eq(schema.slackInstallations.organisationId, subject.organisationId));
+    await Promise.all(
+      installations
+        .filter((installation) => installation.status === "active")
+        .map(async (installation) => {
+          try {
+            const token = (decryptConnectorPayload(
+              (
+                await this.db
+                  .select({ encryptedBotToken: schema.slackInstallations.encryptedBotToken })
+                  .from(schema.slackInstallations)
+                  .where(eq(schema.slackInstallations.id, installation.id))
+                  .limit(1)
+              )[0]?.encryptedBotToken ?? "",
+              encryptionKey(),
+            ) as { token: string }).token;
+            await slackApi(token, "auth.test", {});
+            await this.db
+              .update(schema.slackInstallations)
+              .set({ lastHealthAt: new Date(), lastError: null, updatedAt: new Date() })
+              .where(eq(schema.slackInstallations.id, installation.id));
+          } catch (error) {
+            await this.db
+              .update(schema.slackInstallations)
+              .set({
+                lastHealthAt: new Date(),
+                lastError: redactObservationText(
+                  error instanceof Error ? error.message : "Slack health check failed",
+                ),
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.slackInstallations.id, installation.id));
+          }
+        }),
+    );
     return this.db
       .select({
         id: schema.slackInstallations.id,
@@ -523,6 +570,53 @@ export class SlackGovernanceAdapter {
       })
       .from(schema.slackInstallations)
       .where(eq(schema.slackInstallations.organisationId, subject.organisationId));
+  }
+
+  async revoke(subject: AuthorisationSubject, installationId: string) {
+    requireCapability(subject, "administration.manage");
+    const [installation] = await this.db
+      .select()
+      .from(schema.slackInstallations)
+      .where(
+        and(
+          eq(schema.slackInstallations.id, installationId),
+          eq(schema.slackInstallations.organisationId, subject.organisationId),
+        ),
+      )
+      .limit(1);
+    if (!installation) throw new Error("Slack installation not found");
+    try {
+      const token = (decryptConnectorPayload(
+        installation.encryptedBotToken,
+        encryptionKey(),
+      ) as { token: string }).token;
+      await slackApi(token, "auth.revoke", { test: false });
+    } finally {
+      await this.db.transaction(async (tx) => {
+        await tx
+          .update(schema.slackInstallations)
+          .set({
+            status: "revoked",
+            revokedAt: new Date(),
+            encryptedBotToken: encryptConnectorPayload(
+              { revoked: true },
+              encryptionKey(),
+            ),
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.slackInstallations.id, installation.id));
+        await appendAuditEvent(tx, {
+          organisationId: subject.organisationId,
+          actorId: subject.actorId,
+          actorType: "human",
+          action: "slack.installation.revoked",
+          targetType: "slack_installation",
+          targetId: installation.id,
+          metadata: { teamId: installation.teamId },
+          traceId: crypto.randomUUID(),
+        });
+      });
+    }
   }
 
   async mapIdentity(
@@ -683,6 +777,7 @@ type SlackMessage = {
     text?: string;
     thread_ts?: string;
     ts?: string;
+    assistant_thread?: SlackAssistantThread;
 };
 
 type SlackEnvelope = {
@@ -694,6 +789,36 @@ type SlackEnvelope = {
   type?: string;
   actions?: Array<{ action_id?: string; value?: string }>;
 };
+
+type SlackAssistantThread = {
+  user_id?: string;
+  channel_id?: string;
+  thread_ts?: string;
+  context?: { channel_id?: string; team_id?: string; enterprise_id?: string };
+};
+
+export function normaliseSlackConversation(payload: SlackEnvelope) {
+  const event: SlackMessage = payload.event ?? {};
+  const assistantThread =
+    event.type === "assistant_thread_started" ||
+    event.type === "assistant_thread_context_changed"
+      ? (event.assistant_thread ?? null)
+      : null;
+  return {
+    event,
+    assistantThread,
+    slackUserId: event.user ?? assistantThread?.user_id ?? payload.user?.id,
+    channelId: event.channel ?? assistantThread?.channel_id ?? payload.channel?.id,
+    threadTs:
+      event.thread_ts ??
+      assistantThread?.thread_ts ??
+      payload.message?.thread_ts ??
+      payload.container?.thread_ts ??
+      event.ts ??
+      payload.message?.ts ??
+      payload.container?.message_ts,
+  };
+}
 
 function slackText(value: unknown, max = 2_000) {
   return redactObservationText(typeof value === "string" ? value : "", {
@@ -717,7 +842,7 @@ async function slackApi(token: string, method: string, body: Record<string, unkn
   return payload;
 }
 
-function resultBlocks(agentName: string, status: string, output: unknown) {
+export function slackResultBlocks(agentName: string, status: string, output: unknown) {
   const result =
     output && typeof output === "object" && !Array.isArray(output)
       ? (output as Record<string, unknown>)
@@ -803,16 +928,8 @@ export async function processSlackInboxEvent(inboxEventId: string) {
     row.inbox.encryptedPayload,
     encryptionKey(),
   ) as SlackEnvelope;
-  const event: SlackMessage = payload.event ?? {};
-  const slackUserId = event.user ?? payload.user?.id;
-  const channelId = event.channel ?? payload.channel?.id;
-  const threadTs =
-    event.thread_ts ??
-    payload.message?.thread_ts ??
-    payload.container?.thread_ts ??
-    event.ts ??
-    payload.message?.ts ??
-    payload.container?.message_ts;
+  const { event, assistantThread, slackUserId, channelId, threadTs } =
+    normaliseSlackConversation(payload);
   if (!slackUserId || !channelId) {
     await db
       .update(schema.slackInboxEvents)
@@ -931,7 +1048,7 @@ export async function processSlackInboxEvent(inboxEventId: string) {
     );
   const text = slackText(event.text, 4_000);
   const requested = text.match(/(?:\/muster|use)\s+([\w -]+)/i)?.[1]?.trim().toLowerCase();
-  const direct = event.channel_type === "im";
+  const direct = event.channel_type === "im" || Boolean(assistantThread);
   const eligible = exposures.filter(({ exposure }) => {
     const allowed = Array.isArray(exposure.allowedChannelIds)
       ? exposure.allowedChannelIds.includes(channelId)
@@ -940,6 +1057,9 @@ export async function processSlackInboxEvent(inboxEventId: string) {
   });
   const selected =
     eligible.find(({ agent }) => agent.name.toLowerCase() === requested) ??
+    eligible.find(({ agent }) =>
+      text.toLowerCase().startsWith(`${agent.name.toLowerCase()} `),
+    ) ??
     eligible.find(({ exposure }) => exposure.isDefault) ??
     eligible[0];
   if (!selected) {
@@ -954,7 +1074,13 @@ export async function processSlackInboxEvent(inboxEventId: string) {
       subject,
       {
         agentKey: selected.agent.name,
-        input: { prompt: text || "Continue the Slack thread." },
+        input: {
+          prompt:
+            text ||
+            (assistantThread
+              ? "Assist the user in this Slack Assistant thread. Keep the response bounded and governed."
+              : "Continue the Slack thread."),
+        },
         mode: "slack",
         correlationId: row.inbox.eventId,
       },
@@ -968,11 +1094,18 @@ export async function processSlackInboxEvent(inboxEventId: string) {
       channel: channelId,
       ...(threadTs ? { thread_ts: threadTs } : {}),
       text: `Muster: ${selected.agent.name} is active. Run queued.`,
-      blocks: resultBlocks(selected.agent.name, "queued", {
+      blocks: slackResultBlocks(selected.agent.name, "queued", {
         runId: accepted.runId,
         progress: "Queued; status will update here.",
       }),
     });
+    if (assistantThread) {
+      await slackApi(token, "assistant.threads.setStatus", {
+        channel_id: channelId,
+        thread_ts: threadTs,
+        status: "Muster is preparing a governed response…",
+      }).catch(() => undefined);
+    }
     await db.transaction(async (tx) => {
       await tx
         .insert(schema.slackRunDeliveries)
@@ -986,7 +1119,14 @@ export async function processSlackInboxEvent(inboxEventId: string) {
           threadTs: threadTs ?? posted.ts ?? "",
           progressMessageTs: posted.ts,
           status: "queued",
-          lastProgress: { stage: "queued", percent: 0 },
+          lastProgress: {
+            stage: "queued",
+            percent: 0,
+            assistantThread: Boolean(assistantThread),
+            contextChannelId: selected.exposure.allowThreadContext
+              ? assistantThread?.context?.channel_id
+              : undefined,
+          },
         })
         .onConflictDoNothing();
       await tx
@@ -1055,18 +1195,61 @@ export async function deliverSlackRun(runId: string) {
       ),
     );
   for (const row of deliveries) {
-    if (!["completed", "failed", "cancelled"].includes(row.run.status)) continue;
+    const terminal = ["completed", "failed", "cancelled"].includes(row.run.status);
     const token = (decryptConnectorPayload(
       row.installation.encryptedBotToken,
       encryptionKey(),
     ) as { token: string }).token;
     try {
+      const progress =
+        row.delivery.lastProgress &&
+        typeof row.delivery.lastProgress === "object" &&
+        !Array.isArray(row.delivery.lastProgress)
+          ? (row.delivery.lastProgress as Record<string, unknown>)
+          : {};
+      if (!terminal) {
+        const runProgress =
+          row.run.progress &&
+          typeof row.run.progress === "object" &&
+          !Array.isArray(row.run.progress)
+            ? (row.run.progress as Record<string, unknown>)
+            : {};
+        const stage = slackText(runProgress.stage, 120) || "working";
+        if (progress.stage === stage) continue;
+        if (row.delivery.progressMessageTs)
+          await slackApi(token, "chat.update", {
+            channel: row.delivery.channelId,
+            ts: row.delivery.progressMessageTs,
+            text: `Muster: ${row.agent.name} is ${stage}.`,
+            blocks: slackResultBlocks(row.agent.name, row.run.status, {
+              runId: row.run.id,
+              summary: `Progress: ${stage}.`,
+            }),
+          });
+        await db
+          .update(schema.slackRunDeliveries)
+          .set({
+            lastProgress: { ...progress, stage },
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.slackRunDeliveries.id, row.delivery.id));
+        continue;
+      }
+      if (progress.assistantThread === true)
+        await slackApi(token, "assistant.threads.setStatus", {
+          channel_id: row.delivery.channelId,
+          thread_ts: row.delivery.threadTs,
+          status:
+            row.run.status === "completed"
+              ? "Muster completed the governed response."
+              : `Muster ${row.run.status} the governed response.`,
+        });
       if (row.delivery.progressMessageTs)
         await slackApi(token, "chat.update", {
           channel: row.delivery.channelId,
           ts: row.delivery.progressMessageTs,
           text: `Muster: ${row.agent.name} ${row.run.status}.`,
-          blocks: resultBlocks(row.agent.name, row.run.status, {
+          blocks: slackResultBlocks(row.agent.name, row.run.status, {
             ...(row.run.structuredOutput &&
             typeof row.run.structuredOutput === "object" &&
             !Array.isArray(row.run.structuredOutput)

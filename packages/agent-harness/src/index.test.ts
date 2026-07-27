@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  normaliseSlackConversation,
+  slackResultBlocks,
   signSlackOAuthState,
   verifySlackOAuthState,
   verifySlackRequest,
@@ -34,5 +36,43 @@ describe("Slack governed harness boundary", () => {
     expect(() => verifySlackOAuthState(`${state}x`)).toThrow("Invalid Slack OAuth state");
     if (original === undefined) delete process.env.SLACK_OAUTH_STATE_SECRET;
     else process.env.SLACK_OAUTH_STATE_SECRET = original;
+  });
+
+  it("normalises Slack Assistant lifecycle context without trusting its text", () => {
+    const conversation = normaliseSlackConversation({
+      event: {
+        type: "assistant_thread_context_changed",
+        assistant_thread: {
+          user_id: "U123",
+          channel_id: "D123",
+          thread_ts: "1729999327.187299",
+          context: { channel_id: "C456", team_id: "T789" },
+        },
+      },
+    });
+    expect(conversation.slackUserId).toBe("U123");
+    expect(conversation.channelId).toBe("D123");
+    expect(conversation.threadTs).toBe("1729999327.187299");
+    expect(conversation.assistantThread?.context?.channel_id).toBe("C456");
+  });
+
+  it("renders bounded typed results with governed Slack actions", () => {
+    const queued = slackResultBlocks("Jessie", "queued", { runId: "run-1" });
+    const queuedActions = queued.find((block) => block.type === "actions") as {
+      elements: Array<{ action_id: string }>;
+    };
+    expect(queuedActions.elements.map((element) => element.action_id)).toContain("muster.cancel");
+
+    const failed = slackResultBlocks("Jessie", "failed", {
+      runId: "run-1",
+      summary: "Bounded synthetic failure",
+      confidence: 0.8,
+      gaps: ["No connector evidence"],
+    });
+    const failedActions = failed.find((block) => block.type === "actions") as {
+      elements: Array<{ action_id: string }>;
+    };
+    expect(failedActions.elements.map((element) => element.action_id)).toContain("muster.retry");
+    expect(JSON.stringify(failed)).not.toContain("connector-token");
   });
 });

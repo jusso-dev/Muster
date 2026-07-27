@@ -1188,21 +1188,36 @@ export class DurableAgentRuntime {
 
   private async heartbeat(runId: string) {
     const now = new Date();
-    const updated = await database()
-      .update(schema.agentRuns)
-      .set({
-        heartbeatAt: now,
-        leaseExpiresAt: new Date(now.getTime() + this.leaseMs),
-        progress: { stage: "executing", percent: 50 },
-      })
-      .where(
-        and(
-          eq(schema.agentRuns.id, runId),
-          eq(schema.agentRuns.status, "running"),
-          eq(schema.agentRuns.workerId, this.workerId),
-        ),
-      )
-      .returning({ id: schema.agentRuns.id });
+    const updated = await database().transaction(async (tx) => {
+      const rows = await tx
+        .update(schema.agentRuns)
+        .set({
+          heartbeatAt: now,
+          leaseExpiresAt: new Date(now.getTime() + this.leaseMs),
+          progress: { stage: "executing", percent: 50 },
+        })
+        .where(
+          and(
+            eq(schema.agentRuns.id, runId),
+            eq(schema.agentRuns.status, "running"),
+            eq(schema.agentRuns.workerId, this.workerId),
+          ),
+        )
+        .returning({ id: schema.agentRuns.id, organisationId: schema.agentRuns.organisationId });
+      const run = rows[0];
+      if (run)
+        await writeOutbox(tx, {
+          organisationId: run.organisationId,
+          eventType: "agent.run.progress",
+          aggregateType: "agent_run",
+          aggregateId: run.id,
+          queueName: "muster-notifications",
+          payload: { runId: run.id, stage: "executing", percent: 50 },
+          idempotencyKey: `agent.run.progress:${run.id}:executing`,
+          traceId: `agent-run-${run.id}`,
+        });
+      return rows;
+    });
     if (updated.length === 0) this.activeRuns.get(runId)?.abort();
   }
 

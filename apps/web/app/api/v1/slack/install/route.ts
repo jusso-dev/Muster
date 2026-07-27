@@ -1,8 +1,14 @@
 import { requireCapability } from "@muster/authz";
-import { signSlackOAuthState } from "@muster/agent-harness";
+import { SlackGovernanceAdapter, signSlackOAuthState } from "@muster/agent-harness";
 import { apiSubject, problemResponse, requestTraceId } from "@/lib/api-context";
 
-const scopes = ["app_mentions:read", "chat:write", "commands", "im:history"];
+const scopes = [
+  "app_mentions:read",
+  "assistant:write",
+  "chat:write",
+  "commands",
+  "im:history",
+];
 
 export async function GET(request: Request) {
   const traceId = requestTraceId(request);
@@ -23,6 +29,20 @@ export async function GET(request: Request) {
     authorizationUrl.searchParams.set("scope", scopes.join(","));
     authorizationUrl.searchParams.set("state", state);
     return Response.json({ data: { authorizationUrl: authorizationUrl.toString() }, traceId });
+  } catch (error) {
+    return problemResponse(error, traceId);
+  }
+}
+
+export async function DELETE(request: Request) {
+  const traceId = requestTraceId(request);
+  try {
+    const subject = await apiSubject(request);
+    requireCapability(subject, "administration.manage");
+    const installationId = new URL(request.url).searchParams.get("installationId");
+    if (!installationId) throw new Error("Slack installation id is required");
+    await new SlackGovernanceAdapter().revoke(subject, installationId);
+    return Response.json({ data: { status: "revoked" }, traceId });
   } catch (error) {
     return problemResponse(error, traceId);
   }
