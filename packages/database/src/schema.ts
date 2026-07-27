@@ -2037,6 +2037,57 @@ export const researchItems = pgTable(
   ],
 );
 
+// Parker's manifests are immutable report versions. The calculation parameters
+// and values live together so every published number is reproducible.
+export const reportManifests = pgTable(
+  "report_manifests",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id").notNull().references(() => organisations.id),
+    agentRunId: uuid("agent_run_id").references(() => agentRuns.id),
+    taskId: uuid("task_id").references(() => tasks.id),
+    roomId: uuid("room_id").notNull().references(() => rooms.id),
+    requestedByActorId: uuid("requested_by_actor_id").notNull().references(() => actors.id),
+    version: integer("version").notNull().default(1),
+    status: text("status").notNull().default("draft"),
+    manifest: jsonb("manifest").notNull(),
+    classification: text("classification").notNull().default("internal"),
+    reviewNote: text("review_note"),
+    postedMessageId: uuid("posted_message_id").references(() => messages.id),
+    idempotencyKey: text("idempotency_key").notNull(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("report_manifests_org_idempotency_unique").on(table.organisationId, table.idempotencyKey),
+    index("report_manifests_org_room_status_idx").on(table.organisationId, table.roomId, table.status, table.createdAt),
+    check("report_manifests_status_check", sql`${table.status} in ('draft','reviewed','posted','superseded')`),
+    check("report_manifests_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+export const reportDeliveries = pgTable(
+  "report_deliveries",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id").notNull().references(() => organisations.id),
+    reportId: uuid("report_id").notNull().references(() => reportManifests.id),
+    approvalId: uuid("approval_id").notNull().references(() => approvals.id),
+    requestedByActorId: uuid("requested_by_actor_id").notNull().references(() => actors.id),
+    recipient: text("recipient").notNull(),
+    status: text("status").notNull().default("awaiting_approval"),
+    result: jsonb("result"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("report_deliveries_org_idempotency_unique").on(table.organisationId, table.idempotencyKey),
+    index("report_deliveries_org_report_status_idx").on(table.organisationId, table.reportId, table.status),
+    check("report_deliveries_status_check", sql`${table.status} in ('awaiting_approval','queued','delivered','failed','cancelled')`),
+  ],
+);
+
 export const idempotencyRecords = pgTable(
   "idempotency_records",
   {

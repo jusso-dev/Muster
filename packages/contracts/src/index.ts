@@ -426,6 +426,25 @@ export const ExecutiveUpdateSchema = z.object({
   actions: z.array(z.string().max(500)).max(10),
   nextUpdateAt: z.iso.datetime({ offset: true }).nullable(),
 });
+export const ReportManifestSchema = z.object({
+  version: z.literal("parker-report-v1"),
+  audience: z.enum(["analyst", "leadership", "executive"]),
+  period: z.object({
+    from: z.iso.datetime({ offset: true }),
+    to: z.iso.datetime({ offset: true }),
+    timezone: z.string().min(1).max(100),
+    comparisonPeriod: z
+      .object({ from: z.iso.datetime({ offset: true }), to: z.iso.datetime({ offset: true }) })
+      .nullable(),
+  }),
+  filters: z.record(z.string(), z.unknown()),
+  metricDefinitions: z.array(z.object({ key: z.string(), definition: z.string(), population: z.string(), exclusions: z.string() })).min(1),
+  values: z.array(z.object({ key: z.string(), value: z.number().nullable(), unit: z.enum(["minutes", "percent", "count"]), state: z.enum(["available", "zero", "unavailable", "not_applicable"]), sampleSize: z.number().int().nonnegative() })).min(1),
+  sourceReferences: z.array(z.object({ source: z.string(), query: z.record(z.string(), z.unknown()) })).min(1),
+  narrative: z.string().min(1).max(10_000),
+  caveats: z.array(z.string().min(1).max(1_000)).max(50),
+  classification: z.enum(["internal", "restricted"]),
+});
 
 export const ResearchBriefSchema = z.object({
   version: z.literal("research-brief-v1"),
@@ -473,6 +492,7 @@ export const AgentStructuredOutputSchemas = {
   PostIncidentSummary: PostIncidentSummarySchema,
   ExecutiveUpdate: ExecutiveUpdateSchema,
   ResearchBrief: ResearchBriefSchema,
+  ReportManifest: ReportManifestSchema,
 } as const;
 
 export type AgentStructuredOutputName =

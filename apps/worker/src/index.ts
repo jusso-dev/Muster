@@ -139,6 +139,16 @@ const authoritativeProcessor: Processor = async (job) => {
       throw new Error(`Agent gateway dispatch failed with ${response.status}`);
     }
   }
+  if (
+    job.queueName === "muster-notifications" &&
+    job.name === "report.email.queued"
+  ) {
+    await processReportEmail(
+      job.data.organisationId,
+      job.data.aggregateId,
+      job.data.traceId,
+    );
+  }
   return {
     processedAt: new Date().toISOString(),
     authoritativeStateLoaded: true,
@@ -406,6 +416,64 @@ async function processConnectorQuery(
     if (retryable && !finalAttempt) throw failure;
     await maybeQueueJessieAnalysis(organisationId, runId, traceId);
   }
+}
+
+async function processReportEmail(
+  organisationId: string,
+  deliveryId: string,
+  traceId: string,
+) {
+  const db = database();
+  const [delivery] = await db
+    .select()
+    .from(schema.reportDeliveries)
+    .where(
+      and(
+        eq(schema.reportDeliveries.organisationId, organisationId),
+        eq(schema.reportDeliveries.id, deliveryId),
+      ),
+    )
+    .limit(1);
+  if (!delivery || delivery.status !== "queued") return;
+  // Email transport is deliberately absent until an organisation configures a
+  // dedicated connector. Record a bounded, auditable result instead of
+  // claiming a delivery that did not happen.
+  await db.transaction(async (tx) => {
+    await tx
+      .update(schema.reportDeliveries)
+      .set({
+        status: "failed",
+        result: { code: "email_transport_unconfigured" },
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.reportDeliveries.organisationId, organisationId),
+          eq(schema.reportDeliveries.id, deliveryId),
+          eq(schema.reportDeliveries.status, "queued"),
+        ),
+      );
+    await tx
+      .update(schema.approvals)
+      .set({ status: "failed", executedAt: new Date() })
+      .where(
+        and(
+          eq(schema.approvals.organisationId, organisationId),
+          eq(schema.approvals.id, delivery.approvalId),
+          eq(schema.approvals.status, "approved"),
+        ),
+      );
+    await appendAuditEvent(tx, {
+      organisationId,
+      actorId: delivery.requestedByActorId,
+      actorType: "human",
+      action: "report.email.failed",
+      targetType: "report_delivery",
+      targetId: deliveryId,
+      metadata: { code: "email_transport_unconfigured" },
+      traceId,
+    });
+  });
 }
 
 async function maybeQueueJessieAnalysis(

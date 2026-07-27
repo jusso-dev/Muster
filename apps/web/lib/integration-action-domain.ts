@@ -446,6 +446,10 @@ export class ApprovalDomainService {
         .object({ huntId: z.uuid(), agentRunId: z.uuid() })
         .passthrough()
         .safeParse(approval.target);
+      const reportEmailTarget = z
+        .object({ deliveryId: z.uuid(), reportId: z.uuid() })
+        .passthrough()
+        .safeParse(approval.target);
       if (deliveryTarget.success && status === "approved") {
         await tx
           .update(schema.integrationDeliveries)
@@ -651,6 +655,40 @@ export class ApprovalDomainService {
             and(
               eq(schema.tasks.organisationId, subject.organisationId),
               eq(schema.tasks.agentRunId, huntTarget.data.agentRunId),
+            ),
+          );
+      } else if (reportEmailTarget.success && status === "approved") {
+        await tx
+          .update(schema.reportDeliveries)
+          .set({ status: "queued", updatedAt: new Date() })
+          .where(
+            and(
+              eq(schema.reportDeliveries.organisationId, subject.organisationId),
+              eq(schema.reportDeliveries.id, reportEmailTarget.data.deliveryId),
+            ),
+          );
+        await writeOutbox(tx, {
+          organisationId: subject.organisationId,
+          eventType: "report.email.queued",
+          aggregateType: "report_delivery",
+          aggregateId: reportEmailTarget.data.deliveryId,
+          queueName: "muster-notifications",
+          payload: { deliveryId: reportEmailTarget.data.deliveryId },
+          idempotencyKey: `report.email:${reportEmailTarget.data.deliveryId}`,
+          traceId,
+        });
+      } else if (reportEmailTarget.success && status === "rejected") {
+        await tx
+          .update(schema.reportDeliveries)
+          .set({
+            status: "cancelled",
+            result: { code: "approval_rejected" },
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.reportDeliveries.organisationId, subject.organisationId),
+              eq(schema.reportDeliveries.id, reportEmailTarget.data.deliveryId),
             ),
           );
       }

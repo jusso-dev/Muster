@@ -12,6 +12,7 @@ import {
 import { agentReadinessEntry } from "@/lib/agent-readiness-domain";
 import { queueAgentRun } from "@/lib/task-domain";
 import { JessieHuntDomainService } from "@/lib/jessie-hunt-domain";
+import { ParkerReportDomainService } from "@/lib/parker-report-domain";
 
 export async function POST(
   request: Request,
@@ -128,7 +129,26 @@ export async function POST(
             },
             traceId,
           )
-        : await queueAgentRun(
+        : agent.name === "Parker" && task.roomId
+          ? await new ParkerReportDomainService().create(
+              subject,
+              {
+                roomId: task.roomId,
+                taskId: task.id,
+                audience: /\b(?:executive|board)\b/i.test(humanRequest)
+                  ? "executive"
+                  : /\b(?:leadership|manager)\b/i.test(humanRequest)
+                    ? "leadership"
+                    : "analyst",
+                period: {
+                  from: new Date(Date.now() - 7 * 24 * 60 * 60_000),
+                  to: new Date(),
+                },
+                idempotencyKey,
+              },
+              traceId,
+            )
+          : await queueAgentRun(
             {
               organisationId: subject.organisationId,
               actorId: subject.actorId,

@@ -255,6 +255,10 @@ export const actionApprovalPolicy = {
     approvalCount: 1,
     capability: "administration.manage",
   },
+  "report.email.dispatch": {
+    approvalCount: 1,
+    capability: "workflows.approve",
+  },
   "evidence.delete": { prohibited: true },
 } as const satisfies Record<
   string,

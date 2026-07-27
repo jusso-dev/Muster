@@ -853,6 +853,23 @@ export class DurableAgentRuntime {
         actions: ["Human review required"],
         nextUpdateAt: null,
       },
+      ReportManifest: {
+        version: "parker-report-v1",
+        audience: "analyst",
+        period: {
+          from: "2026-07-20T00:00:00.000Z",
+          to: "2026-07-27T00:00:00.000Z",
+          timezone: "UTC",
+          comparisonPeriod: null,
+        },
+        filters: { organisationScoped: true },
+        metricDefinitions: [{ key: "mtta", definition: "Synthetic", population: "Synthetic", exclusions: "Synthetic" }],
+        values: [{ key: "mtta", value: null, unit: "minutes", state: "unavailable", sampleSize: 0 }],
+        sourceReferences: [{ source: "synthetic", query: {} }],
+        narrative: base.summary,
+        caveats: ["Synthetic runtime output"],
+        classification: "internal",
+      },
     };
     const validated = validateStructuredOutput(
       schemaName,
