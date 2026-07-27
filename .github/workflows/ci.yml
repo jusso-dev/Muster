@@ -261,7 +261,6 @@ jobs:
         with:
           images: ${{ env.IMAGE_REF }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag
             type=sha,format=long
       - name: Log in to GitHub Container Registry
@@ -276,7 +275,6 @@ jobs:
         run: |
           promotion_policy() {
             case "${1##*:}" in
-              latest) printf 'movable\n' ;;
               "sha-${GITHUB_SHA}" | v*) printf 'immutable\n' ;;
               *)
                 printf 'Unexpected release tag: %s\n' "$1" >&2

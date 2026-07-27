@@ -111,8 +111,8 @@ if ! grep -q '^MUSTER_AGENT_GATEWAY_TOKEN=' "$env_file"; then
   chmod 600 "$env_file"
 fi
 
-# Persist an explicitly requested reviewed image reference before sourcing the env
-# file. Otherwise the template's `latest` value would silently win.
+# Persist an explicitly requested reviewed image reference before reading the
+# environment file so a prior installation cannot silently override it.
 if [[ -n "$requested_version" ]]; then
   sed -i.bak \
     -e "s|^MUSTER_VERSION=.*|MUSTER_VERSION=${requested_version}|" \
