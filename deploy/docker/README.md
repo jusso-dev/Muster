@@ -21,3 +21,6 @@ Only Muster's configured HTTP port is published. The example uses
 `http://muster.example.lan:3004`; replace it with the exact trusted browser
 origin. Use an HTTPS reverse proxy and set `AUTH_SECURE_COOKIES=true` when
 exposing Muster beyond a trusted local network.
+
+Use the immutable-tag release, smoke, and rollback procedure in
+[release-homelab.md](../../docs/operations/release-homelab.md).

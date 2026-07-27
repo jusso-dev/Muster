@@ -149,6 +149,24 @@ jobs:
           sbom: ${{ github.event_name == 'push' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Scan built image with Trivy
+        run: |
+          docker run --rm \
+            --volume /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.67.2 image \
+            --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL \
+            "${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA::7}"
+      - name: Record immutable image digest
+        if: github.event_name == 'push'
+        run: |
+          printf '%s  %s\n' "${{ steps.build.outputs.digest }}" \
+            "${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA::7}" > muster-image.sha256
+      - name: Upload immutable image checksum
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: muster-image-sha256
+          path: muster-image.sha256
       - name: Verify container starts
         if: github.event_name == 'pull_request'
         shell: bash
@@ -169,6 +187,8 @@ jobs:
           public_image="${REGISTRY}/${IMAGE_NAME,,}:sha-${GITHUB_SHA::7}"
           docker logout "$REGISTRY"
           docker pull "$public_image"
+          docker image inspect "$public_image" \
+            --format '{{.Os}}/{{.Architecture}}' | grep -x 'linux/amd64'
       - name: Publication summary
         if: github.event_name == 'push'
         run: |

@@ -43,6 +43,7 @@ if [[ ! -f "$env_file" ]]; then
   sed -i.bak \
     -e "s|MUSTER_PUBLIC_URL=.*|MUSTER_PUBLIC_URL=${requested_public_url}|" \
     -e "s|MUSTER_HTTP_PORT=.*|MUSTER_HTTP_PORT=${requested_http_port}|" \
+    -e "s|MUSTER_VERSION=.*|MUSTER_VERSION=${requested_version}|" \
     -e "s|AUTH_TRUSTED_ORIGINS=.*|AUTH_TRUSTED_ORIGINS=${AUTH_TRUSTED_ORIGINS:-${requested_public_url},http://homelab:${requested_http_port}}|" \
     -e "s|generate-postgres-password|${postgres_password}|" \
     -e "s|generate-better-auth-secret|${auth_secret}|" \
@@ -129,6 +130,11 @@ for external_network in tawny_default kelpie_default; do
     docker network create "$external_network" >/dev/null
   fi
 done
+
+if [[ "$MUSTER_VERSION" == "latest" || "$MUSTER_VERSION" == *"REPLACE"* ]]; then
+  printf '%s\n' 'MUSTER_VERSION must be a reviewed immutable sha-<commit> tag.' >&2
+  exit 2
+fi
 
 docker compose --env-file "$env_file" -f "$compose_file" pull
 docker compose --env-file "$env_file" -f "$compose_file" up -d
