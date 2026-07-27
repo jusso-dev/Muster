@@ -83,6 +83,7 @@ jobs:
       - run: pnpm db:verify-clean
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm test:homelab-installer
       - run: pnpm test:unit
       - run: pnpm contracts:generate
       - name: Verify committed migrations
