@@ -450,7 +450,11 @@ export class ApprovalDomainService {
         .object({ deliveryId: z.uuid(), reportId: z.uuid() })
         .passthrough()
         .safeParse(approval.target);
-      if (deliveryTarget.success && status === "approved") {
+      if (
+        deliveryTarget.success &&
+        approval.actionType !== "report.email.dispatch" &&
+        status === "approved"
+      ) {
         await tx
           .update(schema.integrationDeliveries)
           .set({ status: "queued", updatedAt: new Date() })
@@ -476,7 +480,11 @@ export class ApprovalDomainService {
           idempotencyKey: `integration.action:${deliveryTarget.data.deliveryId}`,
           traceId,
         });
-      } else if (deliveryTarget.success && status === "rejected") {
+      } else if (
+        deliveryTarget.success &&
+        approval.actionType !== "report.email.dispatch" &&
+        status === "rejected"
+      ) {
         await tx
           .update(schema.integrationDeliveries)
           .set({

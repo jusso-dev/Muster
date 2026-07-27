@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDatabase, database, newId, schema } from "@muster/database";
 import { and, eq } from "drizzle-orm";
+import { ApprovalDomainService } from "./integration-action-domain";
 import { ParkerReportDomainService } from "./parker-report-domain";
 
 const describeIntegration =
@@ -89,5 +90,60 @@ describeIntegration("Parker report room scope", () => {
       await db.insert(schema.roomMemberships).values(membership);
     }
     expect(first.duplicate).toBe(false);
+  });
+
+  it("queues the report email outbox after approval", async () => {
+    const reportId = newId();
+    const idempotencyKey = `test:parker-email:${reportId}`;
+    await db.insert(schema.reportManifests).values({
+      id: reportId,
+      organisationId: subject.organisationId,
+      roomId,
+      requestedByActorId: subject.actorId,
+      status: "reviewed",
+      manifest: {},
+      classification: "internal",
+      idempotencyKey: `test:parker-manifest:${reportId}`,
+    });
+    const delivery = await new ParkerReportDomainService().requestEmail(
+      subject,
+      reportId,
+      {
+        recipient: `parker-${reportId}@example.test`,
+        idempotencyKey,
+      },
+      newId(),
+    );
+    const decision = await new ApprovalDomainService().decide(
+      subject,
+      delivery.approvalId,
+      {
+        status: "approved",
+        reason: "Synthetic report email approval.",
+      },
+      newId(),
+    );
+    const [persisted] = await db
+      .select()
+      .from(schema.reportDeliveries)
+      .where(
+        and(
+          eq(schema.reportDeliveries.organisationId, subject.organisationId),
+          eq(schema.reportDeliveries.id, delivery.id),
+        ),
+      );
+    const [event] = await db
+      .select()
+      .from(schema.outboxEvents)
+      .where(
+        and(
+          eq(schema.outboxEvents.organisationId, subject.organisationId),
+          eq(schema.outboxEvents.eventType, "report.email.queued"),
+          eq(schema.outboxEvents.aggregateId, delivery.id),
+        ),
+      );
+    expect(decision.status).toBe("approved");
+    expect(persisted?.status).toBe("queued");
+    expect(event?.queueName).toBe("muster-notifications");
   });
 });
