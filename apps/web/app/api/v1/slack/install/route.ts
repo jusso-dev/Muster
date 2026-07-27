@@ -1,14 +1,10 @@
 import { requireCapability } from "@muster/authz";
-import { SlackGovernanceAdapter, signSlackOAuthState } from "@muster/agent-harness";
+import {
+  requiredSlackBotScopes,
+  SlackGovernanceAdapter,
+  signSlackOAuthState,
+} from "@muster/agent-harness";
 import { apiSubject, problemResponse, requestTraceId } from "@/lib/api-context";
-
-const scopes = [
-  "app_mentions:read",
-  "assistant:write",
-  "chat:write",
-  "commands",
-  "im:history",
-];
 
 export async function GET(request: Request) {
   const traceId = requestTraceId(request);
@@ -26,7 +22,7 @@ export async function GET(request: Request) {
     const authorizationUrl = new URL("https://slack.com/oauth/v2/authorize");
     authorizationUrl.searchParams.set("client_id", clientId);
     authorizationUrl.searchParams.set("redirect_uri", redirectUri);
-    authorizationUrl.searchParams.set("scope", scopes.join(","));
+    authorizationUrl.searchParams.set("scope", requiredSlackBotScopes.join(","));
     authorizationUrl.searchParams.set("state", state);
     return Response.json({ data: { authorizationUrl: authorizationUrl.toString() }, traceId });
   } catch (error) {

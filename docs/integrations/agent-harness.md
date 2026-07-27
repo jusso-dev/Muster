@@ -86,9 +86,11 @@ arguments, logs, manifests, prompts, or Slack metadata.
 An organisation administrator starts OAuth at `GET /api/v1/slack/install`.
 Muster requires `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_REDIRECT_URI`,
 `SLACK_SIGNING_SECRET`, `SLACK_OAUTH_STATE_SECRET`, and
-`CONNECTOR_ENCRYPTION_KEY`. Bot tokens and inbound payloads are encrypted before
-they reach PostgreSQL; only hashes, bounded error text, and audit metadata are
-available for operations.
+`CONNECTOR_ENCRYPTION_KEY`. Set `MUSTER_PUBLIC_URL` to the browser-reachable
+Muster origin used by Slack result links; it falls back to `BETTER_AUTH_URL`.
+Bot tokens and inbound payloads are encrypted before they reach PostgreSQL;
+only hashes, bounded error text, and audit metadata are available for
+operations.
 
 Configure Slack as follows:
 
@@ -113,6 +115,10 @@ event idempotency key, acknowledges immediately, and invokes agents asynchronous
 from the outbox. One bounded execution-progress update and the terminal typed
 result are updated in the original thread and offer
 capability-checked Cancel, Retry, Approval Review, and View in Muster actions.
+View in Muster opens the authenticated, organisation-scoped run page.
+Recommended next steps are bounded to three items. Evidence links are emitted
+only for UUID evidence records and point back to Muster's capability-checked
+evidence endpoint; untrusted external references are never rendered as links.
 Approval Review verifies the mapped approver and opens the authoritative Muster
 approval record; only the existing Muster approval decision flow can approve or
 execute a dangerous action.

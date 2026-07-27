@@ -1,8 +1,10 @@
 import { createHmac } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { AgentHarnessInvokeSchema } from "@muster/contracts";
 import {
+  missingSlackBotScopes,
   normaliseSlackConversation,
+  requiredSlackBotScopes,
   slackResultBlocks,
   signSlackOAuthState,
   verifySlackOAuthState,
@@ -10,6 +12,13 @@ import {
 } from "./index";
 
 describe("Slack governed harness boundary", () => {
+  const originalPublicUrl = process.env.MUSTER_PUBLIC_URL;
+
+  afterEach(() => {
+    if (originalPublicUrl === undefined) delete process.env.MUSTER_PUBLIC_URL;
+    else process.env.MUSTER_PUBLIC_URL = originalPublicUrl;
+  });
+
   it("accepts only fresh, correctly signed Slack requests", () => {
     const now = 1_700_000_000_000;
     const timestamp = String(now / 1_000);
@@ -39,6 +48,15 @@ describe("Slack governed harness boundary", () => {
     else process.env.SLACK_OAUTH_STATE_SECRET = original;
   });
 
+  it("requires every least-privilege Slack bot scope", () => {
+    expect(missingSlackBotScopes(requiredSlackBotScopes)).toEqual([]);
+    expect(
+      missingSlackBotScopes(
+        requiredSlackBotScopes.filter((scope) => scope !== "commands"),
+      ),
+    ).toEqual(["commands"]);
+  });
+
   it("normalises Slack Assistant lifecycle context without trusting its text", () => {
     const conversation = normaliseSlackConversation({
       event: {
@@ -58,17 +76,37 @@ describe("Slack governed harness boundary", () => {
   });
 
   it("renders bounded typed results with governed Slack actions", () => {
+    process.env.MUSTER_PUBLIC_URL = "https://muster.example";
     const queued = slackResultBlocks("Jessie", "queued", { runId: "run-1" });
     const queuedActions = queued.find((block) => block.type === "actions") as {
-      elements: Array<{ action_id: string }>;
+      elements: Array<{ action_id: string; url?: string }>;
     };
     expect(queuedActions.elements.map((element) => element.action_id)).toContain("muster.cancel");
+    expect(
+      queuedActions.elements.find(
+        (element) => element.action_id === "muster.view_in_muster",
+      )?.url,
+    ).toBe("https://muster.example/agent-runs/run-1");
 
     const failed = slackResultBlocks("Jessie", "failed", {
       runId: "run-1",
       summary: "Bounded synthetic failure",
       confidence: 0.8,
       gaps: ["No connector evidence"],
+      recommendedNextSteps: [
+        "Review <@U123> findings",
+        "Collect bounded endpoint context",
+      ],
+      evidenceReferences: [
+        {
+          type: "evidence",
+          reference: "00000000-0000-4000-8000-000000000004",
+        },
+        {
+          type: "external",
+          reference: "https://untrusted.example/evidence",
+        },
+      ],
       approvalId: "00000000-0000-4000-8000-000000000003",
     });
     const failedActions = failed.find((block) => block.type === "actions") as {
@@ -76,6 +114,12 @@ describe("Slack governed harness boundary", () => {
     };
     expect(failedActions.elements.map((element) => element.action_id)).toContain("muster.retry");
     expect(failedActions.elements.map((element) => element.action_id)).toContain("muster.approval.view");
+    expect(JSON.stringify(failed)).toContain(
+      "https://muster.example/api/v1/evidence/00000000-0000-4000-8000-000000000004",
+    );
+    expect(JSON.stringify(failed)).toContain("Recommended next steps");
+    expect(JSON.stringify(failed)).toContain("Review &lt;@U123&gt; findings");
+    expect(JSON.stringify(failed)).not.toContain("https://untrusted.example");
     expect(JSON.stringify(failed)).not.toContain("connector-token");
 
     const escaped = slackResultBlocks("Jessie", "completed", {

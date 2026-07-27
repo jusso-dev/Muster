@@ -1,10 +1,11 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { closeDatabase, database, newId, schema } from "@muster/database";
 import { and, eq, inArray, like } from "drizzle-orm";
 import {
   deliverSlackRun,
   encryptConnectorPayload,
   processSlackInboxEvent,
+  requiredSlackBotScopes,
   SlackGovernanceAdapter,
 } from "./index";
 
@@ -16,7 +17,9 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
   const suffix = newId();
   const eventId = `Ev-synthetic-${suffix}`;
   const teamId = `T-synthetic-${suffix}`;
+  const foreignTeamId = `T-foreign-${suffix}`;
   const slackUserId = `U-synthetic-${suffix}`;
+  const underprivilegedSlackUserId = `U-underprivileged-${suffix}`;
   let organisationId = "";
   let actorId = "";
   let agentId = "";
@@ -24,10 +27,13 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
   let foreignOrganisationId = "";
   let foreignActorId = "";
   let foreignInstallationId = "";
+  let underprivilegedActorId = "";
   let runId = "";
   let approvalId = "";
   const posted: Array<{ method: string; body: Record<string, unknown> }> = [];
   const originalFetch = globalThis.fetch;
+  const originalClientId = process.env.SLACK_CLIENT_ID;
+  const originalClientSecret = process.env.SLACK_CLIENT_SECRET;
 
   beforeAll(async () => {
     process.env.CONNECTOR_ENCRYPTION_KEY = Buffer.alloc(32, 23).toString(
@@ -90,6 +96,23 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
       actorId,
       createdByActorId: actorId,
     });
+    underprivilegedActorId = newId();
+    await db.insert(schema.actors).values({
+      id: underprivilegedActorId,
+      organisationId,
+      actorType: "human",
+      displayName: "Synthetic underprivileged Slack user",
+      identityReference: `synthetic-slack-underprivileged-${suffix}@example.invalid`,
+      capabilityAssignments: ["agents.read", "agents.invoke"],
+    });
+    await db.insert(schema.slackIdentityMappings).values({
+      id: newId(),
+      organisationId,
+      installationId,
+      slackUserId: underprivilegedSlackUserId,
+      actorId: underprivilegedActorId,
+      createdByActorId: actorId,
+    });
     await db.insert(schema.slackAgentExposures).values({
       id: newId(),
       organisationId,
@@ -120,7 +143,7 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
     await db.insert(schema.slackInstallations).values({
       id: foreignInstallationId,
       organisationId: foreignOrganisationId,
-      teamId: `T-foreign-${suffix}`,
+      teamId: foreignTeamId,
       teamName: "Foreign Slack",
       encryptedBotToken: "synthetic-not-decrypted",
       installedByActorId: foreignActorId,
@@ -140,12 +163,41 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
     globalThis.fetch = vi.fn(async (input, init) => {
       const method =
         new URL(String(input)).pathname.split("/").pop() ?? "unknown";
+      const rawBody = String(init?.body ?? "{}");
       posted.push({
         method,
-        body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+        body:
+          method === "oauth.v2.access"
+            ? Object.fromEntries(new URLSearchParams(rawBody))
+            : (JSON.parse(rawBody) as Record<string, unknown>),
       });
+      if (method === "oauth.v2.access")
+        return Response.json({
+          ok: true,
+          access_token: "xoxb-synthetic-rotated",
+          team: { id: foreignTeamId, name: "Foreign Slack" },
+          scope: requiredSlackBotScopes.join(","),
+        });
       return Response.json({ ok: true, ts: `1710000000.${posted.length}` });
     }) as typeof fetch;
+  });
+
+  afterEach(async () => {
+    if (installationId)
+      await db
+        .update(schema.slackInstallations)
+        .set({ status: "active" })
+        .where(eq(schema.slackInstallations.id, installationId));
+    if (agentId)
+      await db
+        .update(schema.agentDefinitions)
+        .set({ killSwitch: false })
+        .where(eq(schema.agentDefinitions.id, agentId));
+    if (originalClientId === undefined) delete process.env.SLACK_CLIENT_ID;
+    else process.env.SLACK_CLIENT_ID = originalClientId;
+    if (originalClientSecret === undefined)
+      delete process.env.SLACK_CLIENT_SECRET;
+    else process.env.SLACK_CLIENT_SECRET = originalClientSecret;
   });
 
   afterAll(async () => {
@@ -180,6 +232,9 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
     await db
       .delete(schema.slackInstallations)
       .where(eq(schema.slackInstallations.id, installationId));
+    await db
+      .delete(schema.actors)
+      .where(eq(schema.actors.id, underprivilegedActorId));
     await db
       .delete(schema.approvals)
       .where(eq(schema.approvals.id, approvalId));
@@ -407,6 +462,143 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
     expect(
       posted.some((call) => call.method === "assistant.threads.setStatus"),
     ).toBe(true);
+  });
+
+  it("denies underprivileged Slack actions and cross-tenant OAuth attachment", async () => {
+    const adapter = new SlackGovernanceAdapter(db);
+    const cancelPayload = {
+      type: "block_actions",
+      team: { id: teamId },
+      user: { id: underprivilegedSlackUserId },
+      channel: { id: "C-synthetic" },
+      message: { ts: "1710000000.000100" },
+      actions: [{ action_id: "muster.cancel", value: runId }],
+    };
+    const cancel = await adapter.recordEvent(
+      `${JSON.stringify(cancelPayload)}-underprivileged`,
+      cancelPayload,
+    );
+    const cancellationCalls = posted.filter(
+      (call) => call.method === "cancel",
+    ).length;
+    await processSlackInboxEvent(cancel.inboxEvent!.id);
+    const [deniedInbox] = await db
+      .select({
+        status: schema.slackInboxEvents.status,
+        error: schema.slackInboxEvents.error,
+      })
+      .from(schema.slackInboxEvents)
+      .where(eq(schema.slackInboxEvents.id, cancel.inboxEvent!.id));
+    expect(deniedInbox).toEqual({
+      status: "ignored",
+      error: "action_forbidden",
+    });
+    expect(posted.filter((call) => call.method === "cancel")).toHaveLength(
+      cancellationCalls,
+    );
+
+    process.env.SLACK_CLIENT_ID = "synthetic-client";
+    process.env.SLACK_CLIENT_SECRET = "synthetic-secret";
+    await expect(
+      adapter.install(
+        {
+          actorId,
+          organisationId,
+          capabilities: new Set(["administration.manage"]),
+        },
+        "synthetic-code",
+        "https://muster.example/api/v1/slack/oauth/callback",
+      ),
+    ).rejects.toThrow(
+      "Slack workspace is already connected to another organisation",
+    );
+  });
+
+  it("blocks queued ingress and delivery after revocation or kill switch", async () => {
+    const adapter = new SlackGovernanceAdapter(db);
+    const revokedPayload = {
+      type: "event_callback",
+      team_id: teamId,
+      event_id: `Ev-revoked-${suffix}`,
+      event: {
+        type: "app_mention",
+        user: slackUserId,
+        channel: "C-synthetic",
+        text: "use default synthetic agent",
+      },
+    };
+    const revoked = await adapter.recordEvent(
+      JSON.stringify(revokedPayload),
+      revokedPayload,
+    );
+    await db
+      .update(schema.slackInstallations)
+      .set({ status: "revoked" })
+      .where(eq(schema.slackInstallations.id, installationId));
+    await processSlackInboxEvent(revoked.inboxEvent!.id);
+    const [revokedInbox] = await db
+      .select({
+        status: schema.slackInboxEvents.status,
+        error: schema.slackInboxEvents.error,
+      })
+      .from(schema.slackInboxEvents)
+      .where(eq(schema.slackInboxEvents.id, revoked.inboxEvent!.id));
+    expect(revokedInbox).toEqual({
+      status: "ignored",
+      error: "installation_inactive",
+    });
+
+    await db
+      .update(schema.slackRunDeliveries)
+      .set({ status: "queued" })
+      .where(eq(schema.slackRunDeliveries.runId, runId));
+    const deliveryCalls = posted.length;
+    await deliverSlackRun(runId);
+    const [blockedDelivery] = await db
+      .select({
+        status: schema.slackRunDeliveries.status,
+        error: schema.slackRunDeliveries.lastError,
+      })
+      .from(schema.slackRunDeliveries)
+      .where(eq(schema.slackRunDeliveries.runId, runId));
+    expect(blockedDelivery).toEqual({
+      status: "blocked",
+      error: "installation_inactive",
+    });
+    expect(posted).toHaveLength(deliveryCalls);
+    await db
+      .update(schema.slackInstallations)
+      .set({ status: "active" })
+      .where(eq(schema.slackInstallations.id, installationId));
+
+    const killedPayload = {
+      ...revokedPayload,
+      event_id: `Ev-killed-${suffix}`,
+    };
+    const killed = await adapter.recordEvent(
+      JSON.stringify(killedPayload),
+      killedPayload,
+    );
+    await db
+      .update(schema.agentDefinitions)
+      .set({ killSwitch: true })
+      .where(eq(schema.agentDefinitions.id, agentId));
+    await processSlackInboxEvent(killed.inboxEvent!.id);
+    const [killedInbox] = await db
+      .select({
+        status: schema.slackInboxEvents.status,
+        error: schema.slackInboxEvents.error,
+      })
+      .from(schema.slackInboxEvents)
+      .where(eq(schema.slackInboxEvents.id, killed.inboxEvent!.id));
+    expect(killedInbox).toEqual({
+      status: "ignored",
+      error: "agent_not_exposed",
+    });
+    await db
+      .update(schema.agentDefinitions)
+      .set({ killSwitch: false })
+      .where(eq(schema.agentDefinitions.id, agentId));
   });
 
   it("never leaves a disabled agent exposed as an installation default", async () => {

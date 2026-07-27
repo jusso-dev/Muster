@@ -38,6 +38,19 @@ const supportedModes: AgentHarnessInvocationMode[] = [
   "http",
 ];
 
+export const requiredSlackBotScopes = [
+  "app_mentions:read",
+  "assistant:write",
+  "chat:write",
+  "commands",
+  "im:history",
+] as const;
+
+export function missingSlackBotScopes(scopes: readonly string[]) {
+  const granted = new Set(scopes);
+  return requiredSlackBotScopes.filter((scope) => !granted.has(scope));
+}
+
 function asCapabilities(value: unknown): Capability[] {
   if (!Array.isArray(value)) return [];
   return value.filter(
@@ -405,6 +418,11 @@ export class SlackGovernanceAdapter {
     });
     const payload = SlackOAuthResponseSchema.parse(await response.json());
     const scopes = payload.scope?.split(",").filter(Boolean) ?? [];
+    const missingScopes = missingSlackBotScopes(scopes);
+    if (missingScopes.length)
+      throw new Error(
+        `Slack OAuth response is missing required bot scopes: ${missingScopes.join(", ")}`,
+      );
     const encryptedBotToken = encryptConnectorPayload(
       { token: payload.access_token },
       encryptionKey(),
@@ -998,6 +1016,56 @@ function slackMrkdwn(value: unknown, max = 2_000) {
     .replaceAll(">", "&gt;");
 }
 
+function musterUrl(path: string) {
+  try {
+    const url = new URL(
+      path,
+      process.env.MUSTER_PUBLIC_URL ??
+        process.env.BETTER_AUTH_URL ??
+        "http://localhost:3000",
+    );
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function evidenceIds(result: Record<string, unknown>) {
+  const references = Array.isArray(result.evidenceReferences)
+    ? result.evidenceReferences
+    : [];
+  const items = Array.isArray(result.items) ? result.items : [];
+  return [
+    ...references.map((reference) =>
+      reference &&
+      typeof reference === "object" &&
+      "reference" in reference &&
+      typeof reference.reference === "string"
+        ? reference.reference
+        : undefined,
+    ),
+    ...items.map((item) =>
+      item &&
+      typeof item === "object" &&
+      "evidenceId" in item &&
+      typeof item.evidenceId === "string"
+        ? item.evidenceId
+        : undefined,
+    ),
+  ]
+    .filter(
+      (id): id is string =>
+        typeof id === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          id,
+        ),
+    )
+    .filter((id, index, ids) => ids.indexOf(id) === index)
+    .slice(0, 3);
+}
+
 async function slackApi(token: string, method: string, body: Record<string, unknown>) {
   const response = await fetch(`https://slack.com/api/${method}`, {
     method: "POST",
@@ -1027,20 +1095,42 @@ export function slackResultBlocks(agentName: string, status: string, output: unk
   const gaps = Array.isArray(result.gaps)
     ? slackMrkdwn(result.gaps.filter((gap): gap is string => typeof gap === "string").slice(0, 3).join("; "), 700)
     : "";
+  const nextSteps = [
+    result.recommendedNextSteps,
+    result.recommendedActions,
+    result.followUpActions,
+  ].find(Array.isArray);
+  const renderedNextSteps = Array.isArray(nextSteps)
+    ? nextSteps
+        .filter((step): step is string => typeof step === "string")
+        .slice(0, 3)
+        .map((step) => `• ${slackMrkdwn(step, 300)}`)
+        .join("\n")
+    : "";
+  const linkedEvidence = evidenceIds(result)
+    .map((id, index) => {
+      const url = musterUrl(`/api/v1/evidence/${encodeURIComponent(id)}`);
+      return url ? `<${url}|Evidence ${index + 1}>` : undefined;
+    })
+    .filter((link): link is string => Boolean(link));
   const actions: Array<{
     type: "button";
     action_id: string;
     text: { type: "plain_text"; text: string };
     value: string;
     style?: "danger";
-  }> = [
-    {
+    url?: string;
+  }> = [];
+  if (typeof result.runId === "string") {
+    const runUrl = musterUrl(`/agent-runs/${encodeURIComponent(result.runId)}`);
+    actions.push({
       type: "button",
       action_id: "muster.view_in_muster",
       text: { type: "plain_text", text: "View in Muster" },
-      value: "view",
-    },
-  ];
+      value: result.runId,
+      ...(runUrl ? { url: runUrl } : {}),
+    });
+  }
   if (["queued", "running", "waiting_sources", "awaiting_approval"].includes(status))
     actions.unshift({
       type: "button",
@@ -1056,14 +1146,17 @@ export function slackResultBlocks(agentName: string, status: string, output: unk
       text: { type: "plain_text", text: "Retry" },
       value: result.runId,
     });
-  if (typeof result.approvalId === "string")
+  if (typeof result.approvalId === "string") {
+    const approvalUrl = musterUrl("/approvals");
     actions.push({
       type: "button",
       action_id: "muster.approval.view",
       text: { type: "plain_text", text: "Review approval" },
       value: result.approvalId,
+      ...(approvalUrl ? { url: approvalUrl } : {}),
     });
-  return [
+  }
+  const blocks: Array<Record<string, unknown>> = [
     {
       type: "section",
       text: { type: "mrkdwn", text: `*${agentName}* — ${status}` },
@@ -1075,11 +1168,31 @@ export function slackResultBlocks(agentName: string, status: string, output: unk
         text: `${summary}${confidence}${gaps ? `\n*Gaps:* ${gaps}` : ""}`,
       },
     },
-    {
+  ];
+  if (renderedNextSteps)
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Recommended next steps*\n${renderedNextSteps}`,
+      },
+    });
+  if (linkedEvidence.length)
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `*Evidence:* ${linkedEvidence.join(" · ")}`,
+        },
+      ],
+    });
+  if (actions.length)
+    blocks.push({
       type: "actions",
       elements: actions,
-    },
-  ];
+    });
+  return blocks;
 }
 
 export async function processSlackInboxEvent(inboxEventId: string) {
@@ -1102,7 +1215,23 @@ export async function processSlackInboxEvent(inboxEventId: string) {
     )
     .where(eq(schema.slackInboxEvents.id, inboxEventId))
     .limit(1);
-  if (!row || row.inbox.status === "processed") return;
+  if (
+    !row ||
+    row.inbox.status === "processed" ||
+    row.inbox.status === "ignored"
+  )
+    return;
+  if (row.installation.status !== "active") {
+    await db
+      .update(schema.slackInboxEvents)
+      .set({
+        status: "ignored",
+        processedAt: new Date(),
+        error: "installation_inactive",
+      })
+      .where(eq(schema.slackInboxEvents.id, row.inbox.id));
+    return;
+  }
   const payload = decryptConnectorPayload(
     row.inbox.encryptedPayload,
     encryptionKey(),
@@ -1148,6 +1277,28 @@ export async function processSlackInboxEvent(inboxEventId: string) {
     capabilities: new Set(asCapabilities(identity.actor.capabilityAssignments)),
   };
   const action = payload.actions?.[0];
+  const requiredActionCapability: Capability | undefined =
+    action?.action_id === "muster.cancel"
+      ? "agents.cancel"
+      : action?.action_id === "muster.retry"
+        ? "agents.invoke"
+        : action?.action_id === "muster.approval.view"
+          ? "workflows.approve"
+          : undefined;
+  if (
+    requiredActionCapability &&
+    !subject.capabilities.has(requiredActionCapability)
+  ) {
+    await db
+      .update(schema.slackInboxEvents)
+      .set({
+        status: "ignored",
+        processedAt: new Date(),
+        error: "action_forbidden",
+      })
+      .where(eq(schema.slackInboxEvents.id, row.inbox.id));
+    return;
+  }
   if (action?.action_id === "muster.view_in_muster") {
     await db
       .update(schema.slackInboxEvents)
@@ -1421,6 +1572,17 @@ export async function deliverSlackRun(runId: string) {
       ),
     );
   for (const row of deliveries) {
+    if (row.installation.status !== "active") {
+      await db
+        .update(schema.slackRunDeliveries)
+        .set({
+          status: "blocked",
+          lastError: "installation_inactive",
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.slackRunDeliveries.id, row.delivery.id));
+      continue;
+    }
     const terminal = ["completed", "failed", "cancelled"].includes(row.run.status);
     const token = (decryptConnectorPayload(
       row.installation.encryptedBotToken,
