@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import {
   actionApprovalPolicy,
+  capabilities,
   requireCapability,
   type AuthorisationSubject,
+  type Capability,
 } from "@muster/authz";
 import {
   appendAuditEvent,
@@ -82,6 +84,14 @@ function metric(key: string, values: number[]): Metric {
   return { ...value, key };
 }
 
+function requiredCapabilities(value: unknown): Capability[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (capability): capability is Capability =>
+      typeof capability === "string" && capabilities.includes(capability as Capability),
+  );
+}
+
 export function buildParkerManifest(
   input: z.infer<typeof CreateParkerReportSchema>,
   data: AggregateData,
@@ -155,6 +165,48 @@ export function buildParkerManifest(
 export class ParkerReportDomainService {
   constructor(private readonly db = database()) {}
 
+  private async requireRoomMembership(
+    subject: AuthorisationSubject,
+    roomId: string,
+  ) {
+    const [membership] = await this.db
+      .select({ roomId: schema.roomMemberships.roomId })
+      .from(schema.roomMemberships)
+      .where(
+        and(
+          eq(schema.roomMemberships.organisationId, subject.organisationId),
+          eq(schema.roomMemberships.roomId, roomId),
+          eq(schema.roomMemberships.actorId, subject.actorId),
+        ),
+      )
+      .limit(1);
+    if (!membership)
+      throw new ApiProblem(404, "Not found", "Report room not found.");
+  }
+
+  private async accessibleReport(subject: AuthorisationSubject, reportId: string) {
+    const [row] = await this.db
+      .select({ report: schema.reportManifests })
+      .from(schema.reportManifests)
+      .innerJoin(
+        schema.roomMemberships,
+        and(
+          eq(schema.roomMemberships.organisationId, schema.reportManifests.organisationId),
+          eq(schema.roomMemberships.roomId, schema.reportManifests.roomId),
+          eq(schema.roomMemberships.actorId, subject.actorId),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.reportManifests.organisationId, subject.organisationId),
+          eq(schema.reportManifests.id, reportId),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new ApiProblem(404, "Not found", "Report does not exist.");
+    return row.report;
+  }
+
   async create(subject: AuthorisationSubject, raw: unknown, traceId: string) {
     requireCapability(subject, "agents.invoke");
     requireCapability(subject, "audit.read");
@@ -163,11 +215,11 @@ export class ParkerReportDomainService {
       throw new ApiProblem(400, "Report period too broad", "Reports are limited to 366 days.");
     const [room, parker, existing, task, data] = await Promise.all([
       this.db.select({ id: schema.roomMemberships.roomId }).from(schema.roomMemberships).where(and(eq(schema.roomMemberships.organisationId, subject.organisationId), eq(schema.roomMemberships.roomId, input.roomId), eq(schema.roomMemberships.actorId, subject.actorId))).limit(1).then((rows) => rows[0]),
-      this.db.select({ id: schema.agentDefinitions.id, runtime: schema.agentDefinitions.runtime, model: schema.agentDefinitions.model, promptVersion: schema.agentDefinitions.systemPromptVersion, allowedRooms: schema.agentDefinitions.allowedRooms }).from(schema.agentDefinitions).where(and(eq(schema.agentDefinitions.organisationId, subject.organisationId), eq(schema.agentDefinitions.name, "Parker"), eq(schema.agentDefinitions.status, "active"), eq(schema.agentDefinitions.killSwitch, false))).limit(1).then((rows) => rows[0]),
+      this.db.select({ id: schema.agentDefinitions.id, runtime: schema.agentDefinitions.runtime, model: schema.agentDefinitions.model, promptVersion: schema.agentDefinitions.systemPromptVersion, allowedRooms: schema.agentDefinitions.allowedRooms, capabilityRequirements: schema.agentDefinitions.capabilityRequirements }).from(schema.agentDefinitions).where(and(eq(schema.agentDefinitions.organisationId, subject.organisationId), eq(schema.agentDefinitions.name, "Parker"), eq(schema.agentDefinitions.status, "active"), eq(schema.agentDefinitions.killSwitch, false))).limit(1).then((rows) => rows[0]),
       this.db.select().from(schema.reportManifests).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.idempotencyKey, input.idempotencyKey))).limit(1).then((rows) => rows[0]),
       input.taskId
         ? this.db
-            .select({ id: schema.tasks.id, roomId: schema.tasks.roomId })
+            .select({ id: schema.tasks.id, roomId: schema.tasks.roomId, assignedActorId: schema.tasks.assignedActorId })
             .from(schema.tasks)
             .where(
               and(
@@ -186,7 +238,10 @@ export class ParkerReportDomainService {
         this.db.select().from(schema.workflowRuns).where(eq(schema.workflowRuns.organisationId, subject.organisationId)),
       ]),
     ]);
-    if (existing) return { id: existing.id, status: existing.status, duplicate: true };
+    if (existing) {
+      await this.requireRoomMembership(subject, existing.roomId);
+      return { id: existing.id, status: existing.status, duplicate: true };
+    }
     if (!room) throw new ApiProblem(404, "Not found", "Room not found.");
     if (input.taskId && !task)
       throw new ApiProblem(404, "Not found", "Task not found.");
@@ -194,6 +249,10 @@ export class ParkerReportDomainService {
       throw new ApiProblem(409, "Task room mismatch", "The report task belongs to a different room.");
     if (!parker || !Array.isArray(parker.allowedRooms) || !parker.allowedRooms.includes(input.roomId))
       throw new ApiProblem(409, "Parker unavailable", "Parker is not active in this room.");
+    if (task && task.assignedActorId !== parker.id)
+      throw new ApiProblem(409, "Task agent mismatch", "The task is not assigned to Parker.");
+    for (const capability of requiredCapabilities(parker.capabilityRequirements))
+      requireCapability(subject, capability);
     const manifest = buildParkerManifest(input, { alerts: data[0], investigations: data[1], approvals: data[2], agentRuns: data[3], workflowRuns: data[4] });
     return this.db.transaction(async (tx) => {
       const reportId = newId();
@@ -211,13 +270,12 @@ export class ParkerReportDomainService {
 
   async get(subject: AuthorisationSubject, reportId: string) {
     requireCapability(subject, "agents.read");
-    const [report] = await this.db.select().from(schema.reportManifests).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.id, reportId))).limit(1);
-    if (!report) throw new ApiProblem(404, "Report not found", "Report does not exist.");
-    return report;
+    return this.accessibleReport(subject, reportId);
   }
 
   async review(subject: AuthorisationSubject, reportId: string, note: string | undefined, traceId: string) {
     requireCapability(subject, "tasks.update");
+    await this.accessibleReport(subject, reportId);
     return this.db.transaction(async (tx) => {
       const [report] = await tx.update(schema.reportManifests).set({ status: "reviewed", reviewNote: note?.slice(0, 2_000) ?? null, reviewedAt: new Date(), updatedAt: new Date() }).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.id, reportId), eq(schema.reportManifests.status, "draft"))).returning();
       if (!report) throw new ApiProblem(409, "Review unavailable", "Only a draft report can be reviewed.");
@@ -228,9 +286,17 @@ export class ParkerReportDomainService {
 
   async createVersion(subject: AuthorisationSubject, reportId: string, traceId: string) {
     requireCapability(subject, "tasks.update");
+    await this.accessibleReport(subject, reportId);
     return this.db.transaction(async (tx) => {
-      const [report] = await tx.select().from(schema.reportManifests).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.id, reportId), inArray(schema.reportManifests.status, ["reviewed", "posted"]))).limit(1);
-      if (!report) throw new ApiProblem(409, "Version unavailable", "Only a reviewed or posted report can be versioned.");
+      const [report] = await tx.select().from(schema.reportManifests).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.id, reportId))).for("update").limit(1);
+      const versionKey = report ? `parker-report-version:${report.id}:${report.version + 1}` : "";
+      const [existing] = versionKey
+        ? await tx.select().from(schema.reportManifests).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.idempotencyKey, versionKey))).limit(1)
+        : [];
+      if (existing)
+        return { id: existing.id, previousId: reportId, version: existing.version, status: existing.status, duplicate: true };
+      if (!report || !["reviewed", "posted"].includes(report.status))
+        throw new ApiProblem(409, "Version unavailable", "Only a reviewed or posted report can be versioned.");
       const versionId = newId();
       await tx.update(schema.reportManifests).set({ status: "superseded", updatedAt: new Date() }).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.id, reportId)));
       await tx.insert(schema.reportManifests).values({
@@ -244,15 +310,16 @@ export class ParkerReportDomainService {
         status: "draft",
         manifest: report.manifest,
         classification: report.classification,
-        idempotencyKey: `parker-report-version:${report.id}:${report.version + 1}`,
+        idempotencyKey: versionKey,
       });
       await appendAuditEvent(tx, { organisationId: subject.organisationId, actorId: subject.actorId, actorType: "human", action: "report.versioned", targetType: "report_manifest", targetId: versionId, metadata: { previousReportId: reportId, version: report.version + 1 }, traceId });
-      return { id: versionId, previousId: reportId, version: report.version + 1, status: "draft" };
+      return { id: versionId, previousId: reportId, version: report.version + 1, status: "draft", duplicate: false };
     });
   }
 
   async post(subject: AuthorisationSubject, reportId: string, traceId: string) {
     requireCapability(subject, "messages.create");
+    await this.accessibleReport(subject, reportId);
     return this.db.transaction(async (tx) => {
       const [report] = await tx.select().from(schema.reportManifests).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.id, reportId), eq(schema.reportManifests.status, "reviewed"))).limit(1);
       if (!report) throw new ApiProblem(409, "Post unavailable", "Review the report before posting it.");
@@ -283,15 +350,31 @@ export class ParkerReportDomainService {
 
   async requestEmail(subject: AuthorisationSubject, reportId: string, raw: unknown, traceId: string) {
     requireCapability(subject, "workflows.approve");
+    await this.accessibleReport(subject, reportId);
     const input = RequestReportEmailSchema.parse(raw);
     return this.db.transaction(async (tx) => {
-      const [report] = await tx.select().from(schema.reportManifests).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.id, reportId), eq(schema.reportManifests.status, "reviewed"))).limit(1);
+      const [existing] = await tx
+        .select()
+        .from(schema.reportDeliveries)
+        .where(
+          and(
+            eq(schema.reportDeliveries.organisationId, subject.organisationId),
+            eq(schema.reportDeliveries.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .limit(1);
+      if (existing) {
+        if (existing.reportId !== reportId || existing.recipient !== input.recipient)
+          throw new ApiProblem(409, "Idempotency conflict", "Email idempotency key belongs to a different request.");
+        return { id: existing.id, approvalId: existing.approvalId, status: existing.status, duplicate: true };
+      }
+      const [report] = await tx.select().from(schema.reportManifests).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.id, reportId), eq(schema.reportManifests.status, "reviewed"))).for("update").limit(1);
       if (!report) throw new ApiProblem(409, "Email unavailable", "Only reviewed reports can be emailed.");
       const deliveryId = newId(); const approvalId = newId(); const policy = actionApprovalPolicy["report.email.dispatch"];
       await tx.insert(schema.approvals).values({ id: approvalId, organisationId: subject.organisationId, requestingActorId: subject.actorId, actionType: "report.email.dispatch", target: { deliveryId, reportId }, riskSummary: `Emailing reviewed report ${reportId} to ${input.recipient} requires approval.`, expiresAt: new Date(Date.now() + 30 * 60_000), requiredCapability: policy.capability, requiredApprovalCount: policy.approvalCount, idempotencyKey: `parker-email-approval:${input.idempotencyKey}` });
       await tx.insert(schema.reportDeliveries).values({ id: deliveryId, organisationId: subject.organisationId, reportId, approvalId, requestedByActorId: subject.actorId, recipient: input.recipient, idempotencyKey: input.idempotencyKey });
       await appendAuditEvent(tx, { organisationId: subject.organisationId, actorId: subject.actorId, actorType: "human", action: "report.email.approval_requested", targetType: "report_delivery", targetId: deliveryId, metadata: { reportId }, traceId });
-      return { id: deliveryId, approvalId, status: "awaiting_approval" };
+      return { id: deliveryId, approvalId, status: "awaiting_approval", duplicate: false };
     });
   }
 }

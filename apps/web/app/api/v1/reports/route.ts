@@ -1,6 +1,6 @@
 import { requireCapability } from "@muster/authz";
 import { database, schema } from "@muster/database";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { apiSubject, problemResponse, requestTraceId } from "@/lib/api-context";
 import { ParkerReportDomainService } from "@/lib/parker-report-domain";
 
@@ -9,10 +9,18 @@ export async function GET(request: Request) {
   try {
     const subject = await apiSubject(request);
     requireCapability(subject, "agents.read");
-    const data = await database().select().from(schema.reportManifests)
+    const data = await database().select({ report: schema.reportManifests }).from(schema.reportManifests)
+      .innerJoin(
+        schema.roomMemberships,
+        and(
+          eq(schema.roomMemberships.organisationId, schema.reportManifests.organisationId),
+          eq(schema.roomMemberships.roomId, schema.reportManifests.roomId),
+          eq(schema.roomMemberships.actorId, subject.actorId),
+        ),
+      )
       .where(eq(schema.reportManifests.organisationId, subject.organisationId))
       .orderBy(desc(schema.reportManifests.createdAt)).limit(100);
-    return Response.json({ data, traceId });
+    return Response.json({ data: data.map((row) => row.report), traceId });
   } catch (error) { return problemResponse(error, traceId); }
 }
 
