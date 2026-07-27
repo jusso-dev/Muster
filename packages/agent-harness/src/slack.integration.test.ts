@@ -21,13 +21,18 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
   let actorId = "";
   let agentId = "";
   let installationId = "";
+  let foreignOrganisationId = "";
+  let foreignActorId = "";
+  let foreignInstallationId = "";
   let runId = "";
   let approvalId = "";
   const posted: Array<{ method: string; body: Record<string, unknown> }> = [];
   const originalFetch = globalThis.fetch;
 
   beforeAll(async () => {
-    process.env.CONNECTOR_ENCRYPTION_KEY = Buffer.alloc(32, 23).toString("base64");
+    process.env.CONNECTOR_ENCRYPTION_KEY = Buffer.alloc(32, 23).toString(
+      "base64",
+    );
     const actors = await db
       .select({
         id: schema.actors.id,
@@ -43,7 +48,10 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
         candidate.capabilities.includes("agents.cancel") &&
         candidate.capabilities.includes("workflows.approve"),
     );
-    if (!actor) throw new Error("Bootstrap a synthetic Muster workspace before integration tests");
+    if (!actor)
+      throw new Error(
+        "Bootstrap a synthetic Muster workspace before integration tests",
+      );
     organisationId = actor.organisationId;
     actorId = actor.id;
     const [agent] = await db
@@ -57,7 +65,10 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
         ),
       )
       .limit(1);
-    if (!agent) throw new Error("Bootstrap an active synthetic agent before integration tests");
+    if (!agent)
+      throw new Error(
+        "Bootstrap an active synthetic agent before integration tests",
+      );
     agentId = agent.id;
     installationId = newId();
     await db.insert(schema.slackInstallations).values({
@@ -90,6 +101,30 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
       allowThreadContext: true,
       updatedByActorId: actorId,
     });
+    foreignOrganisationId = newId();
+    foreignActorId = newId();
+    foreignInstallationId = newId();
+    await db.insert(schema.organisations).values({
+      id: foreignOrganisationId,
+      name: `Synthetic Slack foreign ${suffix}`,
+      slug: `synthetic-slack-foreign-${suffix}`,
+    });
+    await db.insert(schema.actors).values({
+      id: foreignActorId,
+      organisationId: foreignOrganisationId,
+      actorType: "human",
+      displayName: "Synthetic foreign Slack administrator",
+      identityReference: `synthetic-slack-foreign-${suffix}@example.invalid`,
+      capabilityAssignments: ["administration.manage"],
+    });
+    await db.insert(schema.slackInstallations).values({
+      id: foreignInstallationId,
+      organisationId: foreignOrganisationId,
+      teamId: `T-foreign-${suffix}`,
+      teamName: "Foreign Slack",
+      encryptedBotToken: "synthetic-not-decrypted",
+      installedByActorId: foreignActorId,
+    });
     approvalId = newId();
     await db.insert(schema.approvals).values({
       id: approvalId,
@@ -103,7 +138,8 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
       idempotencyKey: `synthetic-slack-approval:${suffix}`,
     });
     globalThis.fetch = vi.fn(async (input, init) => {
-      const method = new URL(String(input)).pathname.split("/").pop() ?? "unknown";
+      const method =
+        new URL(String(input)).pathname.split("/").pop() ?? "unknown";
       posted.push({
         method,
         body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
@@ -117,23 +153,69 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
     const runs = await db
       .select({ id: schema.agentRuns.id })
       .from(schema.agentRuns)
-      .where(like(schema.agentRuns.idempotencyKey, `slack:${installationId}:%`));
+      .where(
+        like(schema.agentRuns.idempotencyKey, `slack:${installationId}:%`),
+      );
     const runIds = runs.map((run) => run.id);
-    await db.delete(schema.slackRunDeliveries).where(eq(schema.slackRunDeliveries.installationId, installationId));
-    await db.delete(schema.slackInboxEvents).where(eq(schema.slackInboxEvents.installationId, installationId));
+    await db
+      .delete(schema.slackRunDeliveries)
+      .where(eq(schema.slackRunDeliveries.installationId, installationId));
+    await db
+      .delete(schema.slackInboxEvents)
+      .where(eq(schema.slackInboxEvents.installationId, installationId));
     if (runIds.length) {
-      await db.delete(schema.agentRunEvents).where(inArray(schema.agentRunEvents.runId, runIds));
-      await db.delete(schema.agentRuns).where(inArray(schema.agentRuns.id, runIds));
+      await db
+        .delete(schema.agentRunEvents)
+        .where(inArray(schema.agentRunEvents.runId, runIds));
+      await db
+        .delete(schema.agentRuns)
+        .where(inArray(schema.agentRuns.id, runIds));
     }
-    await db.delete(schema.slackAgentExposures).where(eq(schema.slackAgentExposures.installationId, installationId));
-    await db.delete(schema.slackIdentityMappings).where(eq(schema.slackIdentityMappings.installationId, installationId));
-    await db.delete(schema.slackInstallations).where(eq(schema.slackInstallations.id, installationId));
-    await db.delete(schema.approvals).where(eq(schema.approvals.id, approvalId));
+    await db
+      .delete(schema.slackAgentExposures)
+      .where(eq(schema.slackAgentExposures.installationId, installationId));
+    await db
+      .delete(schema.slackIdentityMappings)
+      .where(eq(schema.slackIdentityMappings.installationId, installationId));
+    await db
+      .delete(schema.slackInstallations)
+      .where(eq(schema.slackInstallations.id, installationId));
+    await db
+      .delete(schema.approvals)
+      .where(eq(schema.approvals.id, approvalId));
+    await db
+      .delete(schema.slackInstallations)
+      .where(eq(schema.slackInstallations.id, foreignInstallationId));
+    await db.delete(schema.actors).where(eq(schema.actors.id, foreignActorId));
+    await db
+      .delete(schema.organisations)
+      .where(eq(schema.organisations.id, foreignOrganisationId));
     await closeDatabase();
   });
 
   it("persists a signed event once, invokes once, and updates bounded progress then terminal result", async () => {
     const adapter = new SlackGovernanceAdapter(db);
+    const administrator = {
+      actorId,
+      organisationId,
+      capabilities: new Set(["administration.manage"] as const),
+    };
+    const settings = await adapter.settings(administrator);
+    expect(
+      settings.installations.map((installation) => installation.id),
+    ).toContain(installationId);
+    expect(
+      settings.installations.map((installation) => installation.id),
+    ).not.toContain(foreignInstallationId);
+    expect(
+      settings.identities.map((identity) => identity.slackUserId),
+    ).toContain(slackUserId);
+    expect(settings.exposures.map((exposure) => exposure.agentId)).toContain(
+      agentId,
+    );
+    await expect(
+      adapter.settings({ ...administrator, capabilities: new Set() }),
+    ).rejects.toThrow("Missing capability: administration.manage");
     const payload = {
       type: "event_callback",
       team_id: teamId,
@@ -179,11 +261,18 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
     const [run] = await db
       .select()
       .from(schema.agentRuns)
-      .where(eq(schema.agentRuns.idempotencyKey, `slack:${installationId}:${eventId}`))
+      .where(
+        eq(
+          schema.agentRuns.idempotencyKey,
+          `slack:${installationId}:${eventId}`,
+        ),
+      )
       .limit(1);
     expect(run).toBeTruthy();
     runId = run!.id;
-    expect(posted.filter((call) => call.method === "chat.postMessage")).toHaveLength(1);
+    expect(
+      posted.filter((call) => call.method === "chat.postMessage"),
+    ).toHaveLength(1);
 
     await db
       .update(schema.agentRuns)
@@ -206,9 +295,13 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
     await deliverSlackRun(runId);
     const updates = posted.filter((call) => call.method === "chat.update");
     expect(updates).toHaveLength(2);
-    expect(JSON.stringify(updates.at(-1)?.body.blocks)).toContain("Synthetic typed completion");
+    expect(JSON.stringify(updates.at(-1)?.body.blocks)).toContain(
+      "Synthetic typed completion",
+    );
     await deliverSlackRun(runId);
-    expect(posted.filter((call) => call.method === "chat.update")).toHaveLength(2);
+    expect(posted.filter((call) => call.method === "chat.update")).toHaveLength(
+      2,
+    );
   });
 
   it("handles cancel/retry actions and Assistant lifecycle out of order without leaking tenants", async () => {
@@ -221,7 +314,10 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
       message: { ts: "1710000000.000100" },
       actions: [{ action_id: "muster.cancel", value: runId }],
     };
-    const cancel = await adapter.recordEvent(JSON.stringify(cancelPayload), cancelPayload);
+    const cancel = await adapter.recordEvent(
+      JSON.stringify(cancelPayload),
+      cancelPayload,
+    );
     await processSlackInboxEvent(cancel.inboxEvent!.id);
     expect(posted.some((call) => call.method === "cancel")).toBe(true);
 
@@ -244,12 +340,20 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
       ...cancelPayload,
       actions: [{ action_id: "muster.retry", value: runId }],
     };
-    const retry = await adapter.recordEvent(`${JSON.stringify(retryPayload)}-retry`, retryPayload);
+    const retry = await adapter.recordEvent(
+      `${JSON.stringify(retryPayload)}-retry`,
+      retryPayload,
+    );
     await processSlackInboxEvent(retry.inboxEvent!.id);
     const retryRuns = await db
       .select({ id: schema.agentRuns.id })
       .from(schema.agentRuns)
-      .where(like(schema.agentRuns.idempotencyKey, `slack:${installationId}:%:retry`));
+      .where(
+        like(
+          schema.agentRuns.idempotencyKey,
+          `slack:${installationId}:%:retry`,
+        ),
+      );
     expect(retryRuns).toHaveLength(1);
 
     const assistantPayload = {
@@ -266,8 +370,35 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
         },
       },
     };
-    const assistant = await adapter.recordEvent(JSON.stringify(assistantPayload), assistantPayload);
+    const assistant = await adapter.recordEvent(
+      JSON.stringify(assistantPayload),
+      assistantPayload,
+    );
     await processSlackInboxEvent(assistant.inboxEvent!.id);
-    expect(posted.some((call) => call.method === "assistant.threads.setStatus")).toBe(true);
+    expect(
+      posted.some((call) => call.method === "assistant.threads.setStatus"),
+    ).toBe(true);
+  });
+
+  it("never leaves a disabled agent exposed as an installation default", async () => {
+    const adapter = new SlackGovernanceAdapter(db);
+    const administrator = {
+      actorId,
+      organisationId,
+      capabilities: new Set(["administration.manage"] as const),
+    };
+
+    await adapter.configureExposure(administrator, {
+      installationId,
+      agentId,
+      enabled: false,
+      isDefault: true,
+    });
+
+    const settings = await adapter.settings(administrator);
+    const exposure = settings.exposures.find(
+      (candidate) => candidate.agentId === agentId,
+    );
+    expect(exposure).toMatchObject({ enabled: false, isDefault: false });
   });
 });

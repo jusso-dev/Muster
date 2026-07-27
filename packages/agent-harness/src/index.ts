@@ -26,7 +26,7 @@ import {
   decryptConnectorPayload,
   encryptConnectorPayload,
 } from "@muster/integrations";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 const protocolVersion = "muster.agent-harness/v1" as const;
@@ -610,6 +610,128 @@ export class SlackGovernanceAdapter {
       .where(eq(schema.slackInstallations.organisationId, subject.organisationId));
   }
 
+  async settings(subject: AuthorisationSubject) {
+    requireCapability(subject, "administration.manage");
+    const organisation = eq(
+      schema.slackInstallations.organisationId,
+      subject.organisationId,
+    );
+    const [installations, actors, agents, identities, exposures, deliveries] =
+      await Promise.all([
+        this.db
+          .select({
+            id: schema.slackInstallations.id,
+            teamId: schema.slackInstallations.teamId,
+            teamName: schema.slackInstallations.teamName,
+            scopes: schema.slackInstallations.scopes,
+            status: schema.slackInstallations.status,
+            installedAt: schema.slackInstallations.installedAt,
+            lastHealthAt: schema.slackInstallations.lastHealthAt,
+            lastDeliveryAt: schema.slackInstallations.lastDeliveryAt,
+            lastError: schema.slackInstallations.lastError,
+          })
+          .from(schema.slackInstallations)
+          .where(organisation),
+        this.db
+          .select({
+            id: schema.actors.id,
+            displayName: schema.actors.displayName,
+          })
+          .from(schema.actors)
+          .where(
+            and(
+              eq(schema.actors.organisationId, subject.organisationId),
+              eq(schema.actors.actorType, "human"),
+              eq(schema.actors.status, "active"),
+            ),
+          ),
+        this.db
+          .select({
+            id: schema.agentDefinitions.id,
+            name: schema.agentDefinitions.name,
+          })
+          .from(schema.agentDefinitions)
+          .where(
+            and(
+              eq(schema.agentDefinitions.organisationId, subject.organisationId),
+              eq(schema.agentDefinitions.status, "active"),
+              eq(schema.agentDefinitions.killSwitch, false),
+            ),
+          ),
+        this.db
+          .select({
+            id: schema.slackIdentityMappings.id,
+            installationId: schema.slackIdentityMappings.installationId,
+            slackUserId: schema.slackIdentityMappings.slackUserId,
+            actorId: schema.slackIdentityMappings.actorId,
+            actorName: schema.actors.displayName,
+            status: schema.slackIdentityMappings.status,
+            createdAt: schema.slackIdentityMappings.createdAt,
+          })
+          .from(schema.slackIdentityMappings)
+          .innerJoin(
+            schema.actors,
+            and(
+              eq(schema.actors.id, schema.slackIdentityMappings.actorId),
+              eq(schema.actors.organisationId, subject.organisationId),
+            ),
+          )
+          .where(
+            eq(
+              schema.slackIdentityMappings.organisationId,
+              subject.organisationId,
+            ),
+          ),
+        this.db
+          .select({
+            id: schema.slackAgentExposures.id,
+            installationId: schema.slackAgentExposures.installationId,
+            agentId: schema.slackAgentExposures.agentId,
+            agentName: schema.agentDefinitions.name,
+            enabled: schema.slackAgentExposures.enabled,
+            isDefault: schema.slackAgentExposures.isDefault,
+            allowedChannelIds: schema.slackAgentExposures.allowedChannelIds,
+            allowDirectMessages: schema.slackAgentExposures.allowDirectMessages,
+            allowThreadContext: schema.slackAgentExposures.allowThreadContext,
+            updatedAt: schema.slackAgentExposures.updatedAt,
+          })
+          .from(schema.slackAgentExposures)
+          .innerJoin(
+            schema.agentDefinitions,
+            and(
+              eq(schema.agentDefinitions.id, schema.slackAgentExposures.agentId),
+              eq(schema.agentDefinitions.organisationId, subject.organisationId),
+            ),
+          )
+          .where(
+            eq(
+              schema.slackAgentExposures.organisationId,
+              subject.organisationId,
+            ),
+          ),
+        this.db
+          .select({
+            id: schema.slackRunDeliveries.id,
+            installationId: schema.slackRunDeliveries.installationId,
+            runId: schema.slackRunDeliveries.runId,
+            status: schema.slackRunDeliveries.status,
+            attemptCount: schema.slackRunDeliveries.attemptCount,
+            lastError: schema.slackRunDeliveries.lastError,
+            updatedAt: schema.slackRunDeliveries.updatedAt,
+          })
+          .from(schema.slackRunDeliveries)
+          .where(
+            eq(
+              schema.slackRunDeliveries.organisationId,
+              subject.organisationId,
+            ),
+          )
+          .orderBy(desc(schema.slackRunDeliveries.updatedAt))
+          .limit(20),
+      ]);
+    return { installations, actors, agents, identities, exposures, deliveries };
+  }
+
   async revoke(subject: AuthorisationSubject, installationId: string) {
     requireCapability(subject, "administration.manage");
     const [installation] = await this.db
@@ -741,6 +863,8 @@ export class SlackGovernanceAdapter {
           and(
             eq(schema.agentDefinitions.id, input.agentId),
             eq(schema.agentDefinitions.organisationId, subject.organisationId),
+            eq(schema.agentDefinitions.status, "active"),
+            eq(schema.agentDefinitions.killSwitch, false),
           ),
         )
         .limit(1),
@@ -749,8 +873,11 @@ export class SlackGovernanceAdapter {
     const agent = agentRows[0];
     if (!installation || !agent)
       throw new Error("Slack installation or agent not found");
+    // A disabled exposure must never remain eligible as an installation default,
+    // including when an API caller bypasses the administration UI.
+    const isDefault = input.enabled && input.isDefault;
     await this.db.transaction(async (tx) => {
-      if (input.isDefault)
+      if (isDefault)
         await tx
           .update(schema.slackAgentExposures)
           .set({ isDefault: false, updatedAt: new Date() })
@@ -768,7 +895,7 @@ export class SlackGovernanceAdapter {
           installationId: installation.id,
           agentId: agent.id,
           enabled: input.enabled,
-          isDefault: input.isDefault,
+          isDefault,
           allowedChannelIds: input.allowedChannelIds ?? [],
           allowDirectMessages: input.allowDirectMessages ?? true,
           allowThreadContext: input.allowThreadContext ?? false,
@@ -781,7 +908,7 @@ export class SlackGovernanceAdapter {
           ],
           set: {
             enabled: input.enabled,
-            isDefault: input.isDefault,
+            isDefault,
             allowedChannelIds: input.allowedChannelIds ?? [],
             allowDirectMessages: input.allowDirectMessages ?? true,
             allowThreadContext: input.allowThreadContext ?? false,
@@ -799,7 +926,7 @@ export class SlackGovernanceAdapter {
         metadata: {
           installationId: installation.id,
           enabled: input.enabled,
-          isDefault: input.isDefault,
+          isDefault,
         },
         traceId: crypto.randomUUID(),
       });
