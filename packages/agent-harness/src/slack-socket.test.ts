@@ -2,6 +2,24 @@ import { describe, expect, it, vi } from "vitest";
 import { handleSlackSocketMessage, runSlackSocketMode } from "./slack-socket";
 
 describe("Slack Socket Mode transport", () => {
+  it("accepts the initial hello control frame without persisting or acknowledging it", async () => {
+    const recordEnvelope = vi.fn();
+    const acknowledge = vi.fn();
+
+    await handleSlackSocketMessage(
+      JSON.stringify({
+        type: "hello",
+        connection_info: { app_id: "A-synthetic" },
+        num_connections: 1,
+      }),
+      recordEnvelope,
+      acknowledge,
+    );
+
+    expect(recordEnvelope).not.toHaveBeenCalled();
+    expect(acknowledge).not.toHaveBeenCalled();
+  });
+
   it("persists an envelope before acknowledging it", async () => {
     const order: string[] = [];
     const acknowledge = vi.fn((value: string) => {
@@ -50,6 +68,7 @@ describe("Slack Socket Mode transport", () => {
   it("opens a Socket Mode URL and routes envelopes through durable storage", async () => {
     const controller = new AbortController();
     const recorded: string[] = [];
+    const onError = vi.fn();
     class SyntheticSocket extends EventTarget {
       readonly sent: string[] = [];
 
@@ -76,7 +95,16 @@ describe("Slack Socket Mode transport", () => {
       fetch: fetcher,
       socketFactory: (url) => {
         expect(url).toBe("wss://synthetic.slack.invalid/socket");
-        queueMicrotask(() =>
+        queueMicrotask(() => {
+          socket.dispatchEvent(
+            new MessageEvent("message", {
+              data: JSON.stringify({
+                type: "hello",
+                connection_info: { app_id: "A-synthetic" },
+                num_connections: 1,
+              }),
+            }),
+          );
           socket.dispatchEvent(
             new MessageEvent("message", {
               data: JSON.stringify({
@@ -87,16 +115,18 @@ describe("Slack Socket Mode transport", () => {
                 },
               }),
             }),
-          ),
-        );
+          );
+        });
         return socket;
       },
       recordEnvelope: async (envelope) => {
         recorded.push(envelope.envelope_id);
       },
+      onError,
     });
 
     expect(recorded).toEqual(["env-listener"]);
+    expect(onError).not.toHaveBeenCalled();
     expect(socket.sent.map((value) => JSON.parse(value))).toEqual([
       { envelope_id: "env-listener" },
     ]);
