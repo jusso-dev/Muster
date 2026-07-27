@@ -17,7 +17,7 @@ export async function queueDueParkerReports(organisationId: string, traceId: str
     for (const schedule of due) {
       const idempotencyKey = `parker:schedule:${schedule.id}:${schedule.nextRunAt.toISOString()}`;
       const [existing] = await tx.select({ id: schema.tasks.id }).from(schema.tasks).where(and(eq(schema.tasks.organisationId, organisationId), eq(schema.tasks.idempotencyKey, idempotencyKey))).limit(1);
-      await tx.update(schema.reportSchedules).set({ lastRunAt: now, nextRunAt: nextScheduledReportRun(schedule.cadence, now), updatedAt: now }).where(eq(schema.reportSchedules.id, schedule.id));
+      await tx.update(schema.reportSchedules).set({ lastRunAt: now, nextRunAt: nextScheduledReportRun(schedule.cadence, now), updatedAt: now }).where(and(eq(schema.reportSchedules.organisationId, organisationId), eq(schema.reportSchedules.id, schedule.id)));
       if (existing) continue;
       const taskId = newId(); created++;
       await tx.insert(schema.tasks).values({ id: taskId, organisationId, roomId: schedule.roomId, title: `Parker ${schedule.cadence} ${schedule.audience} report`, description: `Scheduled ${schedule.cadence} report in ${schedule.timezone}. Review and delegate Parker to generate the authoritative manifest.`, status: "ready", priority: "normal", assignedActorId: parker.id, createdByActorId: schedule.createdByActorId, idempotencyKey, approvalRequired: false });
