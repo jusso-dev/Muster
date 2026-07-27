@@ -361,7 +361,7 @@ const SlackOAuthResponseSchema = z.object({
   app_id: z.string().optional(),
   bot_user_id: z.string().optional(),
   team: z.object({ id: z.string().min(1), name: z.string().optional() }),
-  enterprise: z.object({ id: z.string().optional() }).optional(),
+  enterprise: z.object({ id: z.string().optional() }).nullish(),
   scope: z.string().optional(),
 });
 

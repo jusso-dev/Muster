@@ -65,6 +65,7 @@ export class FakeSlackServer {
               id: this.options.teamId,
               name: this.options.teamName,
             },
+            enterprise: null,
             scope: scopes.join(","),
           }),
         );
