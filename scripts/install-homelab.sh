@@ -6,8 +6,8 @@ cd "$(dirname "$0")/.."
 
 env_file=".env.homelab"
 compose_file="deploy/docker/docker-compose.homelab.yml"
-requested_public_url="${MUSTER_PUBLIC_URL:-http://muster.example.lan:3004}"
-requested_http_port="${MUSTER_HTTP_PORT:-3004}"
+default_public_url="http://muster.example.lan:3004"
+default_http_port="3004"
 requested_version="${MUSTER_VERSION:-}"
 requested_image="${MUSTER_IMAGE:-}"
 
@@ -55,44 +55,54 @@ upsert_env() {
   mv "$temporary_file" "$env_file"
 }
 
-credentials_created=false
+environment_created=false
+admin_password_created=false
 if [[ ! -f "$env_file" ]]; then
   cp deploy/docker/.env.homelab.example "$env_file"
-  postgres_password="$(openssl rand -hex 24)"
-  auth_secret="$(openssl rand -hex 32)"
-  storage_secret="$(openssl rand -hex 24)"
-  connector_encryption_key="$(openssl rand -hex 32)"
-  agent_gateway_token="$(openssl rand -hex 32)"
-  admin_password="Muster!$(openssl rand -hex 12)"
-
-  sed -i.bak \
-    -e "s|MUSTER_PUBLIC_URL=.*|MUSTER_PUBLIC_URL=${requested_public_url}|" \
-    -e "s|MUSTER_HTTP_PORT=.*|MUSTER_HTTP_PORT=${requested_http_port}|" \
-    -e "s|MUSTER_VERSION=.*|MUSTER_VERSION=${requested_version}|" \
-    -e "s|AUTH_TRUSTED_ORIGINS=.*|AUTH_TRUSTED_ORIGINS=${AUTH_TRUSTED_ORIGINS:-${requested_public_url},http://homelab:${requested_http_port}}|" \
-    -e "s|generate-postgres-password|${postgres_password}|" \
-    -e "s|generate-better-auth-secret|${auth_secret}|" \
-    -e "s|generate-object-storage-secret|${storage_secret}|" \
-    -e "s|generate-connector-encryption-key|${connector_encryption_key}|" \
-    -e "s|generate-agent-gateway-token|${agent_gateway_token}|" \
-    "$env_file"
-  rm "$env_file.bak"
-  {
-    printf 'MUSTER_LOCAL_ADMIN_EMAIL=%s\n' \
-      "${MUSTER_LOCAL_ADMIN_EMAIL:-admin@muster.local}"
-    printf 'MUSTER_LOCAL_ADMIN_PASSWORD=%s\n' "$admin_password"
-  } >> "$env_file"
-  chmod 600 "$env_file"
-  credentials_created=true
+  environment_created=true
+  upsert_env POSTGRES_PASSWORD "$(openssl rand -hex 24)"
+  upsert_env BETTER_AUTH_SECRET "$(openssl rand -hex 32)"
+  upsert_env OBJECT_STORAGE_SECRET_KEY "$(openssl rand -hex 24)"
+  upsert_env CONNECTOR_ENCRYPTION_KEY "$(openssl rand -hex 32)"
+  upsert_env MUSTER_LOCAL_ADMIN_EMAIL "${MUSTER_LOCAL_ADMIN_EMAIL:-admin@muster.local}"
+  upsert_env MUSTER_LOCAL_ADMIN_PASSWORD "Muster!$(openssl rand -hex 12)"
+  admin_password_created=true
 fi
 
 if [[ -z "$(env_value MUSTER_LOCAL_ADMIN_EMAIL)" ]]; then
   upsert_env MUSTER_LOCAL_ADMIN_EMAIL "${MUSTER_LOCAL_ADMIN_EMAIL:-admin@muster.local}"
-  credentials_created=true
 fi
 if [[ -z "$(env_value MUSTER_LOCAL_ADMIN_PASSWORD)" ]]; then
   upsert_env MUSTER_LOCAL_ADMIN_PASSWORD "Muster!$(openssl rand -hex 12)"
-  credentials_created=true
+  admin_password_created=true
+fi
+
+existing_public_url="$(env_value MUSTER_PUBLIC_URL)"
+existing_http_port="$(env_value MUSTER_HTTP_PORT)"
+existing_origins="$(env_value AUTH_TRUSTED_ORIGINS)"
+
+if [[ "${MUSTER_PUBLIC_URL+x}" == "x" ]]; then
+  requested_public_url="$MUSTER_PUBLIC_URL"
+elif [[ "$environment_created" == "false" && -n "$existing_public_url" ]]; then
+  requested_public_url="$existing_public_url"
+else
+  requested_public_url="$default_public_url"
+fi
+
+if [[ "${MUSTER_HTTP_PORT+x}" == "x" ]]; then
+  requested_http_port="$MUSTER_HTTP_PORT"
+elif [[ "$environment_created" == "false" && -n "$existing_http_port" ]]; then
+  requested_http_port="$existing_http_port"
+else
+  requested_http_port="$default_http_port"
+fi
+
+if [[ "${AUTH_TRUSTED_ORIGINS+x}" == "x" ]]; then
+  requested_origins="$AUTH_TRUSTED_ORIGINS"
+elif [[ "$environment_created" == "false" && -n "$existing_origins" ]]; then
+  requested_origins="$existing_origins"
+else
+  requested_origins="${requested_public_url},http://homelab:${requested_http_port}"
 fi
 
 if ! grep -q '^MUSTER_AGENT_GATEWAY_TOKEN=' "$env_file"; then
@@ -223,6 +233,6 @@ else
   printf '%s\n' \
     "Codex authentication: pending. Run docker compose --env-file .env.homelab -f ${compose_file} --profile setup run --rm codex-login."
 fi
-if [[ "$credentials_created" == "true" ]]; then
+if [[ "$admin_password_created" == "true" ]]; then
   printf 'New private homelab administrator password: %s\n' "$admin_password"
 fi
