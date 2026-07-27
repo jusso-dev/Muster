@@ -12,7 +12,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@muster/agent-runtime": "workspace:*",
     "@muster/agents": "workspace:*",
+    "@muster/authz": "workspace:*",
     "@muster/config": "workspace:*",
     "@muster/contracts": "workspace:*",
     "@muster/database": "workspace:*",

@@ -14,7 +14,7 @@ import {
 } from "@muster/database";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { DurableAgentRuntime } from "./runtime.ts";
+import { DurableAgentRuntime, runtimeLabel } from "./runtime.ts";
 import {
   isGatewayRequestAuthorised,
   parseGatewayOrganisationId,
@@ -25,7 +25,11 @@ const AgentRunRequestSchema = AgentInvestigationJobSchema.extend({
 });
 
 const executionRuntime =
-  process.env.MUSTER_AGENT_RUNTIME === "mock" ? "mock" : "codex";
+  process.env.MUSTER_AGENT_RUNTIME === "mock"
+    ? "mock"
+    : process.env.MUSTER_AGENT_RUNTIME === "graph"
+      ? "graph"
+      : "codex";
 const codexHome = process.env.CODEX_HOME ?? "/var/lib/muster/codex";
 const globalKillSwitch = process.env.AGENT_KILL_SWITCH === "true";
 const gatewayToken = z
@@ -165,8 +169,10 @@ const server = createServer(async (incoming, response) => {
     incoming.method === "GET" &&
     (url.pathname === "/health" || url.pathname === "/ready")
   ) {
+    // Only the Codex subscription runtime depends on a local Codex login; the
+    // stateful graph runtime authenticates per model provider instead.
     const authenticated =
-      executionRuntime === "mock" || (await codexAuthenticated());
+      executionRuntime !== "codex" || (await codexAuthenticated());
     response.writeHead(globalKillSwitch ? 503 : 200);
     response.end(
       JSON.stringify({
@@ -175,7 +181,7 @@ const server = createServer(async (incoming, response) => {
           : authenticated
             ? "ready"
             : "authentication_required",
-        runtime: executionRuntime === "codex" ? "codex-subscription" : "mock",
+        runtime: runtimeLabel(executionRuntime),
         authenticated,
         activeRuns: runtime.activeRunCount,
         authority: "postgresql",
@@ -280,7 +286,7 @@ const server = createServer(async (incoming, response) => {
           runId: accepted.run.id,
           status: accepted.run.status,
           duplicate: accepted.duplicate,
-          runtime: executionRuntime === "codex" ? "codex-subscription" : "mock",
+          runtime: runtimeLabel(executionRuntime),
           runtimeIsolation: "read-only-no-network",
         }),
       );

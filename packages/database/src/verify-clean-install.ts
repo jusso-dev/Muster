@@ -15,6 +15,8 @@ const operationalTables = {
   agentRunEvents: schema.agentRunEvents,
   agentRunSources: schema.agentRunSources,
   agentToolCalls: schema.agentToolCalls,
+  agentRuntimeCheckpoints: schema.agentRuntimeCheckpoints,
+  agentRuntimeCheckpointWrites: schema.agentRuntimeCheckpointWrites,
   agentMemories: schema.agentMemories,
   agentSkills: schema.agentSkills,
   agentSkillVersions: schema.agentSkillVersions,

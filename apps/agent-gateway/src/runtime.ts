@@ -4,10 +4,20 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { Codex } from "@openai/codex-sdk";
 import {
+  createAgentRuntime,
+  createModelRouter,
+  createPostgresRuntimePorts,
+  defaultProviders,
+  runtimeScope,
+  type ModelRouter,
+  type ToolExecutor,
+} from "@muster/agent-runtime";
+import {
   buildRuntimePrompt,
   validateStructuredOutput,
   type PromptPart,
 } from "@muster/agents";
+import { capabilities as allCapabilities, type Capability } from "@muster/authz";
 import {
   jsonLog,
   redactForObservation,
@@ -284,6 +294,23 @@ export function bindHuntResultToAuthoritativeCase(
   };
 }
 
+/** Operator-facing name for each execution mode. */
+export function runtimeLabel(
+  mode: "codex" | "mock" | "graph",
+): "codex-subscription" | "mock" | "muster-graph" {
+  if (mode === "codex") return "codex-subscription";
+  if (mode === "graph") return "muster-graph";
+  return "mock";
+}
+
+export function providerLabel(
+  mode: "codex" | "mock" | "graph",
+): "openai" | "synthetic" | "model-policy" {
+  if (mode === "codex") return "openai";
+  if (mode === "graph") return "model-policy";
+  return "synthetic";
+}
+
 class RunFailure extends Error {
   constructor(
     message: string,
@@ -295,13 +322,22 @@ class RunFailure extends Error {
 }
 
 export type DurableAgentRuntimeOptions = {
-  executionRuntime: "codex" | "mock";
+  /**
+   * `graph` runs the stateful LangGraph runtime, which owns its own
+   * checkpointing and terminal persistence. `codex` and `mock` keep the
+   * original single-shot behaviour and remain the default.
+   */
+  executionRuntime: "codex" | "mock" | "graph";
   codexHome: string;
   isAuthenticated?: () => Promise<boolean>;
   leaseMs?: number;
   pollMs?: number;
   mockDelayMs?: number;
   mockEstimatedCostCents?: number;
+  /** Overrides the model router used by the stateful runtime. */
+  createModelRouter?: () => ModelRouter;
+  /** Registered tool implementations available to the stateful runtime. */
+  toolExecutors?: ReadonlyMap<string, ToolExecutor>;
 };
 
 export class DurableAgentRuntime {
@@ -414,7 +450,7 @@ export class DurableAgentRuntime {
       .where(inArray(schema.agentRuns.status, ["queued", "running"]));
     const activeAgentIds = new Set(activeRuns.map((run) => run.agentId));
     let authenticationState: "reported" | "unavailable" | "unknown" =
-      this.options.executionRuntime === "mock" ? "reported" : "unknown";
+      this.options.executionRuntime === "codex" ? "unknown" : "reported";
     if (this.options.executionRuntime === "codex") {
       try {
         authenticationState = (await this.options.isAuthenticated?.())
@@ -476,12 +512,8 @@ export class DurableAgentRuntime {
             : "unknown",
           permissionState:
             requestedPermissionMode === "unknown" ? "unknown" : "reported",
-          reportedRuntime:
-            this.options.executionRuntime === "codex"
-              ? "codex-subscription"
-              : "mock",
-          reportedProvider:
-            this.options.executionRuntime === "codex" ? "openai" : "synthetic",
+          reportedRuntime: runtimeLabel(this.options.executionRuntime),
+          reportedProvider: providerLabel(this.options.executionRuntime),
           reportedModel: definition.model,
           inputCapabilities: ["task", "investigation", "room evidence"],
           outputCapabilities: ["schema-valid security result"],
@@ -529,10 +561,7 @@ export class DurableAgentRuntime {
     const projection = {
       runId: run.id,
       status: run.status,
-      runtime:
-        this.options.executionRuntime === "codex"
-          ? "codex-subscription"
-          : "mock",
+      runtime: runtimeLabel(this.options.executionRuntime),
       progress: run.progress,
       output: run.structuredOutput,
       outputHash: run.outputHash,
@@ -954,6 +983,12 @@ export class DurableAgentRuntime {
       const prompt = renderPrompt(promptParts(context, this.request(run)));
       const promptHash = sha256(prompt);
       await this.persistPrompt(run, context, schemaName, promptHash);
+      if (this.options.executionRuntime === "graph") {
+        // The stateful runtime checkpoints each step and writes its own
+        // terminal record, so the lease-owning executor stops here.
+        await this.runGraph(run, schemaName, controller);
+        return;
+      }
       const runtimeResult =
         this.options.executionRuntime === "codex"
           ? await this.runCodex(run, prompt, schemaName, controller)
@@ -1028,6 +1063,72 @@ export class DurableAgentRuntime {
       clearInterval(heartbeat);
       this.activeRuns.delete(run.id);
     }
+  }
+
+  /**
+   * Hand a claimed run to the stateful runtime. The gateway keeps the lease,
+   * heartbeat, deadline and cancellation signal; the runtime owns graph
+   * execution, checkpointing, interrupts and the terminal record. A run that
+   * stopped on an approval interrupt is left in `awaiting_approval` for the
+   * approval decision to resume, not failed.
+   *
+   * `dispatch()`'s candidate query does not currently select `awaiting_approval`
+   * runs, so triggering a resume once a human approves is not yet wired end to
+   * end here — `MusterAgentRuntime.resumeRun({ approval })` is the stable call
+   * a future approval-decision hook (or #72's governed execution layer) makes.
+   * This method only decides fresh-start vs. crash-recovery resume.
+   */
+  private async runGraph(
+    run: AgentRunRow,
+    schemaName: AgentStructuredOutputName,
+    controller: AbortController,
+  ) {
+    const request = this.request(run);
+    const scope = runtimeScope({
+      organisationId: run.organisationId,
+      agentId: run.agentId,
+      conversationId: run.conversationId ?? run.roomId ?? run.id,
+      runId: run.id,
+    });
+    const subject = await loadAgentSubject(run);
+    const runtime = createAgentRuntime({
+      organisationId: run.organisationId,
+      db: database(),
+      ports: createPostgresRuntimePorts({
+        ...(this.options.toolExecutors
+          ? { executors: this.options.toolExecutors }
+          : {}),
+      }),
+      router: this.modelRouter(),
+    });
+    // Any run already bound to the stateful runtime (graphVersion set) must
+    // resume from its checkpoint rather than start over — this is what makes
+    // a lease-expiry reclaim after a worker crash continue mid-graph instead
+    // of re-invoking the model with the original request a second time.
+    const resumable = run.graphVersion !== null;
+    const handle = resumable
+      ? await runtime.resumeRun({ scope, subject, signal: controller.signal })
+      : await runtime.startRun({
+          scope,
+          subject,
+          humanRequest: request.humanRequest ?? "",
+          outputSchema: schemaName,
+          signal: controller.signal,
+        });
+    jsonLog("info", "agent.run.graph.settled", {
+      runId: run.id,
+      status: handle.status,
+      graphVersion: handle.graphVersion,
+      stepCount: handle.stepCount,
+    });
+  }
+
+  private modelRouter(): ModelRouter {
+    if (this.options.createModelRouter) return this.options.createModelRouter();
+    // No silent stand-in: an operator who enables the stateful runtime without
+    // configuring a provider gets an explicit failure, never a fabricated
+    // answer. The router itself raises `no_model_policy_match`.
+    return createModelRouter({ providers: defaultProviders(process.env) });
   }
 
   private async runCodex(
@@ -1737,6 +1838,44 @@ export class DurableAgentRuntime {
       traceId: this.request(run).traceId ?? `agent-run-${run.id}`,
     };
   }
+}
+
+const knownCapabilities = new Set<string>(allCapabilities);
+
+/**
+ * The agent acts as itself, with exactly the capabilities its authoritative
+ * definition declares. Nothing the model produces can widen this set, and an
+ * unrecognised requirement is dropped rather than granted.
+ */
+async function loadAgentSubject(run: AgentRunRow) {
+  const db = database();
+  const [definition] = await db
+    .select({
+      id: schema.agentDefinitions.id,
+      capabilityRequirements: schema.agentDefinitions.capabilityRequirements,
+    })
+    .from(schema.agentDefinitions)
+    .where(
+      and(
+        eq(schema.agentDefinitions.organisationId, run.organisationId),
+        eq(schema.agentDefinitions.id, run.agentId),
+      ),
+    )
+    .limit(1);
+  const declared = Array.isArray(definition?.capabilityRequirements)
+    ? definition.capabilityRequirements
+    : [];
+  const granted = new Set<Capability>();
+  for (const requirement of declared) {
+    if (typeof requirement === "string" && knownCapabilities.has(requirement)) {
+      granted.add(requirement as Capability);
+    }
+  }
+  return {
+    actorId: run.agentId,
+    organisationId: run.organisationId,
+    capabilities: granted as ReadonlySet<Capability>,
+  };
 }
 
 async function loadAuthoritativeContext(

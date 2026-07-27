@@ -223,6 +223,15 @@ Redis and BullMQ are execution infrastructure, not a source of truth. Significan
 state changes, audit events, and outbox records are written transactionally.
 Incoming connector content is untrusted evidence, not agent instruction.
 
+### Stateful agent runtime (opt-in)
+
+`@muster/agent-runtime` is a LangGraph-based, resumable execution package that
+operates strictly behind `@muster/agent-harness`, which remains the only
+public invocation boundary. Set `MUSTER_AGENT_RUNTIME=graph` on the agent
+gateway to run invocations through it; the default `codex` runtime is
+unchanged and `graph` is opt-in per deployment. See
+[ADR 0005](docs/architecture/0005-stateful-agent-runtime.md).
+
 Read the [architecture](docs/architecture/README.md),
 [connector contract notes](docs/integrations/current-upstream-contracts.md), and
 [OpenAPI description](docs/openapi.yaml) before extending integrations. The

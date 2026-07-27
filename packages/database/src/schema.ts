@@ -1174,11 +1174,24 @@ export const agentRuns = pgTable(
     cancellationReason: text("cancellation_reason"),
     structuredOutput: jsonb("structured_output"),
     idempotencyKey: text("idempotency_key").notNull(),
+    // Stateful runtime bookkeeping. These stay nullable so runs created by the
+    // pre-graph executor keep resolving against the same authoritative row.
+    graphVersion: text("graph_version"),
+    conversationId: text("conversation_id"),
+    checkpointThreadId: text("checkpoint_thread_id"),
+    pendingApprovalId: uuid("pending_approval_id").references(
+      () => approvals.id,
+    ),
   },
   (table) => [
     uniqueIndex("agent_runs_org_idempotency_unique").on(
       table.organisationId,
       table.idempotencyKey,
+    ),
+    index("agent_runs_org_conversation_idx").on(
+      table.organisationId,
+      table.conversationId,
+      table.startedAt,
     ),
     index("agent_runs_org_status_idx").on(
       table.organisationId,
@@ -1460,12 +1473,114 @@ export const agentToolCalls = pgTable(
       .defaultNow()
       .notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    // The stateful runtime reserves a tool call before it executes, so a
+    // resumed run replays the recorded outcome instead of repeating an
+    // external action. Redacted results only; raw evidence stays untrusted.
+    toolCallId: text("tool_call_id"),
+    idempotencyKey: text("idempotency_key"),
+    checkpointId: text("checkpoint_id"),
+    result: jsonb("result"),
   },
   (table) => [
     index("agent_tool_calls_org_run_idx").on(
       table.organisationId,
       table.runId,
       table.startedAt,
+    ),
+    uniqueIndex("agent_tool_calls_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
+    ),
+  ],
+);
+
+// LangGraph checkpoints are execution state, never business authority. Every
+// row carries the full tenant namespace so no checkpoint can be read, resumed
+// or deleted without an organisation, and the graph version that wrote it.
+export const agentRuntimeCheckpoints = pgTable(
+  "agent_runtime_checkpoints",
+  {
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    threadId: text("thread_id").notNull(),
+    checkpointNamespace: text("checkpoint_namespace").notNull().default(""),
+    checkpointId: text("checkpoint_id").notNull(),
+    parentCheckpointId: text("parent_checkpoint_id"),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agentDefinitions.id),
+    conversationId: text("conversation_id").notNull(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => agentRuns.id),
+    graphVersion: text("graph_version").notNull(),
+    type: text("type"),
+    checkpoint: jsonb("checkpoint").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.organisationId,
+        table.threadId,
+        table.checkpointNamespace,
+        table.checkpointId,
+      ],
+    }),
+    index("agent_runtime_checkpoints_org_run_idx").on(
+      table.organisationId,
+      table.runId,
+      table.createdAt,
+    ),
+    index("agent_runtime_checkpoints_org_thread_idx").on(
+      table.organisationId,
+      table.threadId,
+      table.checkpointNamespace,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const agentRuntimeCheckpointWrites = pgTable(
+  "agent_runtime_checkpoint_writes",
+  {
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    threadId: text("thread_id").notNull(),
+    checkpointNamespace: text("checkpoint_namespace").notNull().default(""),
+    checkpointId: text("checkpoint_id").notNull(),
+    taskId: text("task_id").notNull(),
+    writeIndex: integer("write_index").notNull(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => agentRuns.id),
+    channel: text("channel").notNull(),
+    type: text("type"),
+    value: jsonb("value"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.organisationId,
+        table.threadId,
+        table.checkpointNamespace,
+        table.checkpointId,
+        table.taskId,
+        table.writeIndex,
+      ],
+    }),
+    index("agent_runtime_checkpoint_writes_org_run_idx").on(
+      table.organisationId,
+      table.runId,
+      table.createdAt,
     ),
   ],
 );

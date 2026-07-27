@@ -148,6 +148,13 @@
       "when": 1785130091064,
       "tag": "0020_ancient_carnage",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785174101975,
+      "tag": "0021_closed_steel_serpent",
+      "breakpoints": true
     }
   ]
 }
