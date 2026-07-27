@@ -5,10 +5,23 @@ cd "$(dirname "$0")/.."
 
 env_file=".env.homelab"
 compose_file="deploy/docker/docker-compose.homelab.yml"
-requested_public_url="${MUSTER_PUBLIC_URL:-http://192.168.1.19:3004}"
+requested_public_url="${MUSTER_PUBLIC_URL:-http://muster.example.lan:3004}"
 requested_http_port="${MUSTER_HTTP_PORT:-3004}"
 requested_version="${MUSTER_VERSION:-}"
 requested_image="${MUSTER_IMAGE:-}"
+
+if [[ -n "$requested_version" && -n "$requested_image" ]]; then
+  printf 'Set either MUSTER_VERSION or MUSTER_IMAGE, not both.\n' >&2
+  exit 2
+fi
+if [[ -n "$requested_version" && ! "$requested_version" =~ ^sha-[0-9a-f]{7,40}$ ]]; then
+  printf 'MUSTER_VERSION must be an immutable sha-<hex> tag.\n' >&2
+  exit 2
+fi
+if [[ -n "$requested_image" && ! "$requested_image" =~ ^ghcr\.io/jusso-dev/muster@sha256:[0-9a-f]{64}$ ]]; then
+  printf 'MUSTER_IMAGE must be the reviewed ghcr.io/jusso-dev/muster@sha256:<digest> reference.\n' >&2
+  exit 2
+fi
 
 if [[ ! -f "$env_file" ]]; then
   cp deploy/docker/.env.homelab.example "$env_file"
@@ -46,13 +59,18 @@ fi
 if [[ -n "$requested_version" ]]; then
   sed -i.bak \
     -e "s|^MUSTER_VERSION=.*|MUSTER_VERSION=${requested_version}|" \
+    -e '/^MUSTER_IMAGE=/d' \
     "$env_file"
+  if ! grep -q '^MUSTER_VERSION=' "$env_file"; then
+    printf 'MUSTER_VERSION=%s\n' "$requested_version" >> "$env_file"
+  fi
   rm "$env_file.bak"
 fi
 
 if [[ -n "$requested_image" ]]; then
   sed -i.bak \
     -e "s|^MUSTER_IMAGE=.*|MUSTER_IMAGE=${requested_image}|" \
+    -e '/^MUSTER_VERSION=/d' \
     "$env_file"
   if ! grep -q '^MUSTER_IMAGE=' "$env_file"; then
     printf 'MUSTER_IMAGE=%s\n' "$requested_image" >> "$env_file"
@@ -60,9 +78,24 @@ if [[ -n "$requested_image" ]]; then
   rm "$env_file.bak"
 fi
 
-set -a
-source "$env_file"
-set +a
+read_env_value() {
+  sed -n "s|^$1=||p" "$env_file" | tail -n 1
+}
+
+MUSTER_HTTP_PORT="$(read_env_value MUSTER_HTTP_PORT)"
+MUSTER_PUBLIC_URL="$(read_env_value MUSTER_PUBLIC_URL)"
+MUSTER_LOCAL_ADMIN_EMAIL="$(read_env_value MUSTER_LOCAL_ADMIN_EMAIL)"
+MUSTER_LOCAL_ADMIN_PASSWORD="$(read_env_value MUSTER_LOCAL_ADMIN_PASSWORD)"
+if [[ -z "$MUSTER_LOCAL_ADMIN_EMAIL" || -z "$MUSTER_LOCAL_ADMIN_PASSWORD" ]]; then
+  printf 'Homelab administrator credentials are missing from %s.\n' "$env_file" >&2
+  exit 2
+fi
+
+for external_network in tawny_default kelpie_default; do
+  if ! docker network inspect "$external_network" >/dev/null 2>&1; then
+    docker network create "$external_network" >/dev/null
+  fi
+done
 
 docker compose --env-file "$env_file" -f "$compose_file" pull
 docker compose --env-file "$env_file" -f "$compose_file" up -d

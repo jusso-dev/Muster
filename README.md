@@ -279,7 +279,7 @@ started by Playwright; PostgreSQL and Redis are the required local services.
 
 ```bash
 pnpm install --frozen-lockfile
-docker compose up -d postgres redis
+docker compose up -d postgres redis minio minio-init
 pnpm db:migrate
 pnpm db:bootstrap
 pnpm check

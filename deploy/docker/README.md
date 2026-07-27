@@ -12,6 +12,7 @@ MinIO, Mailpit, and synthetic product mocks on the internal Compose network:
 The installer creates a mode-600 `.env.homelab`, generates independent
 database, authentication, storage, and administrator secrets, pulls the public
 image, starts the stack, waits for health, and creates the local administrator.
-Only Muster's configured HTTP port is published. The default uses plain HTTP
-for the trusted local network at `192.168.1.19`; use an HTTPS reverse proxy and set
-`AUTH_SECURE_COOKIES=true` when exposing Muster beyond it.
+Only Muster's configured HTTP port is published. The example uses
+`http://muster.example.lan:3004`; replace it with the exact trusted browser
+origin. Use an HTTPS reverse proxy and set `AUTH_SECURE_COOKIES=true` when
+exposing Muster beyond a trusted local network.
