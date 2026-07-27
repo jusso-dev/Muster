@@ -1638,6 +1638,7 @@ export const tasks = pgTable(
     agentRunId: text("agent_run_id"),
     agentRunStatus: text("agent_run_status"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     ...timestamps,
   },
   (table) => [
@@ -1674,6 +1675,7 @@ export const integrationRecords = pgTable(
     health: jsonb("health").notNull().default({}),
     cursor: jsonb("cursor").notNull().default({}),
     lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     ...timestamps,
   },
   (table) => [
@@ -1896,6 +1898,7 @@ export const huntRuns = pgTable(
     error: text("error"),
     idempotencyKey: text("idempotency_key").notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     ...timestamps,
   },
   (table) => [
@@ -1979,6 +1982,7 @@ export const researchWatchlists = pgTable(
     enabled: boolean("enabled").notNull().default(true),
     nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     ...timestamps,
   },
   (table) => [
@@ -2056,6 +2060,7 @@ export const reportManifests = pgTable(
     postedMessageId: uuid("posted_message_id").references(() => messages.id),
     idempotencyKey: text("idempotency_key").notNull(),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     ...timestamps,
   },
   (table) => [
@@ -2102,6 +2107,7 @@ export const reportSchedules = pgTable(
     nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
     idempotencyKey: text("idempotency_key").notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     ...timestamps,
   },
   (table) => [

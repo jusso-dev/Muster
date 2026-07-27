@@ -1,6 +1,6 @@
 import { requireCapability } from "@muster/authz";
 import { database, schema } from "@muster/database";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { apiSubject, problemResponse, requestTraceId } from "@/lib/api-context";
 import { JessieHuntDomainService } from "@/lib/jessie-hunt-domain";
 
@@ -12,7 +12,12 @@ export async function GET(request: Request) {
     const rows = await database()
       .select()
       .from(schema.huntRuns)
-      .where(eq(schema.huntRuns.organisationId, subject.organisationId))
+      .where(
+        and(
+          eq(schema.huntRuns.organisationId, subject.organisationId),
+          isNull(schema.huntRuns.archivedAt),
+        ),
+      )
       .orderBy(desc(schema.huntRuns.createdAt))
       .limit(100);
     return Response.json({ data: rows, traceId });

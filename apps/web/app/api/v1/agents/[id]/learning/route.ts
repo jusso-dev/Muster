@@ -22,7 +22,12 @@ export async function GET(
     const subject = await apiSubject(request);
     requireCapability(subject, "agents.read");
     const { id } = await params;
-    const data = await agentLearningState(subject.organisationId, id);
+    const includeInactive =
+      new URL(request.url).searchParams.get("includeInactive") === "true";
+    if (includeInactive) requireCapability(subject, "agents.manage");
+    const data = await agentLearningState(subject.organisationId, id, {
+      includeInactive,
+    });
     return Response.json({ data, traceId });
   } catch (error) {
     return problemResponse(error, traceId);

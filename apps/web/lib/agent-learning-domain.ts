@@ -13,7 +13,7 @@ import {
   schema,
   writeOutbox,
 } from "@muster/database";
-import { and, desc, eq, gt, isNull, max, or } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, max, ne, or } from "drizzle-orm";
 import { z } from "zod";
 
 const LearningMutationSchema = z.discriminatedUnion("action", [
@@ -63,8 +63,22 @@ function strings(value: unknown): string[] {
 export async function agentLearningState(
   organisationId: string,
   agentId: string,
+  options: { includeInactive?: boolean } = {},
 ) {
   const db = database();
+  const memoryConditions = [
+    eq(schema.agentMemories.organisationId, organisationId),
+    eq(schema.agentMemories.agentId, agentId),
+  ];
+  if (!options.includeInactive) {
+    const now = new Date();
+    memoryConditions.push(ne(schema.agentMemories.status, "rejected"));
+    const activeMemoryCondition = or(
+      isNull(schema.agentMemories.expiresAt),
+      gt(schema.agentMemories.expiresAt, now),
+    );
+    if (activeMemoryCondition) memoryConditions.push(activeMemoryCondition);
+  }
   const [definition] = await db
     .select()
     .from(schema.agentDefinitions)
@@ -81,12 +95,7 @@ export async function agentLearningState(
       db
         .select()
         .from(schema.agentMemories)
-        .where(
-          and(
-            eq(schema.agentMemories.organisationId, organisationId),
-            eq(schema.agentMemories.agentId, agentId),
-          ),
-        )
+        .where(and(...memoryConditions))
         .orderBy(desc(schema.agentMemories.createdAt))
         .limit(100),
       db

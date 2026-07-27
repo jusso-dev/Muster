@@ -7,7 +7,7 @@ import {
   schema,
   writeOutbox,
 } from "@muster/database";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { ApiProblem } from "./api-context";
 
@@ -90,7 +90,10 @@ export class AlfieResearchDomainService {
       .select()
       .from(schema.researchWatchlists)
       .where(
-        eq(schema.researchWatchlists.organisationId, subject.organisationId),
+        and(
+          eq(schema.researchWatchlists.organisationId, subject.organisationId),
+          isNull(schema.researchWatchlists.archivedAt),
+        ),
       );
   }
 
