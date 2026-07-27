@@ -351,6 +351,18 @@ const SlackOAuthResponseSchema = z.object({
   scope: z.string().optional(),
 });
 
+function slackWebApiUrl(method: string) {
+  const testBaseUrl = process.env.MUSTER_TEST_SLACK_API_BASE_URL;
+  if (testBaseUrl) {
+    if (process.env.NODE_ENV !== "test")
+      throw new Error(
+        "MUSTER_TEST_SLACK_API_BASE_URL is allowed only in test mode",
+      );
+    return new URL(method, testBaseUrl).toString();
+  }
+  return `https://slack.com/api/${method}`;
+}
+
 export function verifySlackRequest(
   rawBody: string,
   timestamp: string | null,
@@ -428,7 +440,7 @@ export class SlackGovernanceAdapter {
     const clientId = process.env.SLACK_CLIENT_ID;
     const clientSecret = process.env.SLACK_CLIENT_SECRET;
     if (!clientId || !clientSecret) throw new Error("Slack OAuth is not configured");
-    const response = await fetch("https://slack.com/api/oauth.v2.access", {
+    const response = await fetch(slackWebApiUrl("oauth.v2.access"), {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -1108,7 +1120,7 @@ export async function slackApi(
       new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
   const maximumRetryAfterMs = options.maximumRetryAfterMs ?? 30_000;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await fetcher(`https://slack.com/api/${method}`, {
+    const response = await fetcher(slackWebApiUrl(method), {
       method: "POST",
       headers: {
         authorization: `Bearer ${token}`,
@@ -1659,6 +1671,24 @@ export async function processSlackInboxEvent(inboxEventId: string) {
       .where(eq(schema.slackInboxEvents.id, row.inbox.id));
     throw error;
   }
+}
+
+export async function processSlackNotificationJob(
+  eventType: string,
+  aggregateId: string,
+) {
+  if (eventType === "slack.event.received") {
+    await processSlackInboxEvent(aggregateId);
+    return true;
+  }
+  if (
+    eventType === "agent.run.settled" ||
+    eventType === "agent.run.progress"
+  ) {
+    await deliverSlackRun(aggregateId);
+    return true;
+  }
+  return false;
 }
 
 export async function deliverSlackRun(runId: string) {

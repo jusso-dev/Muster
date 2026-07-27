@@ -27,6 +27,11 @@
       "types": "./src/slack-socket.ts",
       "development": "./src/slack-socket.ts",
       "default": "./dist/slack-socket.js"
+    },
+    "./testing/fake-slack-server": {
+      "types": "./src/testing/fake-slack-server.ts",
+      "development": "./src/testing/fake-slack-server.ts",
+      "default": "./dist/testing/fake-slack-server.js"
     }
   },
   "scripts": {
