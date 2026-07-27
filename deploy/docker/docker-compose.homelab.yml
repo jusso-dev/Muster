@@ -21,13 +21,13 @@ x-muster-environment: &muster-environment
   CONNECTOR_ENCRYPTION_KEY: ${CONNECTOR_ENCRYPTION_KEY}
   SMTP_HOST: mailpit
   SMTP_PORT: 1025
-  KELPIE_BASE_URL: http://mock-kelpie:4011
+  KELPIE_BASE_URL: ${KELPIE_BASE_URL:-http://app:3000}
   KELPIE_API_TOKEN: ${KELPIE_API_TOKEN}
-  TAWNY_BASE_URL: http://mock-tawny:4012
+  TAWNY_BASE_URL: ${TAWNY_BASE_URL:-http://api:5080}
   TAWNY_API_TOKEN: ${TAWNY_API_TOKEN}
-  BOWER_BASE_URL: http://mock-bower:4013
-  BOWER_API_TOKEN: ${BOWER_API_TOKEN}
-  MUSTER_MOCK_INTEGRATIONS: "true"
+  BOWER_BASE_URL: ${BOWER_BASE_URL:-}
+  BOWER_API_TOKEN: ${BOWER_API_TOKEN:-}
+  MUSTER_MOCK_INTEGRATIONS: ${MUSTER_MOCK_INTEGRATIONS:-false}
   MUSTER_AGENT_RUNTIME: ${MUSTER_AGENT_RUNTIME:-codex}
   AGENT_GATEWAY_URL: http://agent-gateway:3002
   MUSTER_AGENT_GATEWAY_TOKEN: ${MUSTER_AGENT_GATEWAY_TOKEN}
@@ -110,6 +110,11 @@ services:
       <<: *muster-environment
       MUSTER_HEALTHCHECK_URL: http://localhost:3000/api/v1/health
       MUSTER_RESEARCH_ALLOWED_FEED_ORIGINS: ${MUSTER_RESEARCH_ALLOWED_FEED_ORIGINS:-}
+      SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+      SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      SLACK_REDIRECT_URI: ${SLACK_REDIRECT_URI:-}
+      SLACK_OAUTH_STATE_SECRET: ${SLACK_OAUTH_STATE_SECRET:-}
     ports:
       - "${MUSTER_HTTP_PORT:-3004}:3000"
     depends_on:
@@ -137,6 +142,8 @@ services:
       <<: *muster-environment
       MUSTER_HEALTHCHECK_URL: http://localhost:3001/ready
       MUSTER_RESEARCH_ALLOWED_FEED_ORIGINS: ${MUSTER_RESEARCH_ALLOWED_FEED_ORIGINS:-}
+      SLACK_SOCKET_MODE_ENABLED: ${SLACK_SOCKET_MODE_ENABLED:-false}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}
     command: ["/app/worker/dist/index.js"]
     depends_on:
       web:
@@ -149,6 +156,10 @@ services:
 
   agent-gateway:
     <<: *muster-service
+    networks:
+      - default
+      - tawny
+      - kelpie
     environment:
       <<: *muster-environment
       MUSTER_HEALTHCHECK_URL: http://localhost:3002/ready
@@ -176,6 +187,7 @@ services:
     tty: true
 
   mock-kelpie:
+    profiles: ["mock"]
     image: node:24-bookworm-slim
     restart: unless-stopped
     working_dir: /mock
@@ -187,6 +199,7 @@ services:
       - ../../integrations/kelpie/mock.mjs:/mock/mock.mjs:ro
 
   mock-tawny:
+    profiles: ["mock"]
     image: node:24-bookworm-slim
     restart: unless-stopped
     working_dir: /mock
@@ -198,6 +211,7 @@ services:
       - ../../integrations/tawny/mock.mjs:/mock/mock.mjs:ro
 
   mock-bower:
+    profiles: ["mock"]
     image: node:24-bookworm-slim
     restart: unless-stopped
     working_dir: /mock
@@ -209,6 +223,7 @@ services:
       - ../../integrations/bower/mock.mjs:/mock/mock.mjs:ro
 
   mock-connector:
+    profiles: ["mock"]
     image: node:24-bookworm-slim
     restart: unless-stopped
     working_dir: /mock
