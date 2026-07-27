@@ -37,4 +37,27 @@ describe("Parker report aggregates", () => {
     );
     expect(manifest.values.find((value) => value.key === "mttr")).toMatchObject({ state: "not_applicable", value: null });
   });
+
+  it("uses a half-open period, preserves an IANA timezone, and omits sensitive evidence", () => {
+    const input = CreateParkerReportSchema.parse({
+      roomId: "00000000-0000-4000-8000-000000000001",
+      audience: "analyst",
+      timezone: "Australia/Sydney",
+      period: { from: at(0), to: at(1) },
+      idempotencyKey: "parker-period-boundary",
+    });
+    const manifest = buildParkerManifest(input, {
+      alerts: [{ id: "outside", receivedAt: at(1), correlationKey: "sensitive-correlation-key" }],
+      investigations: [],
+      approvals: [],
+      agentRuns: [],
+      workflowRuns: [],
+    } as never);
+
+    expect(manifest.period).toMatchObject({ timezone: "Australia/Sydney" });
+    expect(manifest.classification).toBe("restricted");
+    expect(manifest.values.find((value) => value.key === "recurrence_rate")).toMatchObject({ state: "not_applicable", sampleSize: 0 });
+    expect(manifest.narrative).not.toContain("sensitive-correlation-key");
+    expect(() => CreateParkerReportSchema.parse({ ...input, timezone: "not/a-timezone" })).toThrow("IANA timezone");
+  });
 });

@@ -25,7 +25,23 @@ export const CreateParkerReportSchema = z.object({
   taskId: z.uuid().optional(),
   audience: z.enum(["analyst", "leadership", "executive"]).default("analyst"),
   period: PeriodSchema,
-  timezone: z.string().trim().min(1).max(100).default("UTC"),
+  timezone: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .refine(
+      (timezone) => {
+        try {
+          Intl.DateTimeFormat(undefined, { timeZone: timezone });
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      "Timezone must be an IANA timezone.",
+    )
+    .default("UTC"),
   idempotencyKey: z.string().trim().min(8).max(200),
 });
 
@@ -145,10 +161,23 @@ export class ParkerReportDomainService {
     const input = CreateParkerReportSchema.parse(raw);
     if (input.period.to.getTime() - input.period.from.getTime() > 366 * 24 * 60 * 60_000)
       throw new ApiProblem(400, "Report period too broad", "Reports are limited to 366 days.");
-    const [room, parker, existing, data] = await Promise.all([
+    const [room, parker, existing, task, data] = await Promise.all([
       this.db.select({ id: schema.roomMemberships.roomId }).from(schema.roomMemberships).where(and(eq(schema.roomMemberships.organisationId, subject.organisationId), eq(schema.roomMemberships.roomId, input.roomId), eq(schema.roomMemberships.actorId, subject.actorId))).limit(1).then((rows) => rows[0]),
       this.db.select({ id: schema.agentDefinitions.id, runtime: schema.agentDefinitions.runtime, model: schema.agentDefinitions.model, promptVersion: schema.agentDefinitions.systemPromptVersion, allowedRooms: schema.agentDefinitions.allowedRooms }).from(schema.agentDefinitions).where(and(eq(schema.agentDefinitions.organisationId, subject.organisationId), eq(schema.agentDefinitions.name, "Parker"), eq(schema.agentDefinitions.status, "active"), eq(schema.agentDefinitions.killSwitch, false))).limit(1).then((rows) => rows[0]),
       this.db.select().from(schema.reportManifests).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.idempotencyKey, input.idempotencyKey))).limit(1).then((rows) => rows[0]),
+      input.taskId
+        ? this.db
+            .select({ id: schema.tasks.id, roomId: schema.tasks.roomId })
+            .from(schema.tasks)
+            .where(
+              and(
+                eq(schema.tasks.organisationId, subject.organisationId),
+                eq(schema.tasks.id, input.taskId),
+              ),
+            )
+            .limit(1)
+            .then((rows) => rows[0])
+        : Promise.resolve(undefined),
       Promise.all([
         this.db.select().from(schema.alerts).where(eq(schema.alerts.organisationId, subject.organisationId)),
         this.db.select().from(schema.investigations).where(eq(schema.investigations.organisationId, subject.organisationId)),
@@ -159,6 +188,10 @@ export class ParkerReportDomainService {
     ]);
     if (existing) return { id: existing.id, status: existing.status, duplicate: true };
     if (!room) throw new ApiProblem(404, "Not found", "Room not found.");
+    if (input.taskId && !task)
+      throw new ApiProblem(404, "Not found", "Task not found.");
+    if (task && task.roomId !== input.roomId)
+      throw new ApiProblem(409, "Task room mismatch", "The report task belongs to a different room.");
     if (!parker || !Array.isArray(parker.allowedRooms) || !parker.allowedRooms.includes(input.roomId))
       throw new ApiProblem(409, "Parker unavailable", "Parker is not active in this room.");
     const manifest = buildParkerManifest(input, { alerts: data[0], investigations: data[1], approvals: data[2], agentRuns: data[3], workflowRuns: data[4] });
@@ -241,7 +274,7 @@ export class ParkerReportDomainService {
         idempotencyKey: `parker-report-message:${report.id}`,
       };
       await tx.insert(schema.messages).values(message);
-      await tx.update(schema.reportManifests).set({ status: "posted", postedMessageId: messageId, updatedAt: new Date() }).where(eq(schema.reportManifests.id, reportId));
+      await tx.update(schema.reportManifests).set({ status: "posted", postedMessageId: messageId, updatedAt: new Date() }).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.id, reportId)));
       await writeOutbox(tx, { organisationId: subject.organisationId, eventType: "room.message.created", aggregateType: "message", aggregateId: messageId, queueName: "muster-outbox", payload: { messageId, roomId: report.roomId }, idempotencyKey: `room.message.created:parker-report:${report.id}`, traceId });
       await appendAuditEvent(tx, { organisationId: subject.organisationId, actorId: subject.actorId, actorType: "human", action: "report.posted", targetType: "report_manifest", targetId: reportId, metadata: { messageId }, traceId });
       return { id: reportId, messageId, status: "posted" };
