@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { hashAuditEvent, verifyAuditChain, type HashableAuditEvent } from "./index";
+import {
+  hashAuditEvent,
+  normaliseAuditMetadata,
+  verifyAuditChain,
+  type HashableAuditEvent,
+} from "./index";
 
 const base: HashableAuditEvent = {
   organisationId: "org",
@@ -22,5 +27,28 @@ describe("audit chain", () => {
     expect(
       verifyAuditChain([{ ...event, metadata: { safe: false } }]).valid,
     ).toBe(false);
+  });
+
+  it("hashes the same JSON representation that PostgreSQL persists", () => {
+    const metadata = normaliseAuditMetadata({
+      operation: "kelpie.timeline.comment",
+      approvalId: undefined,
+      nested: { omitted: undefined, kept: true },
+      array: [undefined, "kept"],
+    });
+    expect(metadata).toEqual({
+      operation: "kelpie.timeline.comment",
+      nested: { kept: true },
+      array: [null, "kept"],
+    });
+
+    const event = { ...base, metadata };
+    const persisted = JSON.parse(JSON.stringify(event)) as HashableAuditEvent;
+    expect(hashAuditEvent(event)).toBe(hashAuditEvent(persisted));
+    expect(
+      verifyAuditChain([
+        { ...persisted, eventHash: hashAuditEvent(persisted) },
+      ]),
+    ).toEqual({ valid: true });
   });
 });

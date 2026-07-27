@@ -27,6 +27,12 @@ export function hashAuditEvent(event: HashableAuditEvent): string {
   return createHash("sha256").update(canonical(event)).digest("hex");
 }
 
+export function normaliseAuditMetadata(metadata: unknown): unknown {
+  const serialised = JSON.stringify(metadata ?? {});
+  if (serialised === undefined) return {};
+  return JSON.parse(serialised) as unknown;
+}
+
 export function verifyAuditChain(
   events: ReadonlyArray<HashableAuditEvent & { eventHash: string }>,
 ): { valid: boolean; brokenAt?: number } {

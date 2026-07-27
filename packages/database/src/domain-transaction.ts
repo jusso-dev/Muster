@@ -1,5 +1,5 @@
 import { desc, eq, sql } from "drizzle-orm";
-import { hashAuditEvent } from "@muster/audit";
+import { hashAuditEvent, normaliseAuditMetadata } from "@muster/audit";
 import type { ActorTypeSchema } from "@muster/contracts";
 import type { z } from "zod";
 import type { database } from "./index.ts";
@@ -38,6 +38,7 @@ export async function appendAuditEvent(tx: Transaction, input: AuditWrite) {
   const createdAt = new Date();
   const sequence = (previous?.sequence ?? 0) + 1;
   const previousHash = previous?.eventHash ?? "0".repeat(64);
+  const metadata = normaliseAuditMetadata(input.metadata);
   const hashable = {
     organisationId: input.organisationId,
     sequence,
@@ -47,7 +48,7 @@ export async function appendAuditEvent(tx: Transaction, input: AuditWrite) {
     targetType: input.targetType,
     targetId: input.targetId,
     previousHash,
-    metadata: input.metadata ?? {},
+    metadata,
     traceId: input.traceId,
     createdAt: createdAt.toISOString(),
   };
@@ -56,7 +57,7 @@ export async function appendAuditEvent(tx: Transaction, input: AuditWrite) {
   await tx.insert(auditEvents).values({
     id,
     ...input,
-    metadata: input.metadata ?? {},
+    metadata,
     sequence,
     previousHash,
     eventHash,
