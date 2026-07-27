@@ -15,6 +15,8 @@ export async function queueDueParkerReports(organisationId: string, traceId: str
     if (!parker) throw new Error("Parker is not configured for this organisation");
     let created = 0;
     for (const schedule of due) {
+      if (!Array.isArray(parker.allowedRooms) || !parker.allowedRooms.includes(schedule.roomId))
+        throw new Error(`Parker is not exposed to scheduled room ${schedule.roomId}`);
       const idempotencyKey = `parker:schedule:${schedule.id}:${schedule.nextRunAt.toISOString()}`;
       const [existing] = await tx.select({ id: schema.tasks.id }).from(schema.tasks).where(and(eq(schema.tasks.organisationId, organisationId), eq(schema.tasks.idempotencyKey, idempotencyKey))).limit(1);
       await tx.update(schema.reportSchedules).set({ lastRunAt: now, nextRunAt: nextScheduledReportRun(schedule.cadence, now), updatedAt: now }).where(and(eq(schema.reportSchedules.organisationId, organisationId), eq(schema.reportSchedules.id, schedule.id)));

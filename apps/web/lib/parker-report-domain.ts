@@ -166,8 +166,8 @@ export function buildParkerManifest(
       { source: "alerts", query: { receivedAt: { gte: from.toISOString(), lt: to.toISOString() }, organisationScoped: true } },
       { source: "investigations", query: { createdAt: { gte: from.toISOString(), lt: to.toISOString() }, organisationScoped: true } },
       { source: "approvals", query: { requestedAt: { gte: from.toISOString(), lt: to.toISOString() }, organisationScoped: true } },
-      { source: "agent_runs", query: { createdAt: { gte: from.toISOString(), lt: to.toISOString() }, organisationScoped: true } },
-      { source: "workflow_runs", query: { createdAt: { gte: from.toISOString(), lt: to.toISOString() }, organisationScoped: true } },
+      { source: "agent_runs", query: { startedAtOrCompletedAt: { gte: from.toISOString(), lt: to.toISOString() }, organisationScoped: true } },
+      { source: "workflow_runs", query: { startedAtOrCompletedAt: { gte: from.toISOString(), lt: to.toISOString() }, organisationScoped: true } },
     ],
     narrative,
     caveats: values.filter((value) => value.state === "unavailable" || value.state === "not_applicable").map((value) => `${value.key}: ${value.state.replace("_", " ")}.`),
@@ -395,6 +395,15 @@ export class ParkerReportDomainService {
     requireCapability(subject, "administration.manage");
     const input = CreateParkerScheduleSchema.parse(raw);
     await this.requireRoomMembership(subject, input.roomId);
+    const [parker] = await this.db
+      .select({ allowedRooms: schema.agentDefinitions.allowedRooms, capabilityRequirements: schema.agentDefinitions.capabilityRequirements })
+      .from(schema.agentDefinitions)
+      .where(and(eq(schema.agentDefinitions.organisationId, subject.organisationId), eq(schema.agentDefinitions.name, "Parker"), eq(schema.agentDefinitions.status, "active"), eq(schema.agentDefinitions.killSwitch, false)))
+      .limit(1);
+    if (!parker || !Array.isArray(parker.allowedRooms) || !parker.allowedRooms.includes(input.roomId))
+      throw new ApiProblem(409, "Parker unavailable", "Parker is not active in this room.");
+    for (const capability of requiredCapabilities(parker.capabilityRequirements))
+      requireCapability(subject, capability);
     return this.db.transaction(async (tx) => {
       const [existing] = await tx.select().from(schema.reportSchedules).where(and(eq(schema.reportSchedules.organisationId, subject.organisationId), eq(schema.reportSchedules.idempotencyKey, input.idempotencyKey))).limit(1);
       if (existing) return { id: existing.id, nextRunAt: existing.nextRunAt, duplicate: true };
