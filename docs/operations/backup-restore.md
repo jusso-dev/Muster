@@ -1,5 +1,14 @@
 # Backup and restore
 
+For governed synthetic cleanup, use the stricter two-restore proof in
+`docs/synthetic-cleanup.md`. A successful restore command alone is not cleanup
+proof. Record source revision, backup SHA-256, per-organisation counts and
+ordered row digests, protected direct-message/room/membership rows, evidence
+object inventory, and audit-chain result before mutation. Restore the same
+backup twice into separate isolated PostgreSQL instances: one to exercise the
+exact approved manifest with workers and object credentials disabled, and one
+to re-establish the untouched baseline.
+
 Back up PostgreSQL with point-in-time recovery and the evidence bucket with versioning/object lock. Redis is rebuildable execution infrastructure; retain it only for operational continuity. Back up deployment configuration and secret references separately.
 
 Restore order:

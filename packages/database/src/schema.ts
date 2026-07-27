@@ -1971,9 +1971,15 @@ export const researchWatchlists = pgTable(
   "research_watchlists",
   {
     id: uuid("id").primaryKey(),
-    organisationId: uuid("organisation_id").notNull().references(() => organisations.id),
-    roomId: uuid("room_id").notNull().references(() => rooms.id),
-    createdByActorId: uuid("created_by_actor_id").notNull().references(() => actors.id),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    roomId: uuid("room_id")
+      .notNull()
+      .references(() => rooms.id),
+    createdByActorId: uuid("created_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
     name: text("name").notNull(),
     vendors: jsonb("vendors").notNull().default([]),
     technologies: jsonb("technologies").notNull().default([]),
@@ -1986,9 +1992,15 @@ export const researchWatchlists = pgTable(
     ...timestamps,
   },
   (table) => [
-    uniqueIndex("research_watchlists_org_name_unique").on(table.organisationId, table.name),
+    uniqueIndex("research_watchlists_org_name_unique").on(
+      table.organisationId,
+      table.name,
+    ),
     index("research_watchlists_due_idx").on(table.enabled, table.nextRunAt),
-    check("research_watchlists_cadence_check", sql`${table.cadenceMinutes} between 15 and 10080`),
+    check(
+      "research_watchlists_cadence_check",
+      sql`${table.cadenceMinutes} between 15 and 10080`,
+    ),
   ],
 );
 
@@ -1996,9 +2008,15 @@ export const researchRuns = pgTable(
   "research_runs",
   {
     id: uuid("id").primaryKey(),
-    organisationId: uuid("organisation_id").notNull().references(() => organisations.id),
-    watchlistId: uuid("watchlist_id").notNull().references(() => researchWatchlists.id),
-    agentRunId: uuid("agent_run_id").notNull().references(() => agentRuns.id),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    watchlistId: uuid("watchlist_id")
+      .notNull()
+      .references(() => researchWatchlists.id),
+    agentRunId: uuid("agent_run_id")
+      .notNull()
+      .references(() => agentRuns.id),
     status: text("status").notNull().default("queued"),
     sourceLimit: integer("source_limit").notNull(),
     tokenBudget: integer("token_budget").notNull(),
@@ -2010,10 +2028,23 @@ export const researchRuns = pgTable(
     ...timestamps,
   },
   (table) => [
-    uniqueIndex("research_runs_org_idempotency_unique").on(table.organisationId, table.idempotencyKey),
-    uniqueIndex("research_runs_org_agent_unique").on(table.organisationId, table.agentRunId),
-    index("research_runs_org_status_idx").on(table.organisationId, table.status, table.createdAt),
-    check("research_runs_status_check", sql`${table.status} in ('queued','running','completed','failed')`),
+    uniqueIndex("research_runs_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
+    ),
+    uniqueIndex("research_runs_org_agent_unique").on(
+      table.organisationId,
+      table.agentRunId,
+    ),
+    index("research_runs_org_status_idx").on(
+      table.organisationId,
+      table.status,
+      table.createdAt,
+    ),
+    check(
+      "research_runs_status_check",
+      sql`${table.status} in ('queued','running','completed','failed')`,
+    ),
   ],
 );
 
@@ -2021,9 +2052,15 @@ export const researchItems = pgTable(
   "research_items",
   {
     id: uuid("id").primaryKey(),
-    organisationId: uuid("organisation_id").notNull().references(() => organisations.id),
-    watchlistId: uuid("watchlist_id").notNull().references(() => researchWatchlists.id),
-    researchRunId: uuid("research_run_id").notNull().references(() => researchRuns.id),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    watchlistId: uuid("watchlist_id")
+      .notNull()
+      .references(() => researchWatchlists.id),
+    researchRunId: uuid("research_run_id")
+      .notNull()
+      .references(() => researchRuns.id),
     fingerprint: text("fingerprint").notNull(),
     sourceUrl: text("source_url").notNull(),
     sourcePublishedAt: timestamp("source_published_at", { withTimezone: true }),
@@ -2036,8 +2073,15 @@ export const researchItems = pgTable(
     ...timestamps,
   },
   (table) => [
-    uniqueIndex("research_items_org_fingerprint_unique").on(table.organisationId, table.fingerprint),
-    index("research_items_org_watchlist_idx").on(table.organisationId, table.watchlistId, table.updatedAt),
+    uniqueIndex("research_items_org_fingerprint_unique").on(
+      table.organisationId,
+      table.fingerprint,
+    ),
+    index("research_items_org_watchlist_idx").on(
+      table.organisationId,
+      table.watchlistId,
+      table.updatedAt,
+    ),
   ],
 );
 
@@ -2047,11 +2091,17 @@ export const reportManifests = pgTable(
   "report_manifests",
   {
     id: uuid("id").primaryKey(),
-    organisationId: uuid("organisation_id").notNull().references(() => organisations.id),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
     agentRunId: uuid("agent_run_id").references(() => agentRuns.id),
     taskId: uuid("task_id").references(() => tasks.id),
-    roomId: uuid("room_id").notNull().references(() => rooms.id),
-    requestedByActorId: uuid("requested_by_actor_id").notNull().references(() => actors.id),
+    roomId: uuid("room_id")
+      .notNull()
+      .references(() => rooms.id),
+    requestedByActorId: uuid("requested_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
     version: integer("version").notNull().default(1),
     status: text("status").notNull().default("draft"),
     manifest: jsonb("manifest").notNull(),
@@ -2064,9 +2114,20 @@ export const reportManifests = pgTable(
     ...timestamps,
   },
   (table) => [
-    uniqueIndex("report_manifests_org_idempotency_unique").on(table.organisationId, table.idempotencyKey),
-    index("report_manifests_org_room_status_idx").on(table.organisationId, table.roomId, table.status, table.createdAt),
-    check("report_manifests_status_check", sql`${table.status} in ('draft','reviewed','posted','superseded')`),
+    uniqueIndex("report_manifests_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
+    ),
+    index("report_manifests_org_room_status_idx").on(
+      table.organisationId,
+      table.roomId,
+      table.status,
+      table.createdAt,
+    ),
+    check(
+      "report_manifests_status_check",
+      sql`${table.status} in ('draft','reviewed','posted','superseded')`,
+    ),
     check("report_manifests_version_check", sql`${table.version} > 0`),
   ],
 );
@@ -2075,10 +2136,18 @@ export const reportDeliveries = pgTable(
   "report_deliveries",
   {
     id: uuid("id").primaryKey(),
-    organisationId: uuid("organisation_id").notNull().references(() => organisations.id),
-    reportId: uuid("report_id").notNull().references(() => reportManifests.id),
-    approvalId: uuid("approval_id").notNull().references(() => approvals.id),
-    requestedByActorId: uuid("requested_by_actor_id").notNull().references(() => actors.id),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    reportId: uuid("report_id")
+      .notNull()
+      .references(() => reportManifests.id),
+    approvalId: uuid("approval_id")
+      .notNull()
+      .references(() => approvals.id),
+    requestedByActorId: uuid("requested_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
     recipient: text("recipient").notNull(),
     status: text("status").notNull().default("awaiting_approval"),
     result: jsonb("result"),
@@ -2087,9 +2156,19 @@ export const reportDeliveries = pgTable(
     ...timestamps,
   },
   (table) => [
-    uniqueIndex("report_deliveries_org_idempotency_unique").on(table.organisationId, table.idempotencyKey),
-    index("report_deliveries_org_report_status_idx").on(table.organisationId, table.reportId, table.status),
-    check("report_deliveries_status_check", sql`${table.status} in ('awaiting_approval','queued','delivered','failed','cancelled')`),
+    uniqueIndex("report_deliveries_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
+    ),
+    index("report_deliveries_org_report_status_idx").on(
+      table.organisationId,
+      table.reportId,
+      table.status,
+    ),
+    check(
+      "report_deliveries_status_check",
+      sql`${table.status} in ('awaiting_approval','queued','delivered','failed','cancelled')`,
+    ),
   ],
 );
 
@@ -2097,9 +2176,15 @@ export const reportSchedules = pgTable(
   "report_schedules",
   {
     id: uuid("id").primaryKey(),
-    organisationId: uuid("organisation_id").notNull().references(() => organisations.id),
-    roomId: uuid("room_id").notNull().references(() => rooms.id),
-    createdByActorId: uuid("created_by_actor_id").notNull().references(() => actors.id),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    roomId: uuid("room_id")
+      .notNull()
+      .references(() => rooms.id),
+    createdByActorId: uuid("created_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
     cadence: text("cadence").notNull(),
     timezone: text("timezone").notNull(),
     audience: text("audience").notNull().default("leadership"),
@@ -2111,10 +2196,23 @@ export const reportSchedules = pgTable(
     ...timestamps,
   },
   (table) => [
-    uniqueIndex("report_schedules_org_idempotency_unique").on(table.organisationId, table.idempotencyKey),
-    index("report_schedules_org_due_idx").on(table.organisationId, table.enabled, table.nextRunAt),
-    check("report_schedules_cadence_check", sql`${table.cadence} in ('weekly','monthly')`),
-    check("report_schedules_audience_check", sql`${table.audience} in ('analyst','leadership','executive')`),
+    uniqueIndex("report_schedules_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
+    ),
+    index("report_schedules_org_due_idx").on(
+      table.organisationId,
+      table.enabled,
+      table.nextRunAt,
+    ),
+    check(
+      "report_schedules_cadence_check",
+      sql`${table.cadence} in ('weekly','monthly')`,
+    ),
+    check(
+      "report_schedules_audience_check",
+      sql`${table.audience} in ('analyst','leadership','executive')`,
+    ),
   ],
 );
 
@@ -2137,6 +2235,114 @@ export const idempotencyRecords = pgTable(
   (table) => [
     primaryKey({ columns: [table.organisationId, table.scope, table.key] }),
     index("idempotency_expiry_idx").on(table.expiresAt),
+  ],
+);
+
+export const syntheticArtifactProvenance = pgTable(
+  "synthetic_artifact_provenance",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    artifactTable: text("artifact_table").notNull(),
+    artifactId: uuid("artifact_id").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    sourceReference: text("source_reference").notNull(),
+    recordedByActorId: uuid("recorded_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    recordedAt: timestamp("recorded_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("synthetic_artifact_provenance_artifact_unique").on(
+      table.organisationId,
+      table.artifactTable,
+      table.artifactId,
+    ),
+    check(
+      "synthetic_artifact_provenance_table_check",
+      sql`${table.artifactTable} in ('rooms','tasks','hunts','integrations','researchWatchlists','reportManifests','reportSchedules','messages','evidence','agentMemories','actors')`,
+    ),
+    check(
+      "synthetic_artifact_provenance_source_check",
+      sql`${table.sourceKind} in ('seed_fixture','mock_runtime','test_fixture','legacy_live_proof')`,
+    ),
+  ],
+);
+
+export const syntheticCleanupReceipts = pgTable(
+  "synthetic_cleanup_receipts",
+  {
+    manifestId: uuid("manifest_id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    approvalId: uuid("approval_id")
+      .notNull()
+      .references(() => approvals.id),
+    maintenanceActorId: uuid("maintenance_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    manifestDigest: text("manifest_digest").notNull(),
+    manifest: jsonb("manifest").notNull(),
+    candidateCounts: jsonb("candidate_counts").notNull(),
+    preDigests: jsonb("pre_digests").notNull(),
+    postDigests: jsonb("post_digests").notNull(),
+    objectStorageObjects: jsonb("object_storage_objects").notNull().default([]),
+    traceId: text("trace_id").notNull(),
+    appliedAt: timestamp("applied_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("synthetic_cleanup_receipts_approval_unique").on(
+      table.approvalId,
+    ),
+    uniqueIndex("synthetic_cleanup_receipts_org_digest_unique").on(
+      table.organisationId,
+      table.manifestDigest,
+    ),
+  ],
+);
+
+export const syntheticCleanupObjectDeletionAttempts = pgTable(
+  "synthetic_cleanup_object_deletion_attempts",
+  {
+    id: uuid("id").primaryKey(),
+    manifestId: uuid("manifest_id")
+      .notNull()
+      .references(() => syntheticCleanupReceipts.manifestId),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    evidenceId: uuid("evidence_id").notNull(),
+    versionId: text("version_id").notNull(),
+    authorizationApprovalId: uuid("authorization_approval_id")
+      .notNull()
+      .references(() => approvals.id),
+    result: text("result").notNull(),
+    errorCode: text("error_code"),
+    attemptedByActorId: uuid("attempted_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    traceId: text("trace_id").notNull(),
+    attemptedAt: timestamp("attempted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("synthetic_cleanup_object_attempts_manifest_idx").on(
+      table.organisationId,
+      table.manifestId,
+      table.attemptedAt,
+    ),
+    check(
+      "synthetic_cleanup_object_attempts_result_check",
+      sql`${table.result} in ('started','succeeded','failed','observed_missing')`,
+    ),
   ],
 );
 

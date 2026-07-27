@@ -216,6 +216,9 @@ importers:
       '@muster/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@muster/evidence':
+        specifier: workspace:*
+        version: link:../../packages/evidence
       '@muster/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations
@@ -394,6 +397,9 @@ importers:
       '@muster/audit':
         specifier: workspace:*
         version: link:../audit
+      '@muster/authz':
+        specifier: workspace:*
+        version: link:../authz
       '@muster/contracts':
         specifier: workspace:*
         version: link:../contracts

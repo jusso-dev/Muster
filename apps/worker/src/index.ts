@@ -20,6 +20,7 @@ import {
   schema,
   writeOutbox,
 } from "@muster/database";
+import { processSyntheticCleanupObjectDeletion } from "./synthetic-cleanup-object.ts";
 import {
   ConnectorConfigurationSchema,
   GovernedConnectorError,
@@ -110,6 +111,17 @@ const authoritativeProcessor: Processor = async (job) => {
       job.data.traceId,
       job.data.aggregateId,
     );
+  }
+  if (
+    job.queueName === "muster-maintenance" &&
+    job.name === "maintenance.synthetic_cleanup.object_delete.queued"
+  ) {
+    await processSyntheticCleanupObjectDeletion({
+      organisationId: job.data.organisationId,
+      aggregateType: job.data.aggregateType,
+      aggregateId: job.data.aggregateId,
+      traceId: job.data.traceId,
+    });
   }
   if (
     job.queueName === "muster-maintenance" &&

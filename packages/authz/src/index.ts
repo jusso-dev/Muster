@@ -259,6 +259,14 @@ export const actionApprovalPolicy = {
     approvalCount: 1,
     capability: "workflows.approve",
   },
+  "maintenance.synthetic-cleanup": {
+    approvalCount: 1,
+    capability: "administration.manage",
+  },
+  "maintenance.synthetic-cleanup.object-delete-retry": {
+    approvalCount: 1,
+    capability: "administration.manage",
+  },
   "evidence.delete": { prohibited: true },
 } as const satisfies Record<
   string,
