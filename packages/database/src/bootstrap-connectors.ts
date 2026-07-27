@@ -30,6 +30,7 @@ function optionalEnvironmentConnector(input: {
   displayName: string;
   baseUrl: string | undefined;
   token: string | undefined;
+  tlsCaCertificateBase64?: string | undefined;
   auth: (token: string) => ConnectorAuth;
 }): EnvironmentConnector | null {
   const baseUrl = input.baseUrl?.trim();
@@ -47,6 +48,11 @@ function optionalEnvironmentConnector(input: {
       allowedHosts: [parsedUrl.hostname.toLowerCase()],
       allowPrivateNetwork: true,
       testMode: false,
+      ...(input.tlsCaCertificateBase64?.trim()
+        ? {
+            tlsCaCertificateBase64: input.tlsCaCertificateBase64.trim(),
+          }
+        : {}),
       auth,
       limits: {
         timeoutMs: 10_000,
@@ -83,6 +89,7 @@ function configuredConnectors() {
       displayName: "UniFi homelab",
       baseUrl: process.env.UNIFI_BASE_URL,
       token: process.env.UNIFI_API_KEY,
+      tlsCaCertificateBase64: process.env.UNIFI_TLS_CA_CERTIFICATE_BASE64,
       auth: (token) => ({
         type: "api_key",
         headerName: process.env.UNIFI_API_KEY_HEADER?.trim() || "X-API-Key",

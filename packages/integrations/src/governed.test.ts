@@ -115,9 +115,7 @@ describe("governed connector egress", () => {
   it("ships bounded official UniFi read templates with API-key authentication", async () => {
     const mock = await server((request, response) => {
       expect(request.headers["x-api-key"]).toBe("synthetic-unifi-key");
-      expect(request.url).toBe(
-        "/v1/sites/site-1/clients?offset=0&limit=25&filter=",
-      );
+      expect(request.url).toBe("/v1/sites/site-1/clients?offset=0&limit=25");
       response.setHeader("content-type", "application/json");
       response.end(
         JSON.stringify({
@@ -149,8 +147,13 @@ describe("governed connector egress", () => {
         token: "synthetic-unifi-key",
       },
       template: clientTemplate,
-      values: { siteId: "site-1", offset: 0, limit: 25, filter: "" },
+      values: { siteId: "site-1", offset: 0, limit: 25 },
     });
+    expect(
+      connectorPresets.unifi?.some(
+        (candidate) => candidate.key === "unifi.traffic.clients",
+      ),
+    ).toBe(true);
     expect(result).toMatchObject({
       data: [{ id: "synthetic-client", ipAddress: "192.0.2.10" }],
       metadata: { pages: 1, records: 1, truncated: false },

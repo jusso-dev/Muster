@@ -2339,10 +2339,15 @@ async function loadLiveConnectorEvidence(input: {
   ]);
   if (!requestedProducts.has("unifi") && requestedProducts.size !== 0)
     return evidence;
-  const sites = await execute("unifi", "unifi.sites.list", {
-    offset: 0,
-    limit: 10,
-  });
+  const [sites] = await Promise.all([
+    execute("unifi", "unifi.sites.list", {
+      offset: 0,
+      limit: 10,
+    }),
+    execute("unifi", "unifi.traffic.clients", {
+      siteName: "default",
+    }),
+  ]);
   const siteIds = Array.isArray(sites.result)
     ? sites.result
         .map((site) =>
@@ -2358,7 +2363,7 @@ async function loadLiveConnectorEvidence(input: {
       execute(
         "unifi",
         "unifi.clients.list",
-        { siteId, offset: 0, limit: 50, filter: "" },
+        { siteId, offset: 0, limit: 50 },
         siteId,
       ),
     ),

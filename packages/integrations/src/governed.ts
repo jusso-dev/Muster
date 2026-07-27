@@ -72,6 +72,19 @@ export const ConnectorConfigurationSchema = z
     allowedHosts: z.array(z.string().trim().toLowerCase()).min(1).max(20),
     allowPrivateNetwork: z.boolean().default(false),
     testMode: z.boolean().default(false),
+    tlsCaCertificateBase64: z
+      .string()
+      .max(50_000)
+      .refine((value) => {
+        try {
+          return Buffer.from(value, "base64")
+            .toString("utf8")
+            .includes("-----BEGIN CERTIFICATE-----");
+        } catch {
+          return false;
+        }
+      })
+      .optional(),
     auth: ConnectorAuthSchema,
     limits: ConnectorLimitsSchema.default({
       timeoutMs: 10_000,
@@ -393,6 +406,7 @@ interface RequestOptions {
   headers: Record<string, string>;
   body?: string;
   limits: ConnectorLimits;
+  tlsCaCertificateBase64?: string;
 }
 
 async function pinnedJsonRequest(target: SafeTarget, options: RequestOptions) {
@@ -409,6 +423,14 @@ async function pinnedJsonRequest(target: SafeTarget, options: RequestOptions) {
         method: options.method,
         headers: options.headers,
         family: target.family,
+        ...(options.tlsCaCertificateBase64
+          ? {
+              ca: Buffer.from(
+                options.tlsCaCertificateBase64,
+                "base64",
+              ).toString("utf8"),
+            }
+          : {}),
         lookup: (_hostname, lookupOptions, callback) =>
           callback(
             null,
@@ -546,6 +568,11 @@ async function authenticationHeaders(
     },
     body,
     limits: configuration.limits,
+    ...(configuration.tlsCaCertificateBase64
+      ? {
+          tlsCaCertificateBase64: configuration.tlsCaCertificateBase64,
+        }
+      : {}),
   });
   const token = z
     .object({ access_token: z.string().min(1) })
@@ -607,6 +634,11 @@ export async function executeGovernedQuery(input: {
       },
       ...(body ? { body } : {}),
       limits: input.configuration.limits,
+      ...(input.configuration.tlsCaCertificateBase64
+        ? {
+            tlsCaCertificateBase64: input.configuration.tlsCaCertificateBase64,
+          }
+        : {}),
     });
     const parsed = runtimeOutputSchema.safeParse(response.body);
     if (!parsed.success)
@@ -662,6 +694,11 @@ export async function executeGovernedActionRequest<T>(input: {
     },
     ...(body ? { body } : {}),
     limits: input.configuration.limits,
+    ...(input.configuration.tlsCaCertificateBase64
+      ? {
+          tlsCaCertificateBase64: input.configuration.tlsCaCertificateBase64,
+        }
+      : {}),
   });
   const parsed = input.schema.safeParse(response.body);
   if (!parsed.success)
@@ -919,17 +956,15 @@ export const connectorPresets: Record<string, readonly QueryTemplate[]> = {
       version: 1,
       displayName: "UniFi connected clients",
       method: "GET",
-      pathTemplate:
-        "/v1/sites/{siteId}/clients?offset={offset}&limit={limit}&filter={filter}",
+      pathTemplate: "/v1/sites/{siteId}/clients?offset={offset}&limit={limit}",
       requiredCapability: "unifi.network.read",
       inputSchema: {
         type: "object",
-        required: ["siteId", "offset", "limit", "filter"],
+        required: ["siteId", "offset", "limit"],
         properties: {
           siteId: { type: "string", minLength: 1, maxLength: 160 },
           offset: { type: "integer", minimum: 0 },
           limit: { type: "integer", minimum: 1, maximum: 200 },
-          filter: { type: "string", maxLength: 2_000 },
         },
         additionalProperties: false,
       },
@@ -942,6 +977,34 @@ export const connectorPresets: Record<string, readonly QueryTemplate[]> = {
           count: { type: "integer" },
           totalCount: { type: "integer" },
           data: { type: "array" },
+        },
+      },
+      recordsPath: "data",
+    },
+    {
+      key: "unifi.traffic.clients",
+      version: 1,
+      displayName: "UniFi client traffic counters",
+      method: "GET",
+      pathTemplate: "/proxy/network/api/s/{siteName}/stat/sta",
+      requiredCapability: "unifi.network.read",
+      inputSchema: {
+        type: "object",
+        required: ["siteName"],
+        properties: {
+          siteName: {
+            type: "string",
+            pattern: "^[A-Za-z0-9_-]{1,80}$",
+          },
+        },
+        additionalProperties: false,
+      },
+      outputSchema: {
+        type: "object",
+        required: ["data"],
+        properties: {
+          data: { type: "array" },
+          meta: { type: "object" },
         },
       },
       recordsPath: "data",
