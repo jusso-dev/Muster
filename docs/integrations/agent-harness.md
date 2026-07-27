@@ -108,6 +108,25 @@ Configure Slack as follows:
   immediately disables the local installation and cryptographically replaces
   its stored token.
 
+### Operator installation checklist
+
+1. Create or select the Slack app for the intended workspace. Configure the
+   redirect, Events API, interactivity, slash-command, event subscriptions,
+   shortcut callback, and exact bot scopes listed above.
+2. Store the Slack client id, client secret, signing secret, OAuth state secret,
+   redirect URI, connector encryption key, and public Muster URL in the
+   deployment secret store. Never put an `xoxb-` or `xapp-` token in source,
+   Compose files, screenshots, logs, or issue comments.
+3. Deploy the web and worker with the same database and encryption key. Keep
+   Socket Mode disabled for the normal public HTTPS Events API deployment.
+4. From Muster's Slack settings, connect the workspace through OAuth. Muster
+   rejects the exchange if any required bot scope is absent.
+5. Map Slack identities to existing active human actors, then expose only the
+   approved agents, channels, DM policy, and optional thread-context policy.
+6. Send one synthetic mention, slash command, and message shortcut. Confirm the
+   queued and terminal thread updates, then inspect Slack health and worker
+   metrics before enabling broader use.
+
 Administrators map each Slack user to an active Muster human actor with
 `POST /api/v1/slack/identities`, then expose approved agents and channel policy
 using `PUT /api/v1/slack/exposures`. `GET /api/v1/slack/health` is the admin
@@ -137,7 +156,12 @@ message content is never interpreted as agent or system instructions.
 Reconnecting repeats OAuth and atomically rotates the encrypted bot token. An
 administrator can revoke an installation with `DELETE /api/v1/slack/install`
 and `installationId`; this revokes Slack access and cryptographically replaces
-the locally stored token.
+the locally stored token. Slack `tokens_revoked` and `app_uninstalled` events
+perform the same local disablement. Reconnect through OAuth after an intentional
+token rotation; do not copy a replacement bot token into the database. Use the
+Agents screen kill switch to stop new runs immediately. Existing queued Slack
+delivery records become blocked when their installation is inactive, and a
+killed agent is excluded from exposure selection before invocation.
 
 The production baseline is Slack's HTTP Events API and the signed ingress URLs
 above. Socket Mode is optional, primarily for deployments that cannot expose an
@@ -158,6 +182,30 @@ instead of retrying forever. Worker metrics expose API throttles, delivery
 failures/dead letters, Socket Mode connections/reconnects, and envelope
 persistence failures.
 
+### Diagnostics and recovery
+
+- `GET /api/v1/slack/health` shows organisation-scoped installation state,
+  granted scopes, last delivery time, and bounded last error. A missing scope
+  requires updating the Slack app and reconnecting through OAuth.
+- The worker `/metrics` endpoint exposes
+  `muster_slack_api_rate_limits`, `muster_slack_delivery_failures`,
+  `muster_slack_delivery_dead_letters`, and the Socket Mode connection,
+  reconnect, and envelope-failure counters.
+- An HTTP 401 from an ingress URL means the signing secret, request timestamp,
+  or public route is wrong. Check clock synchronisation and Slack's configured
+  URL; never disable signature verification.
+- A `dead_letter` delivery has exhausted three worker executions. Correct the
+  workspace token, scopes, Slack availability, or channel access before
+  explicitly replaying it. Do not blindly reset every delivery.
+- With HTTP Events API, confirm Slack can reach all three signed ingress URLs.
+  With optional Socket Mode, zero connections usually means the worker lacks a
+  valid `xapp-` token or outbound WebSocket access. Do not enable both transports
+  to troubleshoot a signing error; their shared inbox deduplicates events, but
+  the extra path obscures the failing boundary.
+- After revocation or uninstall, the expected state is `revoked`, no new durable
+  inbox rows, and no Slack API delivery. Reconnect through OAuth only after an
+  administrator confirms the workspace should be trusted again.
+
 ## Verification
 
 The fast harness suite verifies signature replay handling, Assistant lifecycle
@@ -167,6 +215,7 @@ synthetic PostgreSQL fixture only:
 
 ```sh
 MUSTER_INTEGRATION_TESTS=true pnpm --dir packages/agent-harness test
+MUSTER_INTEGRATION_TESTS=true pnpm --dir apps/web test -- lifecycle.integration.test.ts
 ```
 
 It asserts signed event replay across adapter restarts, an exact-once inbox/run,
@@ -174,3 +223,7 @@ bounded progress and terminal updates, approval review, cancel/retry, Assistant
 status lifecycle, installation revocation, message shortcuts, bounded 429
 handling, dead-letter delivery, and out-of-order terminal delivery without Slack
 credentials. These synthetic tests are not proof of a live Slack installation.
+The web lifecycle suite adds real local HTTP boundaries for the fake Slack Web
+API and Muster ingress routes, including OAuth scope rejection and rotation,
+restart replay, durable outbox-to-worker processing, one 429 retry, kill switch,
+token revocation, uninstall, and blocked post-revocation delivery.
