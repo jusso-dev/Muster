@@ -37,7 +37,7 @@ export function slackSocketMetrics() {
   return { ...socketMetrics };
 }
 
-function parseSocketMessage(data: unknown): SlackSocketEnvelope {
+function parseSocketMessage(data: unknown): SlackSocketEnvelope | null {
   const text =
     typeof data === "string"
       ? data
@@ -47,9 +47,11 @@ function parseSocketMessage(data: unknown): SlackSocketEnvelope {
           ? new TextDecoder().decode(data)
           : "";
   const parsed = JSON.parse(text) as {
+    type?: unknown;
     envelope_id?: unknown;
     payload?: unknown;
   };
+  if (parsed.type === "hello") return null;
   if (
     typeof parsed.envelope_id !== "string" ||
     !parsed.envelope_id.trim() ||
@@ -70,6 +72,7 @@ export async function handleSlackSocketMessage(
   acknowledge: (acknowledgement: string) => void,
 ) {
   const envelope = parseSocketMessage(data);
+  if (!envelope) return;
   await recordEnvelope(envelope);
   acknowledge(JSON.stringify({ envelope_id: envelope.envelope_id }));
 }
