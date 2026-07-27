@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { appendAuditEvent } from "./domain-transaction.ts";
 import { newId } from "./ids.ts";
-import { database } from "./index.ts";
+import { closeDatabase, database } from "./index.ts";
 import { writeOutbox } from "./outbox.ts";
 import * as schema from "./schema.ts";
 
@@ -146,4 +147,18 @@ export async function applySyntheticCleanup(
     });
     return { applied: true, manifestId: manifest.manifestId };
   }, { isolationLevel: "serializable", accessMode: "read write" });
+}
+
+async function main() {
+  const [mode, manifestPath] = process.argv.slice(2);
+  if (mode !== "--apply" || !manifestPath?.startsWith("/")) {
+    throw new Error("Usage: cleanup:synthetic --apply /absolute/manifest.json");
+  }
+  const input = JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
+  const result = await applySyntheticCleanup(input, `maintenance-${newId()}`);
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+}
+
+if (process.argv[1]?.endsWith("synthetic-cleanup.ts")) {
+  await main().finally(closeDatabase);
 }

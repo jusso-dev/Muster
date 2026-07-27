@@ -147,9 +147,12 @@ const authoritativeProcessor: Processor = async (job) => {
     job.queueName === "muster-agents" &&
     job.name !== "report.generate.queued"
   ) {
+    const gatewayToken = process.env.MUSTER_AGENT_GATEWAY_TOKEN?.trim();
+    if (!gatewayToken) throw new Error("Agent gateway token is not configured");
     const response = await fetch(
       `${process.env.AGENT_GATEWAY_URL ?? "http://agent-gateway:3002"}/v1/runs/dispatch`,
       {
+        headers: { authorization: `Bearer ${gatewayToken}` },
         method: "POST",
         signal: AbortSignal.timeout(10_000),
       },

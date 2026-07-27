@@ -13,7 +13,7 @@ import {
   schema,
   writeOutbox,
 } from "@muster/database";
-import { and, desc, eq, max, or } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, max, or } from "drizzle-orm";
 import { z } from "zod";
 
 const LearningMutationSchema = z.discriminatedUnion("action", [
@@ -789,7 +789,14 @@ async function setKillSwitch(
               ),
             ),
           )
-          .returning({ id: schema.agentRuns.id })
+          .returning({
+            id: schema.agentRuns.id,
+            organisationId: schema.agentRuns.organisationId,
+            agentId: schema.agentRuns.agentId,
+            roomId: schema.agentRuns.roomId,
+            investigationId: schema.agentRuns.investigationId,
+            request: schema.agentRuns.request,
+          })
       : [];
     if (cancelledRuns.length > 0) {
       const safeReason = redactObservationText(reason);
@@ -803,6 +810,92 @@ async function setKillSwitch(
           payload: { reason: safeReason },
         })),
       );
+      for (const run of cancelledRuns) {
+        const request = z
+          .object({
+            kind: z.literal("direct_message"),
+            sourceMessageId: z.string().uuid(),
+            traceId: z.string().optional(),
+          })
+          .safeParse(run.request);
+        if (!request.success || !run.roomId) continue;
+        const [source] = await tx
+          .select({ id: schema.messages.id })
+          .from(schema.messages)
+          .innerJoin(
+            schema.rooms,
+            and(
+              eq(schema.rooms.organisationId, run.organisationId),
+              eq(schema.rooms.id, run.roomId),
+              eq(schema.rooms.roomType, "direct"),
+              isNull(schema.rooms.archivedAt),
+            ),
+          )
+          .innerJoin(
+            schema.roomMemberships,
+            and(
+              eq(schema.roomMemberships.organisationId, run.organisationId),
+              eq(schema.roomMemberships.roomId, run.roomId),
+              eq(schema.roomMemberships.actorId, run.agentId),
+              or(
+                isNull(schema.roomMemberships.accessExpiresAt),
+                gt(schema.roomMemberships.accessExpiresAt, now),
+              ),
+            ),
+          )
+          .where(
+            and(
+              eq(schema.messages.organisationId, run.organisationId),
+              eq(schema.messages.id, request.data.sourceMessageId),
+              eq(schema.messages.roomId, run.roomId),
+              isNull(schema.messages.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (!source) continue;
+        const [message] = await tx
+          .insert(schema.messages)
+          .values({
+            id: newId(),
+            organisationId: run.organisationId,
+            roomId: run.roomId,
+            threadParentId: request.data.sourceMessageId,
+            authorActorId: run.agentId,
+            messageType: "agent-status",
+            document: {
+              type: "agent-direct-message-reply",
+              status: "cancelled",
+              sourceMessageId: request.data.sourceMessageId,
+              agentRunId: run.id,
+              failureCode: "agent_kill_switch",
+            },
+            plainText: "The agent request was cancelled (agent_kill_switch).",
+            dataClassification: "internal",
+            relatedInvestigationId: run.investigationId,
+            relatedAgentRunId: run.id,
+            idempotencyKey: `agent-direct-message-reply:${run.id}`,
+          })
+          .onConflictDoNothing()
+          .returning({ id: schema.messages.id });
+        if (!message) continue;
+        await writeOutbox(tx, {
+          organisationId: run.organisationId,
+          eventType: "room.message.created",
+          aggregateType: "message",
+          aggregateId: message.id,
+          queueName: "muster-outbox",
+          payload: {
+            messageId: message.id,
+            roomId: run.roomId,
+            threadParentId: request.data.sourceMessageId,
+            agentRunId: run.id,
+          },
+          idempotencyKey: `room.message.created:agent-direct-message:${run.id}`,
+          traceId: redactObservationText(
+            request.data.traceId ?? `agent-run-${run.id}`,
+          ),
+        });
+      }
     }
     await appendAuditEvent(tx, {
       organisationId: context.organisationId,

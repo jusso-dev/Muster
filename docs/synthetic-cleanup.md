@@ -1,6 +1,6 @@
 # Synthetic cleanup maintenance
 
-`pnpm --filter @muster/database cleanup:synthetic` is intentionally not a selector or broad deletion tool. Supply an independently reviewed immutable JSON manifest only through the maintenance runner.
+`pnpm --filter @muster/database cleanup:synthetic -- --apply /absolute/manifest.json` is intentionally not a selector or broad deletion tool. Supply an independently reviewed immutable JSON manifest only through the maintenance runner.
 
 The manifest contains one organisation, explicit UUID candidates, table digests, and a SHA-256 digest over every field except `digest`. The runner rejects digest changes and the four protected genuine direct-message IDs.
 

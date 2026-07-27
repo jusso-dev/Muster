@@ -8,6 +8,7 @@ import {
   problemResponse,
   requestTraceId,
 } from "@/lib/api-context";
+import { agentGatewayHeaders } from "@/lib/agent-gateway";
 import { settleAgentRun, type AgentRunResult } from "@/lib/task-domain";
 
 export async function GET(
@@ -35,7 +36,10 @@ export async function GET(
     }
     const gateway = await fetch(
       `${process.env.AGENT_GATEWAY_URL ?? "http://agent-gateway:3002"}/v1/runs/${encodeURIComponent(id)}`,
-      { signal: AbortSignal.timeout(5_000) },
+      {
+        headers: agentGatewayHeaders(subject.organisationId),
+        signal: AbortSignal.timeout(5_000),
+      },
     );
     const result = (await gateway.json()) as {
       status?: string;

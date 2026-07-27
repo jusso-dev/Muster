@@ -57,45 +57,41 @@ export async function POST(
       ReturnType<JessieHuntDomainService["maybeCreateFromMention"]>
     > = null;
     let jessieHuntError: string | null = null;
-    if (result.created) {
+    try {
+      agentInvocation = await new AgentDirectMessageDomainService().maybeQueue(
+        subject,
+        { messageId: result.message.id, roomId: id },
+        traceId,
+      );
+    } catch (error) {
+      agentInvocationError = redactObservationText(
+        error instanceof Error
+          ? error.message
+          : "The direct-message agent could not be queued.",
+      );
+    }
+    if (result.created && !agentInvocation && !agentInvocationError) {
       try {
-        agentInvocation =
-          await new AgentDirectMessageDomainService().maybeQueue(
-            subject,
-            { messageId: result.message.id, roomId: id },
-            traceId,
-          );
+        jessieHunt = await new JessieHuntDomainService().maybeCreateFromMention(
+          subject,
+          {
+            messageId: result.message.id,
+            roomId: id,
+            plainText: input.plainText,
+            ...(input.relatedInvestigationId !== undefined
+              ? {
+                  relatedInvestigationId: input.relatedInvestigationId,
+                }
+              : {}),
+          },
+          traceId,
+        );
       } catch (error) {
-        agentInvocationError = redactObservationText(
+        jessieHuntError = redactObservationText(
           error instanceof Error
             ? error.message
-            : "The direct-message agent could not be queued.",
+            : "Jessie could not prepare the hunt.",
         );
-      }
-      if (!agentInvocation && !agentInvocationError) {
-        try {
-          jessieHunt =
-            await new JessieHuntDomainService().maybeCreateFromMention(
-              subject,
-              {
-                messageId: result.message.id,
-                roomId: id,
-                plainText: input.plainText,
-                ...(input.relatedInvestigationId !== undefined
-                  ? {
-                      relatedInvestigationId: input.relatedInvestigationId,
-                    }
-                  : {}),
-              },
-              traceId,
-            );
-        } catch (error) {
-          jessieHuntError = redactObservationText(
-            error instanceof Error
-              ? error.message
-              : "Jessie could not prepare the hunt.",
-          );
-        }
       }
     }
     const realtimeDelivered = await publishRealtime(subject.organisationId, {

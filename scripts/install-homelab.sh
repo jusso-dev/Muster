@@ -37,6 +37,7 @@ if [[ ! -f "$env_file" ]]; then
   auth_secret="$(openssl rand -hex 32)"
   storage_secret="$(openssl rand -hex 24)"
   connector_encryption_key="$(openssl rand -hex 32)"
+  agent_gateway_token="$(openssl rand -hex 32)"
   admin_password="Muster!$(openssl rand -hex 12)"
 
   sed -i.bak \
@@ -47,6 +48,7 @@ if [[ ! -f "$env_file" ]]; then
     -e "s|generate-better-auth-secret|${auth_secret}|" \
     -e "s|generate-object-storage-secret|${storage_secret}|" \
     -e "s|generate-connector-encryption-key|${connector_encryption_key}|" \
+    -e "s|generate-agent-gateway-token|${agent_gateway_token}|" \
     "$env_file"
   rm "$env_file.bak"
   {
@@ -60,6 +62,12 @@ fi
 if ! grep -q '^AUTH_TRUSTED_ORIGINS=' "$env_file"; then
   printf 'AUTH_TRUSTED_ORIGINS=%s,http://homelab:%s\n' \
     "$requested_public_url" "$requested_http_port" >> "$env_file"
+fi
+
+if ! grep -q '^MUSTER_AGENT_GATEWAY_TOKEN=' "$env_file"; then
+  printf 'MUSTER_AGENT_GATEWAY_TOKEN=%s\n' "$(openssl rand -hex 32)" \
+    >> "$env_file"
+  chmod 600 "$env_file"
 fi
 
 # Persist an explicitly requested reviewed image reference before sourcing the env

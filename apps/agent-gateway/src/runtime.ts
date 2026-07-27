@@ -27,7 +27,7 @@ import {
   TenantRepository,
   writeOutbox,
 } from "@muster/database";
-import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 type AgentRunRow = typeof schema.agentRuns.$inferSelect;
@@ -71,6 +71,11 @@ async function projectDirectMessageTerminalReply(
         status: "failed";
         failureCode: string;
         error: string;
+      }
+    | {
+        status: "cancelled";
+        failureCode: string;
+        error: string;
       },
 ) {
   if (
@@ -82,11 +87,33 @@ async function projectDirectMessageTerminalReply(
   const [source] = await tx
     .select({ id: schema.messages.id })
     .from(schema.messages)
+    .innerJoin(
+      schema.rooms,
+      and(
+        eq(schema.rooms.organisationId, run.organisationId),
+        eq(schema.rooms.id, run.roomId),
+        eq(schema.rooms.roomType, "direct"),
+        isNull(schema.rooms.archivedAt),
+      ),
+    )
+    .innerJoin(
+      schema.roomMemberships,
+      and(
+        eq(schema.roomMemberships.organisationId, run.organisationId),
+        eq(schema.roomMemberships.roomId, run.roomId),
+        eq(schema.roomMemberships.actorId, run.agentId),
+        or(
+          isNull(schema.roomMemberships.accessExpiresAt),
+          gt(schema.roomMemberships.accessExpiresAt, new Date()),
+        ),
+      ),
+    )
     .where(
       and(
         eq(schema.messages.organisationId, run.organisationId),
         eq(schema.messages.id, request.sourceMessageId),
         eq(schema.messages.roomId, run.roomId),
+        isNull(schema.messages.deletedAt),
       ),
     )
     .limit(1);
@@ -95,7 +122,9 @@ async function projectDirectMessageTerminalReply(
   const completed = terminal.status === "completed";
   const plainText = completed
     ? terminalSummary(terminal.output)
-    : `The agent could not complete this request (${terminal.failureCode}). ${redactObservationText(terminal.error, { maxStringLength: 2_000 })}`;
+    : terminal.status === "cancelled"
+      ? `The agent request was cancelled (${terminal.failureCode}).`
+      : `The agent could not complete this request (${terminal.failureCode}). Retry the request or contact an operator if the problem continues.`;
   const messageId = newId();
   const [message] = await tx
     .insert(schema.messages)
@@ -428,12 +457,17 @@ export class DurableAgentRuntime {
     this.lastReadinessSnapshotAt = now.getTime();
   }
 
-  async read(runId: string) {
+  async read(runId: string, organisationId: string) {
     const db = database();
     const [run] = await db
       .select()
       .from(schema.agentRuns)
-      .where(eq(schema.agentRuns.id, runId))
+      .where(
+        and(
+          eq(schema.agentRuns.organisationId, organisationId),
+          eq(schema.agentRuns.id, runId),
+        ),
+      )
       .limit(1);
     if (!run) return null;
     const events = await db
@@ -469,7 +503,11 @@ export class DurableAgentRuntime {
     return redactForObservation(projection) as typeof projection;
   }
 
-  async cancel(runId: string, reason = "Cancelled by operator") {
+  async cancel(
+    runId: string,
+    organisationId: string,
+    reason = "Cancelled by operator",
+  ) {
     const now = new Date();
     const [run] = await database().transaction(async (tx) => {
       const [updated] = await tx
@@ -485,6 +523,7 @@ export class DurableAgentRuntime {
         })
         .where(
           and(
+            eq(schema.agentRuns.organisationId, organisationId),
             eq(schema.agentRuns.id, runId),
             or(
               eq(schema.agentRuns.status, "awaiting_approval"),
@@ -516,6 +555,16 @@ export class DurableAgentRuntime {
           this.request(updated).traceId ?? `agent-run-${updated.id}`,
         ),
       });
+      await projectDirectMessageTerminalReply(
+        tx,
+        updated,
+        this.request(updated),
+        {
+          status: "cancelled",
+          failureCode: "operator_cancelled",
+          error: reason,
+        },
+      );
       const [hunt] = await tx
         .update(schema.huntRuns)
         .set({
@@ -617,8 +666,17 @@ export class DurableAgentRuntime {
         .select({
           status: schema.agentDefinitions.status,
           killSwitch: schema.agentDefinitions.killSwitch,
+          allowedRooms: schema.agentDefinitions.allowedRooms,
+          actorStatus: schema.actors.status,
         })
         .from(schema.agentDefinitions)
+        .leftJoin(
+          schema.actors,
+          and(
+            eq(schema.actors.organisationId, candidate.organisationId),
+            eq(schema.actors.id, schema.agentDefinitions.id),
+          ),
+        )
         .where(
           and(
             eq(schema.agentDefinitions.id, candidate.agentId),
@@ -629,18 +687,92 @@ export class DurableAgentRuntime {
           ),
         )
         .limit(1);
-      if (
-        !definition ||
+      const request = this.request(candidate);
+      let eligibilityFailure: { code: string; message: string } | undefined;
+      if (!definition) {
+        eligibilityFailure = {
+          code: "agent_unavailable",
+          message: "Agent definition is unavailable",
+        };
+      } else if (definition.killSwitch) {
+        eligibilityFailure = {
+          code: "agent_kill_switch",
+          message: "Agent is disabled by its kill switch",
+        };
+      } else if (
         definition.status !== "active" ||
-        definition.killSwitch
+        definition.actorStatus !== "active"
       ) {
+        eligibilityFailure = {
+          code: "agent_inactive",
+          message: "Agent is inactive",
+        };
+      } else if (request.kind === "direct_message") {
+        const sourceMessageId = request.sourceMessageId;
+        const roomId = candidate.roomId;
+        if (
+          !sourceMessageId ||
+          !roomId ||
+          !Array.isArray(definition.allowedRooms) ||
+          !definition.allowedRooms.includes(roomId)
+        ) {
+          eligibilityFailure = {
+            code: "direct_message_not_authorised",
+            message: "Direct-message room is no longer authorised",
+          };
+        } else {
+          const [authorisedRoom] = await tx
+            .select({ id: schema.messages.id })
+            .from(schema.messages)
+            .innerJoin(
+              schema.rooms,
+              and(
+                eq(schema.rooms.organisationId, candidate.organisationId),
+                eq(schema.rooms.id, roomId),
+                eq(schema.rooms.roomType, "direct"),
+                isNull(schema.rooms.archivedAt),
+              ),
+            )
+            .innerJoin(
+              schema.roomMemberships,
+              and(
+                eq(
+                  schema.roomMemberships.organisationId,
+                  candidate.organisationId,
+                ),
+                eq(schema.roomMemberships.roomId, roomId),
+                eq(schema.roomMemberships.actorId, candidate.agentId),
+                or(
+                  isNull(schema.roomMemberships.accessExpiresAt),
+                  gt(schema.roomMemberships.accessExpiresAt, now),
+                ),
+              ),
+            )
+            .where(
+              and(
+                eq(schema.messages.organisationId, candidate.organisationId),
+                eq(schema.messages.id, sourceMessageId),
+                eq(schema.messages.roomId, roomId),
+                isNull(schema.messages.deletedAt),
+              ),
+            )
+            .limit(1);
+          if (!authorisedRoom) {
+            eligibilityFailure = {
+              code: "direct_message_not_authorised",
+              message: "Direct-message room is no longer authorised",
+            };
+          }
+        }
+      }
+      if (eligibilityFailure) {
         const [disabled] = await tx
           .update(schema.agentRuns)
           .set({
             status: "failed",
             completedAt: now,
-            failureCode: "agent_kill_switch",
-            error: "Agent is disabled by its kill switch",
+            failureCode: eligibilityFailure.code,
+            error: eligibilityFailure.message,
             leaseExpiresAt: null,
           })
           .where(
@@ -656,8 +788,8 @@ export class DurableAgentRuntime {
             organisationId: disabled.organisationId,
             runId: disabled.id,
             eventType: "failed",
-            message: "Agent kill switch blocked execution",
-            payload: { failureCode: "agent_kill_switch" },
+            message: eligibilityFailure.message,
+            payload: { failureCode: eligibilityFailure.code },
           });
           await appendAuditEvent(tx, {
             organisationId: disabled.organisationId,
@@ -666,7 +798,7 @@ export class DurableAgentRuntime {
             action: "agent.run.failed",
             targetType: "agent_run",
             targetId: disabled.id,
-            metadata: { failureCode: "agent_kill_switch" },
+            metadata: { failureCode: eligibilityFailure.code },
             traceId: redactObservationText(
               this.request(disabled).traceId ?? `agent-run-${disabled.id}`,
             ),
@@ -677,8 +809,8 @@ export class DurableAgentRuntime {
             this.request(disabled),
             {
               status: "failed",
-              failureCode: "agent_kill_switch",
-              error: "Agent is disabled by its kill switch",
+              failureCode: eligibilityFailure.code,
+              error: eligibilityFailure.message,
             },
           );
         }
@@ -819,7 +951,7 @@ export class DurableAgentRuntime {
           ),
         );
       } else if (controller.signal.aborted) {
-        if (!this.stopping) await this.cancel(run.id);
+        if (!this.stopping) await this.cancel(run.id, run.organisationId);
       } else {
         await this.fail(
           run,
@@ -940,8 +1072,10 @@ export class DurableAgentRuntime {
             evidence: [
               {
                 type: "fixture",
-                reference: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
-                sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+                reference:
+                  "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
+                sha256:
+                  "0000000000000000000000000000000000000000000000000000000000000000",
               },
             ],
           },
@@ -1004,8 +1138,23 @@ export class DurableAgentRuntime {
           comparisonPeriod: null,
         },
         filters: { organisationScoped: true },
-        metricDefinitions: [{ key: "mtta", definition: "Synthetic", population: "Synthetic", exclusions: "Synthetic" }],
-        values: [{ key: "mtta", value: null, unit: "minutes", state: "unavailable", sampleSize: 0 }],
+        metricDefinitions: [
+          {
+            key: "mtta",
+            definition: "Synthetic",
+            population: "Synthetic",
+            exclusions: "Synthetic",
+          },
+        ],
+        values: [
+          {
+            key: "mtta",
+            value: null,
+            unit: "minutes",
+            state: "unavailable",
+            sampleSize: 0,
+          },
+        ],
         sourceReferences: [{ source: "synthetic", query: {} }],
         narrative: base.summary,
         caveats: ["Synthetic runtime output"],

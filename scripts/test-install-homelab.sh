@@ -63,6 +63,8 @@ digest="ghcr.io/jusso-dev/muster@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     ./scripts/install-homelab.sh >/dev/null
 )
 grep -Fxq "MUSTER_IMAGE=$digest" "$fixture_root/.env.homelab"
+grep -Eq '^MUSTER_AGENT_GATEWAY_TOKEN=[a-f0-9]{64}$' \
+  "$fixture_root/.env.homelab"
 if grep -q '^MUSTER_VERSION=' "$fixture_root/.env.homelab"; then
   printf 'Digest install retained conflicting MUSTER_VERSION.\n' >&2
   exit 1
@@ -70,11 +72,16 @@ fi
 grep -Fxq "tawny_default" "$DOCKER_NETWORKS"
 grep -Fxq "kelpie_default" "$DOCKER_NETWORKS"
 
+sed -i.bak -e '/^MUSTER_AGENT_GATEWAY_TOKEN=/d' \
+  "$fixture_root/.env.homelab"
+rm "$fixture_root/.env.homelab.bak"
 (
   cd "$fixture_root"
   MUSTER_VERSION=sha-bbbbbbb ./scripts/install-homelab.sh >/dev/null
 )
 grep -Fxq "MUSTER_VERSION=sha-bbbbbbb" "$fixture_root/.env.homelab"
+grep -Eq '^MUSTER_AGENT_GATEWAY_TOKEN=[a-f0-9]{64}$' \
+  "$fixture_root/.env.homelab"
 if grep -q '^MUSTER_IMAGE=' "$fixture_root/.env.homelab"; then
   printf 'Tag transition retained conflicting MUSTER_IMAGE.\n' >&2
   exit 1

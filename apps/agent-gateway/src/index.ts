@@ -15,6 +15,10 @@ import {
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { DurableAgentRuntime } from "./runtime.ts";
+import {
+  isGatewayRequestAuthorised,
+  parseGatewayOrganisationId,
+} from "./service-auth.ts";
 
 const AgentRunRequestSchema = AgentInvestigationJobSchema.extend({
   humanRequest: z.string().trim().min(1).max(4_000).optional(),
@@ -24,6 +28,10 @@ const executionRuntime =
   process.env.MUSTER_AGENT_RUNTIME === "mock" ? "mock" : "codex";
 const codexHome = process.env.CODEX_HOME ?? "/var/lib/muster/codex";
 const globalKillSwitch = process.env.AGENT_KILL_SWITCH === "true";
+const gatewayToken = z
+  .string()
+  .min(32)
+  .parse(process.env.MUSTER_AGENT_GATEWAY_TOKEN);
 const runtime = new DurableAgentRuntime({
   executionRuntime,
   codexHome,
@@ -45,6 +53,12 @@ async function body(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.from(chunk));
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function requestOrganisationId(request: IncomingMessage) {
+  return parseGatewayOrganisationId(
+    request.headers["x-muster-organisation-id"],
+  );
 }
 
 async function queueDirectRun(
@@ -170,12 +184,26 @@ const server = createServer(async (incoming, response) => {
     return;
   }
 
+  if (
+    !isGatewayRequestAuthorised(incoming.headers.authorization, gatewayToken)
+  ) {
+    response.writeHead(401);
+    response.end(JSON.stringify({ error: "Unauthorised" }));
+    return;
+  }
+
   const runMatch =
     incoming.method === "GET"
       ? url.pathname.match(/^\/v1\/runs\/([^/]+)$/)
       : null;
   if (runMatch?.[1]) {
-    const run = await runtime.read(runMatch[1]);
+    const organisationId = requestOrganisationId(incoming);
+    if (!organisationId) {
+      response.writeHead(400);
+      response.end(JSON.stringify({ error: "Organisation header required" }));
+      return;
+    }
+    const run = await runtime.read(runMatch[1], organisationId);
     response.writeHead(run ? 200 : 404);
     response.end(JSON.stringify(run ?? { error: "Run not found" }));
     return;
@@ -234,6 +262,12 @@ const server = createServer(async (incoming, response) => {
       );
       return;
     }
+    const organisationId = requestOrganisationId(incoming);
+    if (!organisationId || organisationId !== parsed.data.organisationId) {
+      response.writeHead(403);
+      response.end(JSON.stringify({ error: "Organisation mismatch" }));
+      return;
+    }
     const idempotencyKey =
       incoming.headers["idempotency-key"]?.toString().trim() ||
       `api:${parsed.data.traceId}`;
@@ -269,7 +303,13 @@ const server = createServer(async (incoming, response) => {
       ? url.pathname.match(/^\/v1\/runs\/([^/]+)\/cancel$/)
       : null;
   if (cancelMatch?.[1]) {
-    const cancelled = await runtime.cancel(cancelMatch[1]);
+    const organisationId = requestOrganisationId(incoming);
+    if (!organisationId) {
+      response.writeHead(400);
+      response.end(JSON.stringify({ error: "Organisation header required" }));
+      return;
+    }
+    const cancelled = await runtime.cancel(cancelMatch[1], organisationId);
     response.writeHead(cancelled ? 202 : 404);
     response.end(
       JSON.stringify({

@@ -30,6 +30,7 @@ x-muster-environment: &muster-environment
   MUSTER_MOCK_INTEGRATIONS: "true"
   MUSTER_AGENT_RUNTIME: ${MUSTER_AGENT_RUNTIME:-codex}
   AGENT_GATEWAY_URL: http://agent-gateway:3002
+  MUSTER_AGENT_GATEWAY_TOKEN: ${MUSTER_AGENT_GATEWAY_TOKEN}
   CODEX_HOME: /var/lib/muster/codex
 
 x-muster-service: &muster-service
