@@ -1,10 +1,13 @@
 import { createHmac } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentHarnessInvokeSchema } from "@muster/contracts";
 import {
   missingSlackBotScopes,
   normaliseSlackConversation,
   requiredSlackBotScopes,
+  SlackRateLimitError,
+  slackApi,
+  slackHarnessMetrics,
   slackResultBlocks,
   signSlackOAuthState,
   verifySlackOAuthState,
@@ -55,6 +58,53 @@ describe("Slack governed harness boundary", () => {
         requiredSlackBotScopes.filter((scope) => scope !== "commands"),
       ),
     ).toEqual(["commands"]);
+  });
+
+  it("honours Retry-After once before a successful Slack API retry", async () => {
+    const before = slackHarnessMetrics().apiRateLimits;
+    const sleep = vi.fn(async () => undefined);
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          { ok: false, error: "ratelimited" },
+          { status: 429, headers: { "retry-after": "2" } },
+        ),
+      )
+      .mockResolvedValueOnce(Response.json({ ok: true, ts: "1.2" }));
+
+    await expect(
+      slackApi(
+        "xoxb-synthetic",
+        "chat.postMessage",
+        { channel: "C-synthetic" },
+        { fetch: fetcher, sleep },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(sleep).toHaveBeenCalledWith(2_000);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(slackHarnessMetrics().apiRateLimits).toBe(before + 1);
+  });
+
+  it("rejects unsafe or repeated Slack API rate-limit delays", async () => {
+    const sleep = vi.fn(async () => undefined);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        { ok: false, error: "ratelimited" },
+        { status: 429, headers: { "retry-after": "45" } },
+      ),
+    );
+
+    await expect(
+      slackApi(
+        "xoxb-synthetic",
+        "chat.update",
+        { channel: "C-synthetic" },
+        { fetch: fetcher, sleep, maximumRetryAfterMs: 30_000 },
+      ),
+    ).rejects.toBeInstanceOf(SlackRateLimitError);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledOnce();
   });
 
   it("normalises Slack Assistant lifecycle context without trusting its text", () => {

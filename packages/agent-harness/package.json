@@ -22,6 +22,11 @@
       "types": "./src/mcp.ts",
       "development": "./src/mcp.ts",
       "default": "./dist/mcp.js"
+    },
+    "./slack-socket": {
+      "types": "./src/slack-socket.ts",
+      "development": "./src/slack-socket.ts",
+      "default": "./dist/slack-socket.js"
     }
   },
   "scripts": {

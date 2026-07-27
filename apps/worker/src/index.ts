@@ -2,7 +2,16 @@ import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import nodemailer from "nodemailer";
 import { Queue, Worker, type JobsOptions, type Processor } from "bullmq";
-import { deliverSlackRun, processSlackInboxEvent } from "@muster/agent-harness";
+import {
+  deliverSlackRun,
+  processSlackInboxEvent,
+  slackHarnessMetrics,
+  SlackGovernanceAdapter,
+} from "@muster/agent-harness";
+import {
+  runSlackSocketMode,
+  slackSocketMetrics,
+} from "@muster/agent-harness/slack-socket";
 import {
   queueNames,
   ReportManifestSchema,
@@ -2145,13 +2154,45 @@ async function dispatchOutbox() {
 const dispatcher = setInterval(() => void dispatchOutbox(), 1_000);
 dispatcher.unref();
 await dispatchOutbox();
+
+const slackSocketAbort = new AbortController();
+let slackSocketTask: Promise<void> | undefined;
+if (process.env.SLACK_SOCKET_MODE_ENABLED === "true") {
+  const appToken = process.env.SLACK_APP_TOKEN;
+  if (!appToken)
+    throw new Error(
+      "SLACK_APP_TOKEN is required when SLACK_SOCKET_MODE_ENABLED=true",
+    );
+  const adapter = new SlackGovernanceAdapter();
+  slackSocketTask = runSlackSocketMode({
+    appToken,
+    signal: slackSocketAbort.signal,
+    recordEnvelope: (envelope) => adapter.recordSocketEnvelope(envelope),
+    onError: (error) =>
+      jsonLog("error", "slack.socket.error", {
+        error: error instanceof Error ? error.message : "Socket Mode failed",
+      }),
+  });
+}
 ready = true;
 
 const healthServer = createServer((request, response) => {
   if (request.url === "/metrics") {
+    const slack = slackHarnessMetrics();
+    const socket = slackSocketMetrics();
     response.writeHead(200, { "content-type": "text/plain; version=0.0.4" });
     response.end(
-      `muster_worker_ready ${ready ? 1 : 0}\nmuster_worker_queues ${queueNames.length}\n`,
+      [
+        `muster_worker_ready ${ready ? 1 : 0}`,
+        `muster_worker_queues ${queueNames.length}`,
+        `muster_slack_api_rate_limits ${slack.apiRateLimits}`,
+        `muster_slack_delivery_failures ${slack.deliveryFailures}`,
+        `muster_slack_delivery_dead_letters ${slack.deliveryDeadLetters}`,
+        `muster_slack_socket_connections ${socket.connections}`,
+        `muster_slack_socket_reconnects ${socket.reconnects}`,
+        `muster_slack_socket_envelope_failures ${socket.envelopeFailures}`,
+        "",
+      ].join("\n"),
     );
     return;
   }
@@ -2170,7 +2211,9 @@ async function shutdown(signal: string) {
   jsonLog("info", "worker.shutdown", { signal });
   clearInterval(dispatcher);
   clearInterval(researchScheduler);
+  slackSocketAbort.abort();
   healthServer.close();
+  if (slackSocketTask) await slackSocketTask;
   await Promise.all(workers.map((worker) => worker.close()));
   await Promise.all([...queues.values()].map((queue) => queue.close()));
   await closeDatabase();

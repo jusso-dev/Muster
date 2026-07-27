@@ -102,6 +102,11 @@ Configure Slack as follows:
   and `im:history`
 - Subscribe to app mentions and direct messages; add the Slack Assistant event
   subscriptions when Assistant Threads are enabled for the workspace.
+- Add a message shortcut with callback id `muster.review` when users should be
+  able to submit an existing message as untrusted evidence for governed review.
+- Subscribe to `app_uninstalled` and `tokens_revoked` so Slack-side revocation
+  immediately disables the local installation and cryptographically replaces
+  its stored token.
 
 Administrators map each Slack user to an active Muster human actor with
 `POST /api/v1/slack/identities`, then expose approved agents and channel policy
@@ -127,15 +132,31 @@ Slack Assistant lifecycle events `assistant_thread_started` and
 `assistant_thread_context_changed` start a governed run in the assistant DM
 thread and use `assistant.threads.setStatus` for queued and terminal status.
 Thread context is retained only when that exposed agent explicitly allows it.
+Message shortcuts bind the selected message as bounded, untrusted evidence;
+message content is never interpreted as agent or system instructions.
 Reconnecting repeats OAuth and atomically rotates the encrypted bot token. An
 administrator can revoke an installation with `DELETE /api/v1/slack/install`
 and `installationId`; this revokes Slack access and cryptographically replaces
 the locally stored token.
 
-For Socket Mode, acknowledge Slack's `envelope_id` immediately and pass the
-envelope payload to `SlackGovernanceAdapter.recordSocketEnvelope`. It shares the
-same encrypted inbox and idempotency path as Events API delivery, so reconnects
-cannot duplicate a run.
+The production baseline is Slack's HTTP Events API and the signed ingress URLs
+above. Socket Mode is optional, primarily for deployments that cannot expose an
+HTTPS request URL. Enable it on the worker with
+`SLACK_SOCKET_MODE_ENABLED=true` and an app-level `SLACK_APP_TOKEN` beginning
+with `xapp-`. The listener obtains each WebSocket URL from
+`apps.connections.open`, writes the envelope through
+`SlackGovernanceAdapter.recordSocketEnvelope`, and only then acknowledges its
+`envelope_id`. If persistence fails, it does not acknowledge, allowing Slack to
+retry. Reconnects use bounded exponential delay and share the HTTP transport's
+encrypted inbox and payload-based idempotency path, so a worker restart or a new
+envelope id cannot duplicate a run.
+
+Slack API HTTP 429 responses honor `Retry-After` once when the requested delay
+is at most 30 seconds. Further or longer throttles return control to BullMQ.
+After three failed delivery executions the delivery becomes `dead_letter`
+instead of retrying forever. Worker metrics expose API throttles, delivery
+failures/dead letters, Socket Mode connections/reconnects, and envelope
+persistence failures.
 
 ## Verification
 
@@ -148,6 +169,8 @@ synthetic PostgreSQL fixture only:
 MUSTER_INTEGRATION_TESTS=true pnpm --dir packages/agent-harness test
 ```
 
-It asserts signed event replay, an exact-once inbox/run, bounded progress and
-terminal updates, approval review, cancel/retry, Assistant status lifecycle, and
-out-of-order terminal delivery without Slack credentials.
+It asserts signed event replay across adapter restarts, an exact-once inbox/run,
+bounded progress and terminal updates, approval review, cancel/retry, Assistant
+status lifecycle, installation revocation, message shortcuts, bounded 429
+handling, dead-letter delivery, and out-of-order terminal delivery without Slack
+credentials. These synthetic tests are not proof of a live Slack installation.
