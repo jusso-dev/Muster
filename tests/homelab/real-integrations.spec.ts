@@ -445,7 +445,7 @@ test("real Tawny and Kelpie operations are governed, durable, and duplicate-safe
 
   await page.goto("/rooms/soc-operations");
   await expect(
-    page.getByText(new RegExp(`Tawny real ${suffix}`)),
+    page.getByText(new RegExp(`Tawny real ${suffix}`)).first(),
   ).toBeVisible();
   await expect(
     page.getByText(new RegExp(`Kelpie real ${suffix}`)).first(),
