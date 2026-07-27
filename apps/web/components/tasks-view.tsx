@@ -395,6 +395,47 @@ export function TasksView() {
     }
   }
 
+  async function reportAction(
+    task: BoardTask,
+    reportId: string,
+    action: "review" | "post" | "versions" | "email",
+  ) {
+    setPendingTaskId(task.id);
+    setError("");
+    try {
+      const body =
+        action === "email"
+          ? (() => {
+              const recipient = window.prompt("Recipient email address");
+              if (!recipient) throw new Error("Recipient is required.");
+              return {
+                recipient,
+                idempotencyKey: `parker-email:${reportId}:${browserUuid()}`,
+              };
+            })()
+          : undefined;
+      const response = await fetch(`/api/v1/reports/${reportId}/${action}`, {
+        method: "POST",
+        ...(body
+          ? {
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(body),
+            }
+          : {}),
+      });
+      if (!response.ok) {
+        throw new Error(
+          await responseDetail(response, `Report ${action} failed`),
+        );
+      }
+      await loadTasks();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Report action failed");
+    } finally {
+      setPendingTaskId(null);
+    }
+  }
+
   return (
     <AppShell>
       <PageHeader
@@ -712,6 +753,18 @@ export function TasksView() {
                               }
                             ).enrichmentProposal
                           : null;
+                      const parkerReportId =
+                        task.run?.request &&
+                        typeof task.run.request === "object" &&
+                        !Array.isArray(task.run.request) &&
+                        "kind" in task.run.request &&
+                        (task.run.request as { kind?: unknown }).kind ===
+                          "parker_report" &&
+                        "reportId" in task.run.request &&
+                        typeof (task.run.request as { reportId?: unknown })
+                          .reportId === "string"
+                          ? (task.run.request as { reportId: string }).reportId
+                          : null;
                       const retryable =
                         task.agentRunStatus === "failed" ||
                         task.agentRunStatus === "cancelled";
@@ -836,6 +889,17 @@ export function TasksView() {
                               </summary>
                               <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap text-xs">
                                 {JSON.stringify(huntPlan, null, 2)}
+                              </pre>
+                            </details>
+                          )}
+
+                          {parkerReportId && Boolean(task.run?.structuredOutput) && (
+                            <details className="mt-3 rounded-md border bg-muted/30 p-2 text-xs">
+                              <summary className="cursor-pointer font-semibold">
+                                Parker report manifest · reproducible metrics
+                              </summary>
+                              <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap text-xs">
+                                {JSON.stringify(task.run?.structuredOutput, null, 2)}
                               </pre>
                             </details>
                           )}
@@ -974,6 +1038,66 @@ export function TasksView() {
                               )}
                             {task.status === "review" && (
                               <>
+                                {parkerReportId && (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      disabled={pendingTaskId === task.id}
+                                      onClick={() =>
+                                        void reportAction(
+                                          task,
+                                          parkerReportId,
+                                          "review",
+                                        )
+                                      }
+                                    >
+                                      <Check /> Review report
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      disabled={pendingTaskId === task.id}
+                                      onClick={() =>
+                                        void reportAction(
+                                          task,
+                                          parkerReportId,
+                                          "post",
+                                        )
+                                      }
+                                    >
+                                      Post to room
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      disabled={pendingTaskId === task.id}
+                                      onClick={() =>
+                                        void reportAction(
+                                          task,
+                                          parkerReportId,
+                                          "versions",
+                                        )
+                                      }
+                                    >
+                                      Create version
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      disabled={pendingTaskId === task.id}
+                                      onClick={() =>
+                                        void reportAction(
+                                          task,
+                                          parkerReportId,
+                                          "email",
+                                        )
+                                      }
+                                    >
+                                      Request email approval
+                                    </Button>
+                                  </>
+                                )}
                                 {huntId && enrichmentProposal && (
                                   <Button
                                     size="sm"

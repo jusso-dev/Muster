@@ -12,7 +12,7 @@ import {
   writeOutbox,
 } from "@muster/database";
 import { ReportManifestSchema } from "@muster/contracts";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { ApiProblem } from "./api-context";
 
@@ -190,6 +190,31 @@ export class ParkerReportDomainService {
       if (!report) throw new ApiProblem(409, "Review unavailable", "Only a draft report can be reviewed.");
       await appendAuditEvent(tx, { organisationId: subject.organisationId, actorId: subject.actorId, actorType: "human", action: "report.reviewed", targetType: "report_manifest", targetId: reportId, metadata: {}, traceId });
       return report;
+    });
+  }
+
+  async createVersion(subject: AuthorisationSubject, reportId: string, traceId: string) {
+    requireCapability(subject, "tasks.update");
+    return this.db.transaction(async (tx) => {
+      const [report] = await tx.select().from(schema.reportManifests).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.id, reportId), inArray(schema.reportManifests.status, ["reviewed", "posted"]))).limit(1);
+      if (!report) throw new ApiProblem(409, "Version unavailable", "Only a reviewed or posted report can be versioned.");
+      const versionId = newId();
+      await tx.update(schema.reportManifests).set({ status: "superseded", updatedAt: new Date() }).where(and(eq(schema.reportManifests.organisationId, subject.organisationId), eq(schema.reportManifests.id, reportId)));
+      await tx.insert(schema.reportManifests).values({
+        id: versionId,
+        organisationId: subject.organisationId,
+        agentRunId: report.agentRunId,
+        taskId: report.taskId,
+        roomId: report.roomId,
+        requestedByActorId: subject.actorId,
+        version: report.version + 1,
+        status: "draft",
+        manifest: report.manifest,
+        classification: report.classification,
+        idempotencyKey: `parker-report-version:${report.id}:${report.version + 1}`,
+      });
+      await appendAuditEvent(tx, { organisationId: subject.organisationId, actorId: subject.actorId, actorType: "human", action: "report.versioned", targetType: "report_manifest", targetId: versionId, metadata: { previousReportId: reportId, version: report.version + 1 }, traceId });
+      return { id: versionId, previousId: reportId, version: report.version + 1, status: "draft" };
     });
   }
 

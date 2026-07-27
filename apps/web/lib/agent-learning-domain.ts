@@ -217,6 +217,21 @@ async function createLearningNote(
   mutation: Extract<LearningMutation, { action: "note" }>,
 ) {
   await sourceRun(context, mutation.sourceRunId);
+  const [definition] = await database()
+    .select({ name: schema.agentDefinitions.name })
+    .from(schema.agentDefinitions)
+    .where(
+      and(
+        eq(schema.agentDefinitions.organisationId, context.organisationId),
+        eq(schema.agentDefinitions.id, context.agentId),
+      ),
+    )
+    .limit(1);
+  if (definition?.name === "Parker" && mutation.note.kind !== "preference") {
+    throw new Error(
+      "Parker learning is limited to reviewed reporting preferences.",
+    );
+  }
   const id = newId();
   return database().transaction(async (tx) => {
     const [note] = await tx

@@ -1308,6 +1308,76 @@ test("task board manages durable agent work end to end", async ({
   ).toBeVisible();
 });
 
+test("Parker task produces a reviewable, versioned report manifest", async ({
+  page,
+}, testInfo) => {
+  const db = database();
+  const suffix = `${testInfo.project.name}-${Date.now()}`;
+  const taskId = newId();
+  const title = `Synthetic Parker briefing ${suffix}`;
+  try {
+    await db.insert(schema.tasks).values({
+      id: taskId,
+      organisationId: "018f55d8-c4c7-7c3e-88ef-000000000001",
+      title,
+      description: "Prepare an executive reporting brief from authoritative history.",
+      status: "ready",
+      priority: "normal",
+      assignedActorId: "018f55d8-c4c7-7c3e-88ef-000000000025",
+      createdByActorId: "018f55d8-c4c7-7c3e-88ef-000000000010",
+      roomId: "018f55d8-c4c7-7c3e-88ef-000000000100",
+      idempotencyKey: `parker-e2e:${suffix}`,
+    });
+    await page.goto("/tasks");
+    const task = page.getByRole("article").filter({ hasText: title });
+    await expect(task).toBeVisible();
+    await task.getByRole("button", { name: "Delegate" }).click();
+    const review = page
+      .getByRole("heading", { name: "Review", exact: true })
+      .locator("xpath=ancestor::section");
+    await expect(review.getByText(title)).toBeVisible({ timeout: 15_000 });
+    const reviewTask = review.getByRole("article").filter({ hasText: title });
+    await expect(reviewTask.getByText("Parker report manifest")).toBeVisible();
+    await reviewTask.getByRole("button", { name: "Review report" }).click();
+    await reviewTask.getByRole("button", { name: "Post to room" }).click();
+
+    const [report] = await db
+      .select()
+      .from(schema.reportManifests)
+      .where(eq(schema.reportManifests.taskId, taskId));
+    expect(report?.status).toBe("posted");
+    expect(report?.version).toBe(1);
+    const versionResponse = await page.request.post(
+      `/api/v1/reports/${report?.id}/versions`,
+    );
+    expect(versionResponse.ok()).toBe(true);
+    expect((await versionResponse.json()).data.version).toBe(2);
+  } finally {
+    const reports = await db
+      .select({ id: schema.reportManifests.id, agentRunId: schema.reportManifests.agentRunId, postedMessageId: schema.reportManifests.postedMessageId })
+      .from(schema.reportManifests)
+      .where(eq(schema.reportManifests.taskId, taskId));
+    const reportIds = reports.map((report) => report.id);
+    const runIds = reports
+      .map((report) => report.agentRunId)
+      .filter((id): id is string => Boolean(id));
+    if (reportIds.length) {
+      await db.delete(schema.reportDeliveries).where(inArray(schema.reportDeliveries.reportId, reportIds));
+      await db.delete(schema.reportManifests).where(inArray(schema.reportManifests.id, reportIds));
+    }
+    const messageIds = reports
+      .map((report) => report.postedMessageId)
+      .filter((id): id is string => Boolean(id));
+    if (messageIds.length)
+      await db.delete(schema.messages).where(inArray(schema.messages.id, messageIds));
+    await db.delete(schema.tasks).where(eq(schema.tasks.id, taskId));
+    if (runIds.length) {
+      await db.delete(schema.agentRunEvents).where(inArray(schema.agentRunEvents.runId, runIds));
+      await db.delete(schema.agentRuns).where(inArray(schema.agentRuns.id, runIds));
+    }
+  }
+});
+
 test("task APIs deny cross-organisation references and runs", async ({
   page,
 }, testInfo) => {

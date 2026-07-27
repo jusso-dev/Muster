@@ -229,7 +229,12 @@ await db
       actorType: "agent",
       displayName: "Parker",
       identityReference: "agent:parker-executive",
-      capabilityAssignments: ["alerts.read"],
+      capabilityAssignments: [
+        "alerts.read",
+        "investigations.read",
+        "kelpie.cases.read",
+        "audit.read",
+      ],
     },
     {
       id: demoIds.actors.system,
@@ -313,11 +318,17 @@ await db
       model: process.env.MUSTER_CODEX_MODEL?.trim() || "configured",
       ownerActorId: demoIds.actors.jordan,
       systemPromptVersion: "parker-v1",
-      allowedTools: ["alerts.read", "investigations.read", "audit.read"],
+      allowedTools: [
+        "alerts.read",
+        "investigations.read",
+        "kelpie.cases.read",
+        "audit.read",
+      ],
       allowedRooms: [demoIds.rooms.soc],
       capabilityRequirements: [
         "alerts.read",
         "investigations.read",
+        "kelpie.cases.read",
         "audit.read",
       ],
       approvalRequirements: { externalWrites: "human" },
@@ -421,6 +432,7 @@ await db
         demoIds.actors.priya,
         demoIds.actors.triage,
         demoIds.actors.tawnyHunt,
+        demoIds.actors.threatIntel,
       ].map((actorId) => ({
         organisationId: demoIds.organisation,
         roomId,
@@ -429,7 +441,8 @@ await db
           actorId === demoIds.actors.jordan
             ? ("owner" as const)
             : actorId === demoIds.actors.triage ||
-                actorId === demoIds.actors.tawnyHunt
+                actorId === demoIds.actors.tawnyHunt ||
+                actorId === demoIds.actors.threatIntel
               ? ("agent_member" as const)
               : ("member" as const),
       })),
