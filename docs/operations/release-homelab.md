@@ -6,12 +6,13 @@ the published full `sha-<40-hex-commit>` tag, OCI digest, SBOM, provenance, and
 `linux/amd64` application image, scans it with Trivy, and verifies an anonymous
 GHCR pull after logout.
 
-The container job has an explicit `needs: quality` dependency, so a push cannot
-publish before lint, typecheck, unit, build, migration, and Chromium E2E pass.
-GitHub Actions cannot express `needs` across independent workflow files; the
-separate security workflow therefore remains a required same-commit
-branch-protection and deployment gate. Do not deploy an image until that
-security run is also green.
+The container job has an explicit `needs: quality` dependency. It pushes only a
+run-scoped staging tag, then performs Trivy, SBOM, checksum, attestation, and OCI
+platform verification against that digest. The security workflow is reusable:
+CI invokes it for the same commit, while its own weekly schedule remains
+available. A separate promotion job needs both the verified container and
+same-commit security jobs before creating `latest`, version, or SHA release
+tags.
 
 Before the first release, make the GitHub Container Registry package public in
 its package settings. CI deliberately logs out before pulling; it fails until
