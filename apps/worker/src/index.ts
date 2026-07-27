@@ -1,8 +1,10 @@
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
+import nodemailer from "nodemailer";
 import { Queue, Worker, type JobsOptions, type Processor } from "bullmq";
 import {
   queueNames,
+  ReportManifestSchema,
   ResearchBriefSchema,
   type QueueName,
 } from "@muster/contracts";
@@ -436,6 +438,26 @@ async function processReportEmail(
     )
     .limit(1);
   if (!delivery || delivery.status !== "queued") return;
+  const host = process.env.SMTP_HOST;
+  if (host) {
+    const [report] = await db.select().from(schema.reportManifests).where(and(eq(schema.reportManifests.organisationId, organisationId), eq(schema.reportManifests.id, delivery.reportId))).limit(1);
+    if (!report) throw new Error("Approved report no longer exists");
+    const manifest = ReportManifestSchema.parse(report.manifest);
+    const text = manifest.narrative.slice(0, 10_000);
+    try {
+      const transport = nodemailer.createTransport({ host, port: Number(process.env.SMTP_PORT ?? 587), secure: process.env.SMTP_SECURE === "true", ...(process.env.SMTP_USER ? { auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD ?? "" } } : {}), tls: { minVersion: "TLSv1.2", rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== "false" } });
+      const sent = await transport.sendMail({ from: process.env.MUSTER_EMAIL_FROM ?? "Muster <no-reply@muster.local>", to: delivery.recipient, subject: `Muster ${manifest.audience} report`.slice(0, 160), text });
+      await db.transaction(async (tx) => {
+        await tx.update(schema.reportDeliveries).set({ status: "delivered", result: { messageId: sent.messageId, accepted: sent.accepted, rejected: sent.rejected, response: sent.response }, deliveredAt: new Date(), updatedAt: new Date() }).where(and(eq(schema.reportDeliveries.organisationId, organisationId), eq(schema.reportDeliveries.id, deliveryId), eq(schema.reportDeliveries.status, "queued")));
+        await tx.update(schema.approvals).set({ status: "executed", executedAt: new Date() }).where(and(eq(schema.approvals.organisationId, organisationId), eq(schema.approvals.id, delivery.approvalId), eq(schema.approvals.status, "approved")));
+        await appendAuditEvent(tx, { organisationId, actorId: delivery.requestedByActorId, actorType: "human", action: "report.email.delivered", targetType: "report_delivery", targetId: deliveryId, metadata: { accepted: sent.accepted.length, rejected: sent.rejected.length }, traceId });
+      });
+      return;
+    } catch (error) {
+      await db.transaction(async (tx) => { await tx.update(schema.reportDeliveries).set({ status: "failed", result: { code: "smtp_delivery_failed" }, updatedAt: new Date() }).where(and(eq(schema.reportDeliveries.organisationId, organisationId), eq(schema.reportDeliveries.id, deliveryId), eq(schema.reportDeliveries.status, "queued"))); await appendAuditEvent(tx, { organisationId, actorId: delivery.requestedByActorId, actorType: "human", action: "report.email.failed", targetType: "report_delivery", targetId: deliveryId, metadata: { code: "smtp_delivery_failed" }, traceId }); });
+      throw error;
+    }
+  }
   // Email transport is deliberately absent until an organisation configures a
   // dedicated connector. Record a bounded, auditable result instead of
   // claiming a delivery that did not happen.
