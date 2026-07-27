@@ -1264,6 +1264,8 @@ export class DurableAgentRuntime {
           payload: { runId: run.id, stage: "executing", percent: 50 },
           idempotencyKey: `agent.run.progress:${run.id}:executing`,
           traceId: `agent-run-${run.id}`,
+        }).onConflictDoNothing({
+          target: schema.outboxEvents.idempotencyKey,
         });
       return rows;
     });
