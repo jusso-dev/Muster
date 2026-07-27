@@ -41,6 +41,15 @@ governed connectors, clean install, accessibility, and mobile layouts; see
 [`tests/`](tests). The health endpoint is
 [`/api/v1/health`](apps/web/app/api/v1/health/route.ts).
 
+### Task board and starter missions
+
+[`/tasks`](apps/web/app/tasks/page.tsx) reads only organisation-scoped tasks.
+It presents task status, assignment, run state, events, and governed delegation;
+delegation carries an idempotency key and its result remains attached to that
+task. It is not an autonomous-work queue: users with the applicable server-side
+capabilities create, assign, delegate, review, or cancel bounded work. Any
+connector-side action still needs its own capability and approval record.
+
 Starter agent definitions are installed with a clean database. Their work is
 bounded by an explicit task, approved schedule, or configured watchlist and
 remains reviewable through the [`/tasks` board](apps/web/app/tasks/page.tsx);
@@ -49,15 +58,23 @@ no agent is an unbounded background operator:
 - **Alfie** — evidence-backed threat and technology research. Administrators
   create bounded, allowlisted watchlists at
   [`/settings/alfie-research`](apps/web/app/settings/alfie-research/page.tsx); see the
-  [research runbook](docs/operations/alfie-research.md).
-- **Jessie** — bounded threat hunting and proposed Kelpie enrichment, with
-  source limits and approval for broader plans.
+  [research runbook](docs/operations/alfie-research.md). It reads allowlisted
+  HTTPS feeds only, produces source-backed briefs, and does not perform external
+  actions. A starter mission: summarise a named technology from an approved
+  watchlist, then review its citations and feedback state.
+- **Jessie** — bounded threat hunts and proposed Kelpie enrichment. It refuses
+  to run without a configured governed source; broader time, record, or
+  multi-source plans wait for human approval. A starter mission: investigate a
+  specific alert question, review recorded evidence and gaps, then decide
+  whether to approve the exact hunt or proposed enrichment.
 - **Parker** — operational reporting with organisation-scoped weekly or
   monthly schedules at [`/settings/parker-reports`](apps/web/app/settings/parker-reports/page.tsx).
   A due occurrence creates one Parker-assigned review task; delegating that task
   produces a reproducible report manifest, review/version record, and room post.
   Email delivery remains separately approved. See the
-  [Parker report runbook](docs/operations/parker-reports.md).
+  [Parker report runbook](docs/operations/parker-reports.md). A starter mission:
+  prepare an analyst, leadership, or executive report for a selected room and
+  period, then review the manifest before approving delivery.
 
 For a disposable evaluation, create three explicit tasks rather than treating
 the agents as autonomous staff: ask Alfie to summarise an allowlisted research
@@ -70,14 +87,21 @@ All external actions remain server-side capability checked and approval gated.
 Codex receives read-only, no-network execution with typed output validation;
 it cannot directly perform connector writes.
 
-### Mock and real integrations
+### Mock and real connector status
 
-The root Compose topology starts **synthetic Kelpie, Tawny, and Bower mocks**.
-They are for local development and screenshots only. A mock success is not a
-real product delivery. Real governed connectors are configured per organisation
-through the application and require valid endpoint, credential, capability,
-and approval state. Validate upstream versions and credentials before any
-operational use.
+Both supplied Compose topologies set `MUSTER_MOCK_INTEGRATIONS=true` and start
+synthetic Kelpie, Tawny, and Bower services. Their replies are demo/test data;
+a mock health check, query, or action result is never production delivery.
+
+| Product | Supplied Compose default | Configured endpoint surface                                                                                                          | Real status                                                              |
+| ------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Kelpie  | Synthetic mock           | [`/integrations/connectors`](apps/web/app/integrations/connectors/page.tsx) has governed Kelpie query/case-management configuration. | Code and contract tests exist; no live-product certification is claimed. |
+| Tawny   | Synthetic mock           | Connector administration supports read-only Tawny and separately governed Tawny-response configuration.                              | Code and contract tests exist; no live-product certification is claimed. |
+| Bower   | Synthetic mock           | No Bower option exists in connector administration; product pages are demo-only.                                                     | Mock/demo only; do not treat it as a configured production connector.    |
+
+Configured Kelpie and Tawny credentials are stored server-side per organisation;
+each endpoint, capability, and approval path must be validated in the target
+environment. See [current upstream contracts](docs/integrations/current-upstream-contracts.md).
 
 ## Clean Docker quick start
 
@@ -93,10 +117,11 @@ cd Muster
 ```
 
 Open `http://localhost:3000`. The script writes `.env` locally and prints the
-generated administrator password once. Treat that output as a secret and change
-it for any non-disposable installation. Local Compose exposes PostgreSQL,
-Redis, MinIO, Mailpit, the web application, and synthetic connector mocks for
-development; it is not a hardened Internet-facing topology.
+generated administrator password. The value is local `.env` state, not a demo
+credential: do not commit it and change it for any non-disposable installation.
+Local Compose exposes PostgreSQL, Redis, MinIO, Mailpit, the web application,
+and synthetic connector mocks for development; it is not a hardened
+Internet-facing topology.
 
 For source-based development instead:
 
@@ -117,6 +142,11 @@ MUSTER_DEMO_MODE=true NEXT_PUBLIC_MUSTER_DEMO_MODE=true pnpm db:seed
 ```
 
 Never run that command against a production or clean-install database.
+
+| Mode            | Data and route behaviour                                                                                                                                                                      |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Clean install   | `bootstrap.sh` creates local configuration, an administrator, starter rooms, and starter agent definitions. It does not seed synthetic alerts, cases, messages, tasks, or a fixed demo login. |
+| Demo/screenshot | `MUSTER_DEMO_MODE=true` plus `pnpm db:seed` adds synthetic data. Product integration and workflow views are demo-only and redirect in clean mode.                                             |
 
 ## Homelab image install (port 3004)
 
@@ -157,6 +187,14 @@ the private persistent volume interactively after the stack is running:
 
 ```bash
 docker compose --profile setup run --rm codex-login
+```
+
+For the homelab topology, use its Compose file and generated environment file:
+
+```bash
+docker compose --env-file .env.homelab \
+  -f deploy/docker/docker-compose.homelab.yml \
+  --profile setup run --rm codex-login
 ```
 
 The normal Compose gateway and setup job share the private `muster-codex`
@@ -211,13 +249,15 @@ compromise, follow [incident recovery](docs/operations/incident-recovery.md).
 ### Troubleshooting
 
 - **Web is unhealthy:** run `docker compose ps`, then inspect the failing
-  service logs. The web health route is `/api/v1/health`.
+  service logs. For homelab use `docker compose --env-file .env.homelab -f
+deploy/docker/docker-compose.homelab.yml ps`. The web health route is
+  `/api/v1/health`; see the [deployment guide](docs/operations/deployment.md).
 - **Login loops or callback errors:** verify `MUSTER_PUBLIC_URL`,
   `AUTH_TRUSTED_ORIGINS`, reverse-proxy headers, and `AUTH_SECURE_COOKIES`; then
   restart the web service.
 - **Agent is not ready:** use the Agents view to distinguish missing Codex
   authentication from disabled/readiness evidence. Re-run `codex-login` only
-  on the private volume.
+  on the private volume; see [deployment guidance](docs/operations/deployment.md).
 - **Connector delivery does not happen:** confirm it is not a mock, then check
   the connector health, organisation capability, approval record, outbox, and
   upstream product logs. Do not replay raw queue jobs.
