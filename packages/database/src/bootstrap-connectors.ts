@@ -24,6 +24,10 @@ type EnvironmentConnector = {
   auth: ConnectorAuth;
 };
 
+export function environmentConnectorTestMode(baseUrl: string) {
+  return new URL(baseUrl).protocol === "http:";
+}
+
 function optionalEnvironmentConnector(input: {
   product: "kelpie" | "tawny" | "unifi";
   instanceId: string;
@@ -47,7 +51,7 @@ function optionalEnvironmentConnector(input: {
       baseUrl: parsedUrl.toString(),
       allowedHosts: [parsedUrl.hostname.toLowerCase()],
       allowPrivateNetwork: true,
-      testMode: false,
+      testMode: environmentConnectorTestMode(parsedUrl.toString()),
       ...(input.tlsCaCertificateBase64?.trim()
         ? {
             tlsCaCertificateBase64: input.tlsCaCertificateBase64.trim(),
