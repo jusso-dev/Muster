@@ -46,6 +46,12 @@ export function SettingsView() {
               Alfie research
             </Link>
             <Link
+              href="/settings/parker-reports"
+              className={buttonVariants({ variant: "outline" })}
+            >
+              Parker reports
+            </Link>
+            <Link
               href="/integrations/connectors"
               className={buttonVariants({ variant: "default" })}
             >

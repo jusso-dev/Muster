@@ -1378,6 +1378,18 @@ test("Parker task produces a reviewable, versioned report manifest", async ({
   }
 });
 
+test("Parker schedule creates and displays a governed weekly task configuration", async ({ page }) => {
+  const db = database();
+  try {
+    await page.goto("/settings/parker-reports");
+    await page.getByLabel("Room ID").fill("018f55d8-c4c7-7c3e-88ef-000000000100");
+    await page.getByRole("button", { name: "Create weekly schedule" }).click();
+    await expect(page.getByText("weekly leadership report").last()).toBeVisible();
+  } finally {
+    await db.delete(schema.reportSchedules).where(eq(schema.reportSchedules.idempotencyKey, "parker-ui:018f55d8-c4c7-7c3e-88ef-000000000100:weekly"));
+  }
+});
+
 test("task APIs deny cross-organisation references and runs", async ({
   page,
 }, testInfo) => {
