@@ -4,6 +4,7 @@ import {
   type APIRequestContext,
   type Page,
 } from "@playwright/test";
+import { HuntResultSchema } from "@muster/contracts";
 
 type Connector = { id: string; product: string };
 type AsyncRecord = {
@@ -13,18 +14,35 @@ type AsyncRecord = {
   responseMetadata?: Record<string, unknown>;
 };
 
+const genericAlertsTemplate = {
+  key: "generic.alerts.list",
+  version: 1,
+  displayName: "Homelab generic alert evidence",
+  method: "GET",
+  pathTemplate: "/alerts",
+  requiredCapability: "alerts.read",
+  inputSchema: { type: "object", additionalProperties: false },
+  outputSchema: {
+    type: "object",
+    required: ["records"],
+    properties: { records: { type: "array" } },
+  },
+  recordsPath: "records",
+};
+
 async function configureConnector(
   request: APIRequestContext,
   input: {
-    product: "tawny" | "tawny_response" | "kelpie";
+    product: "tawny" | "tawny_response" | "kelpie" | "generic_rest";
     instanceId: string;
     displayName: string;
     baseUrl: string;
     token: string;
+    templates?: unknown[];
   },
 ) {
   const hostname = new URL(input.baseUrl).hostname;
-  const { token, ...configuration } = input;
+  const { token, templates = [], ...configuration } = input;
   const response = await request.post("/api/v1/connectors", {
     data: {
       ...configuration,
@@ -39,6 +57,7 @@ async function configureConnector(
         maxPages: 10,
         requestsPerMinute: 60,
       },
+      templates,
     },
   });
   expect(response.status()).toBe(201);
@@ -51,6 +70,7 @@ async function waitForRecord(
   request: APIRequestContext,
   path: string,
   expected = "succeeded",
+  timeout = 30_000,
 ) {
   let latest: AsyncRecord | undefined;
   await expect
@@ -61,7 +81,7 @@ async function waitForRecord(
         latest = (await response.json()).data as AsyncRecord;
         return latest.status;
       },
-      { timeout: 30_000 },
+      { timeout },
     )
     .toBe(expected);
   if (!latest) throw new Error("Asynchronous record was not returned");
@@ -91,6 +111,7 @@ test("real Tawny and Kelpie operations are governed, durable, and duplicate-safe
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   const tawnyUrl = process.env.MUSTER_TAWNY_URL ?? "http://127.0.0.1:4012";
   const kelpieUrl = process.env.MUSTER_KELPIE_URL ?? "http://127.0.0.1:4011";
+  const genericUrl = process.env.MUSTER_GENERIC_URL ?? "http://127.0.0.1:4123";
   const tawnyToken =
     process.env.MUSTER_TAWNY_TOKEN ?? `synthetic-tawny-read-${suffix}`;
   const tawnyResponseToken =
@@ -141,6 +162,14 @@ test("real Tawny and Kelpie operations are governed, durable, and duplicate-safe
     displayName: `Kelpie real ${suffix}`,
     baseUrl: kelpieUrl,
     token: kelpieToken,
+  });
+  const generic = await configureConnector(request, {
+    product: "generic_rest",
+    instanceId: `homelab-generic-${suffix}`,
+    displayName: `Generic REST homelab ${suffix}`,
+    baseUrl: genericUrl,
+    token: `synthetic-generic-${suffix}`,
+    templates: [genericAlertsTemplate],
   });
 
   const inventoryResponse = await request.post(
@@ -264,6 +293,79 @@ test("real Tawny and Kelpie operations are governed, durable, and duplicate-safe
   expect(typeof caseId).toBe("string");
   if (typeof caseId !== "string") throw new Error("Kelpie case ID missing");
 
+  const jessieResponse = await request.post("/api/v1/hunts", {
+    data: {
+      question:
+        "Investigate synthetic activity for 203.0.113.99, correlate the evidence, and explain safe next steps.",
+      roomId: room.id,
+      linkedCaseId: caseId,
+      sourceIds: [tawny.id, generic.id],
+      maxRecordsPerSource: 50,
+      trainingMode: true,
+      idempotencyKey: `jessie-real-hunt-${suffix}`,
+    },
+  });
+  expect(jessieResponse.status()).toBe(202);
+  const jessie = (await jessieResponse.json()).data as {
+    id: string;
+    duplicate: boolean;
+    plan: { approvalRequired: boolean; queries: unknown[] };
+  };
+  expect(jessie.duplicate).toBe(false);
+  expect(jessie.plan.approvalRequired).toBe(false);
+  expect(jessie.plan.queries).toHaveLength(2);
+  const completedHunt = await waitForRecord(
+    request,
+    `/api/v1/hunts/${jessie.id}`,
+    "completed",
+    120_000,
+  );
+  const huntResult = HuntResultSchema.parse(completedHunt.result);
+  expect(huntResult.trainingMode).toBe(true);
+  expect(huntResult.queries).toHaveLength(2);
+  expect(huntResult.observables).toContainEqual(
+    expect.objectContaining({
+      type: "ip",
+      normalizedValue: "203.0.113.99",
+    }),
+  );
+  expect(huntResult.enrichmentProposal?.caseId).toBe(caseId);
+
+  const enrichmentResponse = await request.post(
+    `/api/v1/hunts/${jessie.id}/enrichment`,
+  );
+  expect(enrichmentResponse.status()).toBe(202);
+  const enrichment = (await enrichmentResponse.json()).data as {
+    id: string;
+    status: string;
+  };
+  expect(enrichment.status).toBe("awaiting_approval");
+  await approveLatest(page, "kelpie.case.enrich");
+  await waitForRecord(request, `/api/v1/integration-actions/${enrichment.id}`);
+
+  const enrichedCaseResponse = await request.post(
+    `/api/v1/connectors/${kelpie.id}/queries`,
+    {
+      data: {
+        templateKey: "kelpie.case.get",
+        input: { caseId },
+        idempotencyKey: `kelpie-get-jessie-${suffix}`,
+      },
+    },
+  );
+  expect(enrichedCaseResponse.status()).toBe(202);
+  const enrichedCaseQueryId = (
+    (await enrichedCaseResponse.json()).data as { id: string }
+  ).id;
+  const enrichedCaseQuery = await waitForRecord(
+    request,
+    `/api/v1/connector-queries/${enrichedCaseQueryId}`,
+  );
+  expect(
+    (enrichedCaseQuery.result as { recent_timeline: unknown[] })
+      .recent_timeline,
+  ).toHaveLength(1);
+
   for (const action of [
     {
       operation: "kelpie.timeline.comment",
@@ -304,7 +406,13 @@ test("real Tawny and Kelpie operations are governed, durable, and duplicate-safe
       data: action,
     });
     expect(response.status()).toBe(202);
-    const actionId = ((await response.json()).data as { id: string }).id;
+    const actionData = (await response.json()).data as {
+      id: string;
+      status: string;
+    };
+    expect(actionData.status).toBe("awaiting_approval");
+    await approveLatest(page, "kelpie.case.enrich");
+    const actionId = actionData.id;
     await waitForRecord(request, `/api/v1/integration-actions/${actionId}`);
   }
 
