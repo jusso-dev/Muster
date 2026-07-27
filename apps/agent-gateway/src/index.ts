@@ -104,6 +104,7 @@ async function queueDirectRun(
         maximumRuntimeSeconds: definition.maximumRuntimeSeconds,
         maximumTokenBudget: definition.maximumTokenBudget,
         maximumCostCents: definition.maximumCostCents,
+        agentProfileVersionId: definition.activeProfileVersionId,
         idempotencyKey,
       })
       .onConflictDoNothing()

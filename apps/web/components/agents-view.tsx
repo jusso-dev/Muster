@@ -346,6 +346,8 @@ export function AgentDetailView({
         <div className="mx-auto max-w-6xl">
           {tab === "learning" ? (
             <GovernedLearningPanel agentId={agentId} />
+          ) : tab === "versions" ? (
+            <GovernedProfilePanel agentId={agentId} />
           ) : (
             <AgentOverview agent={agent} />
           )}
@@ -355,8 +357,64 @@ export function AgentDetailView({
   );
 }
 
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+type ProfileWorkRow = {
+  roomId: string | null;
+  status: string;
+  trigger: string;
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
+type ProfileSummaryState = {
+  agent: { available: boolean };
+  activeProfile: {
+    displayName: string;
+    description: string;
+    role: string;
+    communicationStyle: string;
+    examplePrompts: unknown;
+  } | null;
+  recentRoomWork?: ProfileWorkRow[];
+  recentRuns?: ProfileWorkRow[];
+};
+
 function AgentOverview({ agent }: { agent: DirectoryAgent }) {
   const evidence = Object.entries(agent.readiness.evidence);
+  const [profile, setProfile] = useState<ProfileSummaryState | null>(null);
+  const [profileError, setProfileError] = useState("");
+
+  useEffect(() => {
+    setProfile(null);
+    setProfileError("");
+    void fetch(`/api/v1/agents/${agent.id}/profile`, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          data?: ProfileSummaryState;
+          detail?: string;
+        };
+        if (!response.ok || !payload.data) {
+          throw new Error(payload.detail ?? "Agent profile unavailable");
+        }
+        setProfile(payload.data);
+      })
+      .catch((reason) =>
+        setProfileError(
+          reason instanceof Error ? reason.message : "Agent profile failed",
+        ),
+      );
+  }, [agent.id]);
+
+  const examplePrompts = asStringArray(
+    profile?.activeProfile?.examplePrompts,
+  );
+  const recentWork = profile?.recentRoomWork ?? profile?.recentRuns ?? [];
+
   return (
     <div className="grid gap-4 tablet:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="space-y-4">
@@ -365,6 +423,83 @@ function AgentOverview({ agent }: { agent: DirectoryAgent }) {
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {agent.description}
           </p>
+        </section>
+        <section className="border bg-card p-4">
+          <h2 className="font-display text-sm font-bold">Agent profile</h2>
+          {profileError && (
+            <p className="mt-2 text-xs text-[var(--color-error)]">
+              {profileError}
+            </p>
+          )}
+          <dl className="mt-3 grid gap-3 text-xs tablet:grid-cols-3">
+            <div>
+              <dt className="text-muted-foreground">Role</dt>
+              <dd className="mt-0.5 font-semibold">
+                {profile?.activeProfile?.role ?? "Not yet configured"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Communication style</dt>
+              <dd className="mt-0.5 font-semibold">
+                {profile?.activeProfile?.communicationStyle ?? "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Availability</dt>
+              <dd className="mt-0.5">
+                <Badge
+                  className={
+                    profile?.agent.available
+                      ? "success-surface text-[var(--color-success)]"
+                      : "bg-muted text-muted-foreground"
+                  }
+                >
+                  {profile?.agent.available ? "Available" : "Unavailable"}
+                </Badge>
+              </dd>
+            </div>
+          </dl>
+          <div className="mt-4 border-t pt-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Example prompts
+            </h3>
+            {examplePrompts.length > 0 ? (
+              <ul className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
+                {examplePrompts.map((prompt, index) => (
+                  <li key={`${prompt}-${index}`}>&ldquo;{prompt}&rdquo;</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">
+                No example prompts recorded for the active profile.
+              </p>
+            )}
+          </div>
+          {recentWork.length > 0 && (
+            <div className="mt-4 border-t pt-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Recent room work
+              </h3>
+              <ul className="mt-2 space-y-1 text-xs">
+                {recentWork.slice(0, 5).map((run, index) => (
+                  <li
+                    key={`${run.roomId ?? "run"}-${index}`}
+                    className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground"
+                  >
+                    <span className="font-semibold text-foreground">
+                      {run.status}
+                    </span>
+                    <span>{run.trigger}</span>
+                    <span>
+                      {run.startedAt
+                        ? new Date(run.startedAt).toLocaleString()
+                        : "Not started"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
         <section className="border bg-card p-4">
           <div className="flex flex-wrap items-start gap-3">
@@ -891,6 +1026,325 @@ function GovernedLearningPanel({ agentId }: { agentId: string }) {
           <p className="p-6 text-center text-xs text-muted-foreground">
             No evidence-linked learning notes yet.
           </p>
+        )}
+      </section>
+    </div>
+  );
+}
+
+type ProfileVersionState = "draft" | "approved" | "active" | "retired";
+
+type ProfileVersionRow = {
+  id: string;
+  version: number;
+  state: ProfileVersionState;
+  displayName: string;
+  role: string;
+  basedOnVersionId: string | null;
+  evaluation: {
+    passed: boolean;
+    score: number;
+    baselineScore: number | null;
+    regressions: unknown;
+  } | null;
+  approval: { id: string; status: string } | null;
+};
+
+type AdminProfileState = {
+  agent: {
+    id: string;
+    name: string;
+    killSwitch: boolean;
+    status: string;
+    available: boolean;
+  };
+  activeProfile: ProfileVersionRow | null;
+  versions: ProfileVersionRow[];
+};
+
+function profileStateBadgeClass(state: ProfileVersionState) {
+  if (state === "active") return "success-surface text-[var(--color-success)]";
+  if (state === "approved")
+    return "approval-surface text-[var(--color-warning)]";
+  return "bg-muted text-muted-foreground";
+}
+
+function GovernedProfilePanel({ agentId }: { agentId: string }) {
+  const [profile, setProfile] = useState<
+    AdminProfileState | "forbidden" | null
+  >(null);
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState("");
+
+  async function load() {
+    const response = await fetch(`/api/v1/agents/${agentId}/profile`, {
+      cache: "no-store",
+    });
+    const payload = (await response.json()) as {
+      data?: Record<string, unknown>;
+      detail?: string;
+    };
+    if (!response.ok || !payload.data) {
+      throw new Error(
+        payload.detail ?? "Profile versions could not be loaded",
+      );
+    }
+    if (!("versions" in payload.data)) {
+      setProfile("forbidden");
+      return;
+    }
+    setProfile(payload.data as AdminProfileState);
+  }
+
+  useEffect(() => {
+    void load().catch((reason) =>
+      setError(reason instanceof Error ? reason.message : "Load failed"),
+    );
+  }, [agentId]);
+
+  async function mutate(input: Record<string, unknown>, key: string) {
+    setPending(key);
+    setError("");
+    try {
+      const response = await fetch(`/api/v1/agents/${agentId}/profile`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const payload = (await response.json()) as { detail?: string };
+      if (!response.ok) {
+        throw new Error(payload.detail ?? "Profile action failed");
+      }
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Action failed");
+    } finally {
+      setPending("");
+    }
+  }
+
+  if (profile === "forbidden") {
+    return (
+      <div className="border bg-card p-8 text-center">
+        <ShieldCheck className="mx-auto size-6 text-muted-foreground" />
+        <h2 className="mt-3 font-display text-sm font-bold">
+          Administrator access required
+        </h2>
+        <p className="mx-auto mt-1 max-w-xl text-xs leading-5 text-muted-foreground">
+          Versioned profile administration is limited to operators with
+          agents.manage.
+        </p>
+      </div>
+    );
+  }
+
+  const versions = profile?.versions ?? [];
+
+  return (
+    <div className="space-y-4">
+      <div className="border border-[var(--color-agent)] bg-[var(--color-agent-soft)] p-4">
+        <div className="flex items-start gap-3">
+          <FileDiff className="mt-0.5 size-5 text-[var(--color-agent)]" />
+          <div>
+            <h2 className="font-display text-sm font-bold">
+              Governed agent profile versions
+            </h2>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Every activation, approval, and rollback is evaluated and
+              requires a distinct human approver.
+            </p>
+          </div>
+          {profile && (
+            <Badge className="ml-auto bg-muted text-muted-foreground">
+              Kill switch {profile.agent.killSwitch ? "on" : "off"}
+            </Badge>
+          )}
+        </div>
+      </div>
+      {error && (
+        <p className="error-surface border p-3 text-xs text-[var(--color-error)]">
+          {error}
+        </p>
+      )}
+      <section className="border bg-card">
+        <div className="border-b p-3">
+          <h2 className="font-display text-sm font-bold">Profile versions</h2>
+          <p className="text-xs text-muted-foreground">
+            Immutable versions with evidence, evaluation, and approval
+          </p>
+        </div>
+        {versions.length === 0 ? (
+          <div className="p-8 text-center">
+            <FileDiff className="mx-auto size-5 text-muted-foreground" />
+            <p className="mt-2 text-xs text-muted-foreground">
+              No profile versions proposed yet.
+            </p>
+          </div>
+        ) : (
+          versions.map((version) => {
+            const regressionCount = Array.isArray(
+              version.evaluation?.regressions,
+            )
+              ? version.evaluation.regressions.length
+              : 0;
+            return (
+              <article key={version.id} className="border-b p-4 last:border-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <FileDiff className="size-4 text-[var(--color-agent)]" />
+                  <code className="text-xs">v{version.version}</code>
+                  <Badge className={profileStateBadgeClass(version.state)}>
+                    {version.state}
+                  </Badge>
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {version.role}
+                  </span>
+                </div>
+                <h3 className="mt-3 text-sm font-bold">
+                  {version.displayName}
+                </h3>
+                <div className="mt-3 grid grid-cols-3 border text-center text-xs">
+                  <div className="border-r p-2">
+                    <span className="block text-muted-foreground">
+                      Evaluation
+                    </span>
+                    <strong>{version.evaluation?.score ?? "—"} / 100</strong>
+                  </div>
+                  <div className="border-r p-2">
+                    <span className="block text-muted-foreground">
+                      Baseline
+                    </span>
+                    <strong>
+                      {version.evaluation?.baselineScore ?? "—"} / 100
+                    </strong>
+                  </div>
+                  <div className="p-2">
+                    <span className="block text-muted-foreground">
+                      Regressions
+                    </span>
+                    <strong>{regressionCount}</strong>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {version.state === "draft" && !version.evaluation && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pending === version.id}
+                      onClick={() =>
+                        void mutate(
+                          { action: "evaluate_profile", versionId: version.id },
+                          version.id,
+                        )
+                      }
+                    >
+                      <ShieldCheck />
+                      Evaluate
+                    </Button>
+                  )}
+                  {version.state === "draft" &&
+                    version.evaluation &&
+                    version.approval?.status === "pending" && (
+                      <>
+                        <Button
+                          size="sm"
+                          disabled={
+                            pending === version.id ||
+                            !version.evaluation?.passed
+                          }
+                          onClick={() =>
+                            void mutate(
+                              {
+                                action: "approve_profile",
+                                versionId: version.id,
+                                reason:
+                                  "Human reviewed evidence and passing evaluation",
+                              },
+                              version.id,
+                            )
+                          }
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={pending === version.id}
+                          onClick={() =>
+                            void mutate(
+                              {
+                                action: "reject_profile",
+                                versionId: version.id,
+                                reason: "Human reviewer rejected proposal",
+                              },
+                              version.id,
+                            )
+                          }
+                        >
+                          Reject
+                        </Button>
+                      </>
+                    )}
+                  {version.state === "approved" && (
+                    <Button
+                      size="sm"
+                      disabled={pending === version.id}
+                      onClick={() =>
+                        void mutate(
+                          {
+                            action: "activate_profile",
+                            versionId: version.id,
+                            reason: "Activated by administrator",
+                          },
+                          version.id,
+                        )
+                      }
+                    >
+                      Activate
+                    </Button>
+                  )}
+                  {version.state === "active" && version.basedOnVersionId && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pending === version.id}
+                      onClick={() =>
+                        void mutate(
+                          {
+                            action: "rollback_profile",
+                            versionId: version.id,
+                            reason: "Human reviewer restored prior version",
+                          },
+                          version.id,
+                        )
+                      }
+                    >
+                      <RefreshCcw />
+                      Roll back
+                    </Button>
+                  )}
+                  {version.state !== "active" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={pending === version.id}
+                      onClick={() =>
+                        void mutate(
+                          {
+                            action: "retire_profile",
+                            versionId: version.id,
+                            reason: "Retired by administrator",
+                          },
+                          version.id,
+                        )
+                      }
+                    >
+                      Retire
+                    </Button>
+                  )}
+                </div>
+              </article>
+            );
+          })
         )}
       </section>
     </div>

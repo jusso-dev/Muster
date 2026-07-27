@@ -218,6 +218,17 @@ export class GovernedAgentHarness {
       Date.now() + definition.maximumRuntimeSeconds * 1_000,
     );
     const accepted = await this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({
+          killSwitch: schema.agentDefinitions.killSwitch,
+          status: schema.agentDefinitions.status,
+        })
+        .from(schema.agentDefinitions)
+        .where(eq(schema.agentDefinitions.id, definition.id))
+        .for("update");
+      if (!current || current.killSwitch || current.status !== "active") {
+        throw new Error("Active agent is not exposed");
+      }
       const [inserted] = await tx
         .insert(schema.agentRuns)
         .values({
@@ -248,6 +259,7 @@ export class GovernedAgentHarness {
           maximumRuntimeSeconds: definition.maximumRuntimeSeconds,
           maximumTokenBudget: definition.maximumTokenBudget,
           maximumCostCents: definition.maximumCostCents,
+          agentProfileVersionId: definition.activeProfileVersionId,
           idempotencyKey,
         })
         .onConflictDoNothing()

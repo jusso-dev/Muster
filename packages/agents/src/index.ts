@@ -335,13 +335,14 @@ export function mayPublishSkill(
   return { allowed: reasons.length === 0, reasons };
 }
 
-const unsafeSkillPatterns = [
+export const unsafeInstructionPatterns = [
   /ignore (all|any|the|prior|previous) (policy|instructions?)/i,
   /self[- ]?authori[sz]e/i,
   /(grant|add|expand|bypass).{0,40}(permission|capabilit|tool|policy)/i,
   /(disable|remove).{0,20}(approval|audit|sandbox|tenant)/i,
   /treat.{0,40}(telemetry|evidence|tool result).{0,20}instructions?/i,
 ];
+const unsafeSkillPatterns = unsafeInstructionPatterns;
 
 export function evaluateSkillProposal(
   input: unknown,
@@ -376,4 +377,122 @@ export function evaluateSkillProposal(
     regressions: diagnostics,
     diagnostics,
   };
+}
+
+// Versioned agent profiles (issue #73). A profile version bundles the
+// governed identity (role, operating instructions, communication style),
+// referenced model/memory/tool/escalation policies, skill selection and
+// channel policy for one agent. It moves draft -> approved -> active ->
+// retired; only a human distinct from the proposer may approve it.
+export const AgentChannelPolicySchema = z.object({
+  allowedChannelIds: z.array(z.string().min(1).max(200)).max(500).default([]),
+  allowDirectMessages: z.boolean().default(true),
+  allowThreadContext: z.boolean().default(false),
+});
+export type AgentChannelPolicy = z.infer<typeof AgentChannelPolicySchema>;
+
+export const AgentProfileProposalSchema = z.object({
+  displayName: z.string().min(2).max(120),
+  description: z.string().min(10).max(2_000),
+  avatarAssetId: z.string().min(1).max(200).nullable().default(null),
+  role: z.string().min(3).max(200),
+  operatingInstructions: z.string().min(20).max(50_000),
+  communicationStyle: z.string().min(3).max(2_000),
+  examplePrompts: z.array(z.string().min(1).max(500)).max(20).default([]),
+  modelPolicyId: z.uuid().nullable().default(null),
+  memoryPolicyId: z.uuid().nullable().default(null),
+  toolPolicyId: z.uuid().nullable().default(null),
+  escalationPolicyId: z.uuid().nullable().default(null),
+  skillIds: z.array(z.uuid()).max(100).default([]),
+  channelPolicy: AgentChannelPolicySchema.default({
+    allowedChannelIds: [],
+    allowDirectMessages: true,
+    allowThreadContext: false,
+  }),
+  changeRationale: z.string().min(10).max(2_000),
+});
+export type AgentProfileProposal = z.infer<typeof AgentProfileProposalSchema>;
+
+export function prepareProfileProposal(input: unknown) {
+  const proposal = AgentProfileProposalSchema.parse(input);
+  const contentHash = createHash("sha256")
+    .update(
+      JSON.stringify({
+        displayName: proposal.displayName,
+        description: proposal.description,
+        avatarAssetId: proposal.avatarAssetId,
+        role: proposal.role,
+        operatingInstructions: proposal.operatingInstructions,
+        communicationStyle: proposal.communicationStyle,
+        examplePrompts: proposal.examplePrompts,
+        modelPolicyId: proposal.modelPolicyId,
+        memoryPolicyId: proposal.memoryPolicyId,
+        toolPolicyId: proposal.toolPolicyId,
+        escalationPolicyId: proposal.escalationPolicyId,
+        skillIds: proposal.skillIds,
+        channelPolicy: proposal.channelPolicy,
+      }),
+    )
+    .digest("hex");
+  return { ...proposal, contentHash, state: "draft" as const };
+}
+
+export interface ProfileEvaluation {
+  passed: boolean;
+  score: number;
+  baselineScore?: number;
+  regressions: readonly string[];
+}
+
+export function evaluateProfileProposal(
+  input: unknown,
+  policy: { baselineScore?: number },
+): ProfileEvaluation & { diagnostics: string[]; suite: string } {
+  const proposal = AgentProfileProposalSchema.parse(input);
+  const diagnostics = unsafeInstructionPatterns
+    .filter((pattern) => pattern.test(proposal.operatingInstructions))
+    .map((pattern) => `Unsafe instruction pattern: ${pattern.source}`);
+  const score = Math.max(0, 100 - diagnostics.length * 25);
+  return {
+    suite: "muster-agent-profile-security-v1",
+    passed: diagnostics.length === 0 && score >= 80,
+    score,
+    ...(policy.baselineScore !== undefined
+      ? { baselineScore: policy.baselineScore }
+      : {}),
+    regressions: diagnostics,
+    diagnostics,
+  };
+}
+
+export function mayApproveProfile(
+  evaluation: ProfileEvaluation,
+  proposedByActorId: string,
+  approvingActorId: string,
+): { allowed: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  if (!evaluation.passed) reasons.push("Evaluation suite failed");
+  if (evaluation.score < 80) reasons.push("Evaluation score is below 80");
+  if (
+    evaluation.baselineScore !== undefined &&
+    evaluation.score < evaluation.baselineScore
+  ) {
+    reasons.push("Proposed profile regresses from its baseline");
+  }
+  if (evaluation.regressions.length > 0) reasons.push("Regressions remain");
+  if (proposedByActorId === approvingActorId) {
+    reasons.push("Approver cannot be the actor who proposed the change");
+  }
+  return { allowed: reasons.length === 0, reasons };
+}
+
+export function mayActivateProfile(state: string): {
+  allowed: boolean;
+  reasons: string[];
+} {
+  const reasons: string[] = [];
+  if (state !== "approved") {
+    reasons.push("Profile version must be approved before activation");
+  }
+  return { allowed: reasons.length === 0, reasons };
 }

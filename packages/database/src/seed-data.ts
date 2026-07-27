@@ -48,6 +48,16 @@ export const starterIds = {
     justinReply: "018f55d8-c4c7-7c3e-88ef-000000000704",
     priyaParent: "018f55d8-c4c7-7c3e-88ef-000000000705",
   },
+  agentPolicies: {
+    triageModel: "018f55d8-c4c7-7c3e-88ef-000000000901",
+    tawnyHuntModel: "018f55d8-c4c7-7c3e-88ef-000000000902",
+    threatIntelModel: "018f55d8-c4c7-7c3e-88ef-000000000903",
+  },
+  agentProfileVersions: {
+    triage: "018f55d8-c4c7-7c3e-88ef-000000000911",
+    tawnyHunt: "018f55d8-c4c7-7c3e-88ef-000000000912",
+    threatIntel: "018f55d8-c4c7-7c3e-88ef-000000000913",
+  },
 } as const;
 
 /**
@@ -112,6 +122,16 @@ export const demoIds = {
     tawnyReply: "019e7a10-0000-7000-8000-000000000703",
     justinReply: "019e7a10-0000-7000-8000-000000000704",
     priyaParent: "019e7a10-0000-7000-8000-000000000705",
+  },
+  agentPolicies: {
+    triageModel: "019e7a10-0000-7000-8000-000000000901",
+    tawnyHuntModel: "019e7a10-0000-7000-8000-000000000902",
+    threatIntelModel: "019e7a10-0000-7000-8000-000000000903",
+  },
+  agentProfileVersions: {
+    triage: "019e7a10-0000-7000-8000-000000000911",
+    tawnyHunt: "019e7a10-0000-7000-8000-000000000912",
+    threatIntel: "019e7a10-0000-7000-8000-000000000913",
   },
 } as const;
 

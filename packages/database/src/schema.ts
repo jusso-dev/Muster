@@ -1036,6 +1036,10 @@ export const agentDefinitions = pgTable(
       .notNull()
       .default("read_only"),
     killSwitch: boolean("kill_switch").notNull().default(false),
+    // Not a DB-level FK: mirrors agentSkills.activeVersionId, avoiding a
+    // circular reference to agent_profile_versions declared later in this
+    // file. Integrity is enforced by the profile activation service.
+    activeProfileVersionId: uuid("active_profile_version_id"),
     ...timestamps,
   },
   (table) => [
@@ -1046,6 +1050,159 @@ export const agentDefinitions = pgTable(
     check(
       "agent_definitions_requested_permission_check",
       sql`${table.requestedPermissionMode} in ('read_only','approval_gated')`,
+    ),
+  ],
+);
+
+// Versioned, governed configuration referenced by agent profile versions.
+// Each kind is a self-contained document; changes are new rows, never
+// mutated in place, so a profile version's referenced policy is immutable.
+export const agentPolicies = pgTable(
+  "agent_policies",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agentDefinitions.id),
+    kind: text("kind").notNull(),
+    name: text("name").notNull(),
+    version: integer("version").notNull(),
+    document: jsonb("document").notNull().default({}),
+    state: text("state").notNull().default("active"),
+    createdByActorId: uuid("created_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("agent_policies_agent_kind_version_unique").on(
+      table.agentId,
+      table.kind,
+      table.version,
+    ),
+    index("agent_policies_org_agent_kind_idx").on(
+      table.organisationId,
+      table.agentId,
+      table.kind,
+    ),
+    check(
+      "agent_policies_kind_check",
+      sql`${table.kind} in ('model','memory','tool','escalation')`,
+    ),
+    check(
+      "agent_policies_state_check",
+      sql`${table.state} in ('draft','active','retired')`,
+    ),
+  ],
+);
+
+// Versioned agent profiles (issue #73). One immutable row per version;
+// `state` moves draft -> approved -> active -> retired. Only one version per
+// agent may be `active` at a time (partial unique index). Every agent run
+// records the exact profile version it used (see agentRuns.agentProfileVersionId)
+// so historical runs remain explainable after later profile changes.
+export const agentProfileVersions = pgTable(
+  "agent_profile_versions",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agentDefinitions.id),
+    version: integer("version").notNull(),
+    basedOnVersionId: uuid("based_on_version_id"),
+    displayName: text("display_name").notNull(),
+    description: text("description").notNull(),
+    avatarAssetId: text("avatar_asset_id"),
+    role: text("role").notNull(),
+    operatingInstructions: text("operating_instructions").notNull(),
+    communicationStyle: text("communication_style").notNull(),
+    examplePrompts: jsonb("example_prompts").notNull().default([]),
+    modelPolicyId: uuid("model_policy_id").references(() => agentPolicies.id),
+    memoryPolicyId: uuid("memory_policy_id").references(
+      () => agentPolicies.id,
+    ),
+    toolPolicyId: uuid("tool_policy_id").references(() => agentPolicies.id),
+    escalationPolicyId: uuid("escalation_policy_id").references(
+      () => agentPolicies.id,
+    ),
+    skillIds: jsonb("skill_ids").notNull().default([]),
+    channelPolicy: jsonb("channel_policy").notNull().default({}),
+    contentHash: text("content_hash").notNull(),
+    changeRationale: text("change_rationale").notNull(),
+    state: text("state").notNull().default("draft"),
+    createdByActorId: uuid("created_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    approvedByActorId: uuid("approved_by_actor_id").references(
+      () => actors.id,
+    ),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    activatedAt: timestamp("activated_at", { withTimezone: true }),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("agent_profile_versions_agent_version_unique").on(
+      table.agentId,
+      table.version,
+    ),
+    uniqueIndex("agent_profile_versions_agent_active_unique")
+      .on(table.agentId)
+      .where(sql`${table.state} = 'active'`),
+    index("agent_profile_versions_org_agent_idx").on(
+      table.organisationId,
+      table.agentId,
+      table.createdAt,
+    ),
+    check(
+      "agent_profile_versions_state_check",
+      sql`${table.state} in ('draft','approved','active','retired')`,
+    ),
+    check(
+      "agent_profile_versions_self_approval_check",
+      sql`${table.approvedByActorId} is null or ${table.approvedByActorId} <> ${table.createdByActorId}`,
+    ),
+  ],
+);
+
+export const agentProfileEvaluations = pgTable(
+  "agent_profile_evaluations",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    profileVersionId: uuid("profile_version_id")
+      .notNull()
+      .references(() => agentProfileVersions.id),
+    evaluatorActorId: uuid("evaluator_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    suite: text("suite").notNull(),
+    passed: boolean("passed").notNull(),
+    score: integer("score").notNull(),
+    baselineScore: integer("baseline_score"),
+    regressions: jsonb("regressions").notNull().default([]),
+    result: jsonb("result").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("agent_profile_evaluations_version_idx").on(
+      table.organisationId,
+      table.profileVersionId,
+      table.createdAt,
+    ),
+    check(
+      "agent_profile_evaluations_score_check",
+      sql`${table.score} between 0 and 100`,
     ),
   ],
 );
@@ -1174,6 +1331,13 @@ export const agentRuns = pgTable(
     cancellationReason: text("cancellation_reason"),
     structuredOutput: jsonb("structured_output"),
     idempotencyKey: text("idempotency_key").notNull(),
+    // Immutable snapshot reference: which governed profile version (and, by
+    // extension, which skill and model/memory/tool/escalation policy
+    // versions it bundled) produced this run. Historical runs stay
+    // explainable even after the profile is later rolled back or superseded.
+    agentProfileVersionId: uuid("agent_profile_version_id").references(
+      () => agentProfileVersions.id,
+    ),
   },
   (table) => [
     uniqueIndex("agent_runs_org_idempotency_unique").on(
