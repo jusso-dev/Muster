@@ -1,22 +1,39 @@
 import { createHash } from "node:crypto";
+import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDatabase, database, newId, schema } from "@muster/database";
 import {
   AgentStructuredOutputSchemas,
   HuntResultSchema,
 } from "@muster/contracts";
+import { encryptConnectorAuth } from "@muster/integrations";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   bindHuntResultToAuthoritativeCase,
   codexOutputSchemaFor,
   DurableAgentRuntime,
+  parsePersistedRequest,
 } from "./runtime.ts";
 
 const integration = process.env.MUSTER_INTEGRATION_TESTS === "true";
 const describeIntegration = integration ? describe.sequential : describe.skip;
 
 describe("Codex structured output schema", () => {
+  it("preserves Slack harness mode for live connector context", () => {
+    expect(
+      parsePersistedRequest({
+        kind: "direct_message",
+        humanRequest: "Which Tawny hosts need attention?",
+        harness: { mode: "slack" },
+      }),
+    ).toMatchObject({
+      kind: "direct_message",
+      humanRequest: "Which Tawny hosts need attention?",
+      harness: { mode: "slack" },
+    });
+  });
+
   it("removes unsupported URI formats while preserving authoritative validation", () => {
     const generated = z.toJSONSchema(AgentStructuredOutputSchemas.HuntResult, {
       target: "draft-2020-12",
@@ -169,7 +186,10 @@ describeIntegration("durable agent runtime", () => {
     throw new Error(`Run ${runId} did not reach ${status}`);
   }
 
-  async function directMessageSource(suffix: string) {
+  async function directMessageSource(
+    suffix: string,
+    targetAgentId = agentId,
+  ) {
     const [room] = await database()
       .select({ id: schema.rooms.id })
       .from(schema.rooms)
@@ -178,7 +198,7 @@ describeIntegration("durable agent runtime", () => {
         and(
           eq(schema.roomMemberships.organisationId, organisationId),
           eq(schema.roomMemberships.roomId, schema.rooms.id),
-          eq(schema.roomMemberships.actorId, agentId),
+          eq(schema.roomMemberships.actorId, targetAgentId),
         ),
       )
       .where(
@@ -424,6 +444,162 @@ describeIntegration("durable agent runtime", () => {
       "cost_ceiling",
     );
     costRuntime.stop();
+  });
+
+  it("loads live connector evidence for Slack runs", async () => {
+    const [jessie] = await database()
+      .select()
+      .from(schema.agentDefinitions)
+      .where(eq(schema.agentDefinitions.name, "Jessie"))
+      .limit(1);
+    if (!jessie) throw new Error("Bootstrapped Jessie required");
+    const source = await directMessageSource("slack-live-context", jessie.id);
+    const connectorServer = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify([
+          {
+            id: "synthetic-host-20",
+            hostname: "synthetic-host-20.example.test",
+            status: "online",
+          },
+        ]),
+      );
+    });
+    await new Promise<void>((resolve) =>
+      connectorServer.listen(0, "127.0.0.1", resolve),
+    );
+    const address = connectorServer.address();
+    if (!address || typeof address === "string")
+      throw new Error("Synthetic connector port unavailable");
+    const integrationId = newId();
+    const templateId = newId();
+    const encryptionKey = `synthetic-connector-key-${newId()}`;
+    const previousEncryptionKey = process.env.CONNECTOR_ENCRYPTION_KEY;
+    let runtime: DurableAgentRuntime | undefined;
+
+    try {
+      await database()
+        .insert(schema.integrationRecords)
+        .values({
+          id: integrationId,
+          organisationId,
+          product: "tawny",
+          instanceId: `runtime-slack-${integrationId}`,
+          displayName: "Synthetic live Tawny",
+          status: "configured",
+          mock: false,
+          configuration: {
+            product: "tawny",
+            instanceId: `runtime-slack-${integrationId}`,
+            displayName: "Synthetic live Tawny",
+            baseUrl: `http://127.0.0.1:${address.port}`,
+            allowedHosts: ["127.0.0.1"],
+            allowPrivateNetwork: true,
+            testMode: true,
+            authType: "none",
+            limits: {
+              timeoutMs: 500,
+              maxResponseBytes: 4_096,
+              maxRecords: 10,
+              maxPages: 1,
+              requestsPerMinute: 60,
+            },
+          },
+        });
+      await database()
+        .insert(schema.integrationQueryTemplates)
+        .values({
+          id: templateId,
+          organisationId,
+          integrationId,
+          templateKey: "tawny.inventory.list",
+          version: 1,
+          definition: {
+            key: "tawny.inventory.list",
+            version: 1,
+            displayName: "Synthetic Tawny inventory",
+            method: "GET",
+            pathTemplate: "/api/agents",
+            requiredCapability: "tawny.telemetry.read",
+            inputSchema: {
+              type: "object",
+              additionalProperties: false,
+            },
+            outputSchema: {
+              type: "array",
+              items: { type: "object" },
+            },
+          },
+          createdByActorId: requestedByActorId,
+        });
+      await database()
+        .insert(schema.integrationConnectorCredentials)
+        .values({
+          organisationId,
+          integrationId,
+          encryptedCredential: encryptConnectorAuth(
+            { type: "none" },
+            encryptionKey,
+          ),
+          rotatedByActorId: requestedByActorId,
+        });
+      process.env.CONNECTOR_ENCRYPTION_KEY = encryptionKey;
+      const run = await insertRun("slack-live-context", {
+        agentId: jessie.id,
+        roomId: source.roomId,
+        promptVersion: jessie.systemPromptVersion,
+        request: {
+          kind: "direct_message",
+          sourceMessageId: source.messageId,
+          humanRequest: "Which Tawny hosts need attention?",
+          traceId: `integration-slack-${source.messageId}`,
+          harness: { mode: "slack" },
+        },
+      });
+      runtime = new DurableAgentRuntime({
+        executionRuntime: "mock",
+        codexHome: "/tmp/muster-runtime-integration",
+        mockDelayMs: 10,
+      });
+      await runtime.dispatch();
+      await waitFor(run.id, "completed");
+
+      const [query] = await database()
+        .select()
+        .from(schema.integrationQueryRuns)
+        .where(
+          and(
+            eq(schema.integrationQueryRuns.organisationId, organisationId),
+            eq(schema.integrationQueryRuns.integrationId, integrationId),
+          ),
+        )
+        .limit(1);
+      expect(query).toMatchObject({
+        status: "succeeded",
+        requestedByActorId: jessie.id,
+        result: [
+          {
+            id: "synthetic-host-20",
+            hostname: "synthetic-host-20.example.test",
+            status: "online",
+          },
+        ],
+        requestMetadata: {
+          source: "agent-live-context",
+          agentRunId: run.id,
+          templateKey: "tawny.inventory.list",
+        },
+      });
+    } finally {
+      runtime?.stop();
+      if (previousEncryptionKey === undefined)
+        delete process.env.CONNECTOR_ENCRYPTION_KEY;
+      else process.env.CONNECTOR_ENCRYPTION_KEY = previousEncryptionKey;
+      await new Promise<void>((resolve) =>
+        connectorServer.close(() => resolve()),
+      );
+    }
   });
 
   it("correlates governed hunt evidence without obeying connector prompt injection", async () => {
