@@ -206,6 +206,16 @@ export class AlfieResearchDomainService {
         metadata: { feedback, briefHash: hash(item.brief) },
         traceId,
       });
+      await writeOutbox(tx, {
+        organisationId: subject.organisationId,
+        eventType: "research.brief.feedback",
+        aggregateType: "research_item",
+        aggregateId: itemId,
+        queueName: "muster-outbox",
+        payload: { researchItemId: itemId, feedback },
+        idempotencyKey: `research.brief.feedback:${itemId}:${traceId}`,
+        traceId,
+      });
       return item;
     });
   }
