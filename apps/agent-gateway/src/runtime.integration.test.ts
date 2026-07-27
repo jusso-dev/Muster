@@ -1,12 +1,37 @@
 import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDatabase, database, newId, schema } from "@muster/database";
-import { HuntResultSchema } from "@muster/contracts";
+import {
+  AgentStructuredOutputSchemas,
+  HuntResultSchema,
+} from "@muster/contracts";
 import { and, desc, eq } from "drizzle-orm";
-import { DurableAgentRuntime } from "./runtime.ts";
+import { z } from "zod";
+import { codexOutputSchemaFor, DurableAgentRuntime } from "./runtime.ts";
 
 const integration = process.env.MUSTER_INTEGRATION_TESTS === "true";
 const describeIntegration = integration ? describe.sequential : describe.skip;
+
+describe("Codex structured output schema", () => {
+  it("removes unsupported URI formats while preserving authoritative validation", () => {
+    const generated = z.toJSONSchema(
+      AgentStructuredOutputSchemas.HuntResult,
+      {
+        target: "draft-2020-12",
+        io: "output",
+      },
+    );
+    expect(JSON.stringify(generated)).toContain('"format":"uri"');
+    expect(JSON.stringify(codexOutputSchemaFor("HuntResult"))).not.toContain(
+      '"format":"uri"',
+    );
+    expect(
+      HuntResultSchema.shape.attackMappings.element.shape.supportingReferences.element.safeParse(
+        "not a URI",
+      ).success,
+    ).toBe(false);
+  });
+});
 
 describeIntegration("durable agent runtime", () => {
   let organisationId = "";

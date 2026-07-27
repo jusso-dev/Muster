@@ -103,6 +103,7 @@ async function approveLatest(page: Page, actionType: string) {
 test("real Tawny and Kelpie operations are governed, durable, and duplicate-safe", async ({
   page,
 }, testInfo) => {
+  test.setTimeout(180_000);
   test.skip(testInfo.project.name !== "chromium");
   test.skip(
     process.env.MUSTER_REAL_INTEGRATIONS !== "true",

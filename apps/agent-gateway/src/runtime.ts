@@ -40,6 +40,30 @@ type PersistedRequest = {
   traceId?: string | undefined;
 };
 
+function removeUnsupportedCodexSchemaFormats(value: unknown): unknown {
+  if (Array.isArray(value))
+    return value.map(removeUnsupportedCodexSchemaFormats);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, nested]) =>
+      key === "format" && nested === "uri"
+        ? []
+        : [[key, removeUnsupportedCodexSchemaFormats(nested)]],
+    ),
+  );
+}
+
+export function codexOutputSchemaFor(
+  schemaName: AgentStructuredOutputName,
+): Record<string, unknown> {
+  return removeUnsupportedCodexSchemaFormats(
+    z.toJSONSchema(AgentStructuredOutputSchemas[schemaName], {
+      target: "draft-2020-12",
+      io: "output",
+    }),
+  ) as Record<string, unknown>;
+}
+
 class RunFailure extends Error {
   constructor(
     message: string,
@@ -646,10 +670,7 @@ export class DurableAgentRuntime {
     });
     const result = await thread.run(prompt, {
       signal: controller.signal,
-      outputSchema: z.toJSONSchema(AgentStructuredOutputSchemas[schemaName], {
-        target: "draft-2020-12",
-        io: "output",
-      }),
+      outputSchema: codexOutputSchemaFor(schemaName),
     });
     let parsed: unknown;
     try {
