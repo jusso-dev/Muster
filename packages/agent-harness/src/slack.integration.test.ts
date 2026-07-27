@@ -153,6 +153,27 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
     expect(replay.duplicate).toBe(true);
     expect(first.inboxEvent?.id).toBeTruthy();
 
+    const socketPayload = {
+      type: "event_callback",
+      team_id: teamId,
+      event: {
+        type: "app_mention",
+        user: slackUserId,
+        channel: "C-synthetic",
+        text: "socket replay remains one invocation",
+      },
+    };
+    const socketFirst = await adapter.recordSocketEnvelope({
+      envelope_id: `envelope-first-${suffix}`,
+      payload: socketPayload,
+    });
+    const socketReplay = await adapter.recordSocketEnvelope({
+      envelope_id: `envelope-retry-${suffix}`,
+      payload: socketPayload,
+    });
+    expect(socketFirst.duplicate).toBe(false);
+    expect(socketReplay.duplicate).toBe(true);
+
     await processSlackInboxEvent(first.inboxEvent!.id);
     await processSlackInboxEvent(first.inboxEvent!.id);
     const [run] = await db

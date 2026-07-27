@@ -40,7 +40,9 @@ export async function GET(request: Request) {
         ),
       ),
     };
-    const installation = await new SlackGovernanceAdapter().install(
+    const slack = new SlackGovernanceAdapter();
+    await slack.consumeOAuthState(subject, state);
+    const installation = await slack.install(
       subject,
       code,
       process.env.SLACK_REDIRECT_URI ?? "",

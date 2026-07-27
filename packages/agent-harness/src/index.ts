@@ -368,6 +368,25 @@ export function verifySlackOAuthState(value: string) {
 export class SlackGovernanceAdapter {
   constructor(private readonly db = database()) {}
 
+  async consumeOAuthState(subject: AuthorisationSubject, state: string) {
+    requireCapability(subject, "administration.manage");
+    const stateHash = createHash("sha256").update(state).digest("hex");
+    const [consumed] = await this.db
+      .insert(schema.idempotencyRecords)
+      .values({
+        organisationId: subject.organisationId,
+        scope: "slack.oauth.state",
+        key: stateHash,
+        requestHash: stateHash,
+        responseStatus: 204,
+        responseBody: { consumed: true },
+        expiresAt: new Date(Date.now() + 15 * 60_000),
+      })
+      .onConflictDoNothing()
+      .returning({ key: schema.idempotencyRecords.key });
+    if (!consumed) throw new Error("Slack OAuth state has already been used");
+  }
+
   async install(subject: AuthorisationSubject, code: string, redirectUri: string) {
     requireCapability(subject, "administration.manage");
     const clientId = process.env.SLACK_CLIENT_ID;
@@ -391,36 +410,56 @@ export class SlackGovernanceAdapter {
       encryptionKey(),
     );
     return this.db.transaction(async (tx) => {
-      const [installation] = await tx
-        .insert(schema.slackInstallations)
-        .values({
-          id: newId(),
-          organisationId: subject.organisationId,
-          teamId: payload.team.id,
-          teamName: payload.team.name,
-          enterpriseId: payload.enterprise?.id,
-          botUserId: payload.bot_user_id,
-          scopes,
-          encryptedBotToken,
-          installedByActorId: subject.actorId,
-          status: "active",
-        })
-        .onConflictDoUpdate({
-          target: schema.slackInstallations.teamId,
-          set: {
-            organisationId: subject.organisationId,
-            teamName: payload.team.name,
-            enterpriseId: payload.enterprise?.id,
-            botUserId: payload.bot_user_id,
-            scopes,
-            encryptedBotToken,
-            installedByActorId: subject.actorId,
-            status: "active",
-            revokedAt: null,
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
+      const [existing] = await tx
+        .select()
+        .from(schema.slackInstallations)
+        .where(eq(schema.slackInstallations.teamId, payload.team.id))
+        .limit(1);
+      if (
+        existing &&
+        existing.organisationId !== subject.organisationId
+      ) {
+        throw new Error("Slack workspace is already connected to another organisation");
+      }
+      const [installation] = existing
+        ? await tx
+            .update(schema.slackInstallations)
+            .set({
+              teamName: payload.team.name,
+              enterpriseId: payload.enterprise?.id,
+              botUserId: payload.bot_user_id,
+              scopes,
+              encryptedBotToken,
+              installedByActorId: subject.actorId,
+              status: "active",
+              revokedAt: null,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(schema.slackInstallations.id, existing.id),
+                eq(
+                  schema.slackInstallations.organisationId,
+                  subject.organisationId,
+                ),
+              ),
+            )
+            .returning()
+        : await tx
+            .insert(schema.slackInstallations)
+            .values({
+              id: newId(),
+              organisationId: subject.organisationId,
+              teamId: payload.team.id,
+              teamName: payload.team.name,
+              enterpriseId: payload.enterprise?.id,
+              botUserId: payload.bot_user_id,
+              scopes,
+              encryptedBotToken,
+              installedByActorId: subject.actorId,
+              status: "active",
+            })
+            .returning();
       if (!installation) throw new Error("Slack installation was not persisted");
       await appendAuditEvent(tx, {
         organisationId: subject.organisationId,
@@ -502,10 +541,9 @@ export class SlackGovernanceAdapter {
     payload: Record<string, unknown>;
   }) {
     if (!envelope.envelope_id.trim()) throw new Error("Slack envelope is missing");
-    return this.recordEvent(
-      JSON.stringify({ envelope_id: envelope.envelope_id, payload: envelope.payload }),
-      envelope.payload,
-    );
+    // Envelope ids are transport-attempt ids. Hash only the Slack payload when
+    // it lacks an event id so reconnect delivery cannot invoke an agent twice.
+    return this.recordEvent(JSON.stringify(envelope.payload), envelope.payload);
   }
 
   async health(subject: AuthorisationSubject) {
@@ -826,6 +864,13 @@ function slackText(value: unknown, max = 2_000) {
   });
 }
 
+function slackMrkdwn(value: unknown, max = 2_000) {
+  return slackText(value, max)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 async function slackApi(token: string, method: string, body: Record<string, unknown>) {
   const response = await fetch(`https://slack.com/api/${method}`, {
     method: "POST",
@@ -847,13 +892,13 @@ export function slackResultBlocks(agentName: string, status: string, output: unk
     output && typeof output === "object" && !Array.isArray(output)
       ? (output as Record<string, unknown>)
       : {};
-  const summary = slackText(result.summary, 1_500) || "No typed result was produced.";
+  const summary = slackMrkdwn(result.summary, 1_500) || "No typed result was produced.";
   const confidence =
     typeof result.confidence === "number"
       ? `\n*Confidence:* ${Math.round(result.confidence * 100)}%`
       : "";
   const gaps = Array.isArray(result.gaps)
-    ? slackText(result.gaps.filter((gap): gap is string => typeof gap === "string").slice(0, 3).join("; "), 700)
+    ? slackMrkdwn(result.gaps.filter((gap): gap is string => typeof gap === "string").slice(0, 3).join("; "), 700)
     : "";
   const actions: Array<{
     type: "button";

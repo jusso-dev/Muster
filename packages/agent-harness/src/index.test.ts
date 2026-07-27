@@ -77,6 +77,12 @@ describe("Slack governed harness boundary", () => {
     expect(failedActions.elements.map((element) => element.action_id)).toContain("muster.retry");
     expect(failedActions.elements.map((element) => element.action_id)).toContain("muster.approval.view");
     expect(JSON.stringify(failed)).not.toContain("connector-token");
+
+    const escaped = slackResultBlocks("Jessie", "completed", {
+      summary: "External <@U123> & <https://untrusted.example|link>",
+    });
+    expect(JSON.stringify(escaped)).toContain("&lt;@U123&gt;");
+    expect(JSON.stringify(escaped)).not.toContain("<@U123>");
   });
 
   it("keeps Hermes, MCP, CLI, and HTTP invocations on one portable contract", () => {
