@@ -12,7 +12,7 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="flex min-h-[4.5rem] flex-wrap items-center gap-4 border-b px-4 py-3 tablet:px-5">
+    <header className="flex min-h-[4.5rem] shrink-0 flex-col items-stretch gap-3 border-b px-4 py-3 tablet:flex-row tablet:items-center tablet:gap-4 tablet:px-5">
       <div className="min-w-0 flex-1">
         {eyebrow && (
           <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -27,7 +27,9 @@ export function PageHeader({
         )}
       </div>
       {actions && (
-        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        <div className="flex flex-wrap items-center gap-2 tablet:justify-end">
+          {actions}
+        </div>
       )}
     </header>
   );

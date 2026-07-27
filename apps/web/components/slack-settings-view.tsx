@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -72,12 +80,19 @@ export function SlackSettingsView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [exposureEnabled, setExposureEnabled] = useState(true);
+  const [exposureDefault, setExposureDefault] = useState(false);
   const [revokeCandidate, setRevokeCandidate] = useState<Installation | null>(
     null,
   );
+  const hasLoaded = useRef(false);
+  const reconnectButton = useRef<HTMLButtonElement>(null);
+  const revokeDialog = useRef<HTMLDivElement>(null);
+  const revokeCancelButton = useRef<HTMLButtonElement>(null);
+  const revokeReturnFocus = useRef<HTMLButtonElement | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(!hasLoaded.current);
     try {
       const response = await fetch("/api/v1/slack/settings", {
         cache: "no-store",
@@ -92,6 +107,7 @@ export function SlackSettingsView() {
         );
       setSettings(payload.data);
       setError(null);
+      hasLoaded.current = true;
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -105,6 +121,14 @@ export function SlackSettingsView() {
 
   useEffect(() => void load(), [load]);
 
+  useEffect(() => {
+    if (!revokeCandidate) return;
+    const frame = requestAnimationFrame(() =>
+      revokeCancelButton.current?.focus(),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [revokeCandidate]);
+
   const activeInstallations = useMemo(
     () =>
       settings?.installations.filter(
@@ -116,6 +140,7 @@ export function SlackSettingsView() {
   const reconnect = async () => {
     setBusy("reconnect");
     setNotice(null);
+    setError(null);
     try {
       const response = await fetch("/api/v1/slack/install", {
         cache: "no-store",
@@ -139,6 +164,7 @@ export function SlackSettingsView() {
   const refreshHealth = async () => {
     setBusy("health");
     setNotice(null);
+    setError(null);
     try {
       const response = await fetch("/api/v1/slack/health", {
         cache: "no-store",
@@ -176,6 +202,7 @@ export function SlackSettingsView() {
     const values = new FormData(form);
     setBusy("identity");
     setNotice(null);
+    setError(null);
     try {
       await request("/api/v1/slack/identities", "POST", {
         installationId: values.get("installationId"),
@@ -205,6 +232,7 @@ export function SlackSettingsView() {
     const enabled = values.get("enabled") === "on";
     setBusy("exposure");
     setNotice(null);
+    setError(null);
     try {
       await request("/api/v1/slack/exposures", "PUT", {
         installationId: values.get("installationId"),
@@ -232,6 +260,8 @@ export function SlackSettingsView() {
     if (!revokeCandidate) return;
     setBusy("revoke");
     setNotice(null);
+    setError(null);
+    let completed = false;
     try {
       const response = await fetch(
         `/api/v1/slack/install?installationId=${encodeURIComponent(revokeCandidate.id)}`,
@@ -245,6 +275,7 @@ export function SlackSettingsView() {
       setRevokeCandidate(null);
       await load();
       setNotice("Slack installation revoked. Existing tokens were replaced.");
+      completed = true;
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -253,6 +284,41 @@ export function SlackSettingsView() {
       );
     } finally {
       setBusy(null);
+      if (completed)
+        requestAnimationFrame(() => reconnectButton.current?.focus());
+    }
+  };
+
+  const closeRevoke = () => {
+    const returnTarget = revokeReturnFocus.current;
+    setRevokeCandidate(null);
+    requestAnimationFrame(() => {
+      if (returnTarget?.isConnected) returnTarget.focus();
+      else reconnectButton.current?.focus();
+    });
+  };
+
+  const handleRevokeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape" && busy === null) {
+      event.preventDefault();
+      closeRevoke();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const controls = Array.from(
+      revokeDialog.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    );
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
     }
   };
 
@@ -273,24 +339,40 @@ export function SlackSettingsView() {
               Refresh diagnostics
             </Button>
             <Button
+              ref={reconnectButton}
               onClick={() => void reconnect()}
               disabled={busy !== null}
               state={busy === "reconnect" ? "loading" : "default"}
             >
-              Connect or reconnect Slack
+              {activeInstallations.length > 0
+                ? "Reconnect Slack"
+                : "Connect Slack"}
             </Button>
           </div>
         }
       />
 
-      <main className="scroll-region space-y-5 overflow-y-auto p-4 tablet:p-6">
+      <div
+        className="scroll-region min-h-0 flex-1 space-y-5 overflow-y-auto p-4 tablet:p-6"
+        aria-busy={loading}
+      >
         {error ? (
-          <p
+          <div
             role="alert"
-            className="border border-[var(--color-error)] bg-[var(--color-error-soft)] p-3 text-sm text-[var(--color-error)]"
+            className="flex flex-wrap items-center justify-between gap-3 border border-[var(--color-error)] bg-[var(--color-error-soft)] p-3 text-sm text-[var(--color-error)]"
           >
-            {error}
-          </p>
+            <p>{error}</p>
+            {!settings ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void load()}
+                disabled={loading}
+              >
+                Retry loading
+              </Button>
+            ) : null}
+          </div>
         ) : null}
         {notice ? (
           <p
@@ -370,7 +452,10 @@ export function SlackSettingsView() {
                     {installation.status === "active" ? (
                       <Button
                         variant="destructive"
-                        onClick={() => setRevokeCandidate(installation)}
+                        onClick={(event) => {
+                          revokeReturnFocus.current = event.currentTarget;
+                          setRevokeCandidate(installation);
+                        }}
                         disabled={busy !== null}
                       >
                         Revoke
@@ -384,6 +469,7 @@ export function SlackSettingsView() {
             <section className="grid gap-5 desktop:grid-cols-2">
               <form
                 className="border bg-card p-4 tablet:p-5"
+                aria-label="Map a Slack user"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void saveIdentity(event.currentTarget);
@@ -396,6 +482,21 @@ export function SlackSettingsView() {
                   Map one Slack user to one active Muster human. Approvals still
                   require the authoritative Muster capability checks.
                 </p>
+                {activeInstallations.length === 0 ? (
+                  <p
+                    className="mt-3 border bg-muted p-2 text-sm text-muted-foreground"
+                    role="note"
+                  >
+                    Connect an active Slack workspace before mapping users.
+                  </p>
+                ) : settings.actors.length === 0 ? (
+                  <p
+                    className="mt-3 border bg-muted p-2 text-sm text-muted-foreground"
+                    role="note"
+                  >
+                    No active Muster humans are available for identity mapping.
+                  </p>
+                ) : null}
                 <label className="mt-4 grid gap-1 text-sm font-medium">
                   Workspace
                   <select
@@ -474,6 +575,7 @@ export function SlackSettingsView() {
 
               <form
                 className="border bg-card p-4 tablet:p-5"
+                aria-label="Agent exposure policy"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void saveExposure(event.currentTarget);
@@ -487,6 +589,36 @@ export function SlackSettingsView() {
                   Direct-message and thread-context access are explicit per
                   agent.
                 </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Emergency execution control remains on each agent&apos;s{" "}
+                  {settings.agents[0] ? (
+                    <Link
+                      className="font-medium text-foreground underline underline-offset-4"
+                      href={`/agents/${settings.agents[0].id}/learning`}
+                    >
+                      kill switch
+                    </Link>
+                  ) : (
+                    "kill switch"
+                  )}
+                  .
+                </p>
+                {activeInstallations.length === 0 ? (
+                  <p
+                    className="mt-3 border bg-muted p-2 text-sm text-muted-foreground"
+                    role="note"
+                  >
+                    Connect an active Slack workspace before exposing agents.
+                  </p>
+                ) : settings.agents.length === 0 ? (
+                  <p
+                    className="mt-3 border bg-muted p-2 text-sm text-muted-foreground"
+                    role="note"
+                  >
+                    No active agents are available. Restore or configure an
+                    agent before creating a Slack policy.
+                  </p>
+                ) : null}
                 <label className="mt-4 grid gap-1 text-sm font-medium">
                   Workspace
                   <select
@@ -530,11 +662,17 @@ export function SlackSettingsView() {
                   />
                 </label>
                 <fieldset className="mt-3 grid gap-2 text-sm">
+                  <legend className="font-medium">Invocation policy</legend>
                   <label className="flex items-center gap-2">
                     <input
                       name="enabled"
                       type="checkbox"
-                      defaultChecked
+                      checked={exposureEnabled}
+                      onChange={(event) => {
+                        setExposureEnabled(event.currentTarget.checked);
+                        if (!event.currentTarget.checked)
+                          setExposureDefault(false);
+                      }}
                       disabled={busy !== null}
                     />{" "}
                     Enable this agent in Slack
@@ -543,7 +681,11 @@ export function SlackSettingsView() {
                     <input
                       name="isDefault"
                       type="checkbox"
-                      disabled={busy !== null}
+                      checked={exposureDefault}
+                      onChange={(event) =>
+                        setExposureDefault(event.currentTarget.checked)
+                      }
+                      disabled={!exposureEnabled || busy !== null}
                     />{" "}
                     Default agent for this workspace
                   </label>
@@ -652,14 +794,17 @@ export function SlackSettingsView() {
             </section>
           </>
         ) : null}
-      </main>
+      </div>
 
       {revokeCandidate ? (
         <div
+          ref={revokeDialog}
           className="fixed inset-0 z-50 grid place-items-center bg-[var(--color-overlay)] p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="revoke-slack-title"
+          aria-describedby="revoke-slack-description"
+          onKeyDown={handleRevokeKeyDown}
         >
           <section className="w-full max-w-md border bg-background p-5 shadow-2xl">
             <h2
@@ -668,7 +813,10 @@ export function SlackSettingsView() {
             >
               Revoke Slack workspace?
             </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p
+              id="revoke-slack-description"
+              className="mt-2 text-sm text-muted-foreground"
+            >
               This disconnects{" "}
               {revokeCandidate.teamName ?? revokeCandidate.teamId}, disables its
               Slack access, and replaces the stored token. This cannot be
@@ -676,8 +824,9 @@ export function SlackSettingsView() {
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <Button
+                ref={revokeCancelButton}
                 variant="outline"
-                onClick={() => setRevokeCandidate(null)}
+                onClick={closeRevoke}
                 disabled={busy !== null}
               >
                 Cancel
