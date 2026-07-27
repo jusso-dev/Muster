@@ -54,8 +54,9 @@ no agent is an unbounded background operator:
   source limits and approval for broader plans.
 - **Parker** — operational reporting with organisation-scoped weekly or
   monthly schedules at [`/settings/parker-reports`](apps/web/app/settings/parker-reports/page.tsx).
-  Each run produces a reproducible report manifest, review/version record, and
-  room post; email delivery remains separately approved. See the
+  A due occurrence creates one Parker-assigned review task; delegating that task
+  produces a reproducible report manifest, review/version record, and room post.
+  Email delivery remains separately approved. See the
   [Parker report runbook](docs/operations/parker-reports.md).
 
 For a disposable evaluation, create three explicit tasks rather than treating
