@@ -1238,6 +1238,22 @@ export async function processSlackInboxEvent(inboxEventId: string) {
       .where(eq(schema.slackInboxEvents.id, row.inbox.id));
     return;
   }
+  const supportedInvocation =
+    event.type === "app_mention" ||
+    (event.type === "message" && event.channel_type === "im") ||
+    event.type === "slash_command" ||
+    Boolean(assistantThread);
+  if (!supportedInvocation) {
+    await db
+      .update(schema.slackInboxEvents)
+      .set({
+        status: "ignored",
+        processedAt: new Date(),
+        error: "unsupported_event_type",
+      })
+      .where(eq(schema.slackInboxEvents.id, row.inbox.id));
+    return;
+  }
   const exposures = await db
     .select({ exposure: schema.slackAgentExposures, agent: schema.agentDefinitions })
     .from(schema.slackAgentExposures)

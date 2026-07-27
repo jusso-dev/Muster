@@ -304,6 +304,35 @@ describeIntegration("synthetic Slack governed-agent delivery", () => {
     );
   });
 
+  it("ignores ordinary channel messages instead of treating them as agent requests", async () => {
+    const adapter = new SlackGovernanceAdapter(db);
+    const ordinaryMessage = {
+      type: "event_callback",
+      team_id: teamId,
+      event_id: `Ev-ordinary-message-${suffix}`,
+      event: {
+        type: "message",
+        user: slackUserId,
+        channel: "C-synthetic",
+        channel_type: "channel",
+        text: "Synthetic channel conversation, not an agent request",
+      },
+    };
+    const received = await adapter.recordEvent(
+      JSON.stringify(ordinaryMessage),
+      ordinaryMessage,
+    );
+    await processSlackInboxEvent(received.inboxEvent!.id);
+    const [inbox] = await db
+      .select({ status: schema.slackInboxEvents.status, error: schema.slackInboxEvents.error })
+      .from(schema.slackInboxEvents)
+      .where(eq(schema.slackInboxEvents.id, received.inboxEvent!.id));
+    expect(inbox).toEqual({ status: "ignored", error: "unsupported_event_type" });
+    expect(
+      posted.filter((call) => call.method === "chat.postMessage"),
+    ).toHaveLength(1);
+  });
+
   it("handles cancel/retry actions and Assistant lifecycle out of order without leaking tenants", async () => {
     const adapter = new SlackGovernanceAdapter(db);
     const cancelPayload = {
