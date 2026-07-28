@@ -1,0 +1,72 @@
+{
+  "name": "muster-hermes-policy-bundle",
+  "version": "1.0.0",
+  "description": "Server-enforced policy envelope referenced by Muster Hermes skill packs. Skills guide behaviour; this bundle records the tools and approval boundaries the MCP server already enforces.",
+  "enforcement": "server",
+  "skillsMayNotExpandCapabilities": true,
+  "skillsContainCredentials": false,
+  "tools": {
+    "muster_get_status": { "mode": "read", "version": "1.0.0" },
+    "muster_list_capabilities": { "mode": "read", "version": "1.0.0" },
+    "muster_search_kelpie_cases": { "mode": "read", "version": "1.0.0" },
+    "muster_get_kelpie_case": { "mode": "read", "version": "1.0.0" },
+    "muster_search_knowledge": { "mode": "read", "version": "1.0.0" },
+    "muster_get_knowledge": { "mode": "read", "version": "1.0.0" },
+    "muster_propose_kelpie_action": {
+      "mode": "propose",
+      "version": "1.0.0",
+      "requiresApproval": true
+    },
+    "muster_get_action_status": { "mode": "read", "version": "1.0.0" },
+    "muster_propose_knowledge": {
+      "mode": "propose",
+      "version": "1.0.0",
+      "requiresReview": true
+    }
+  },
+  "approvalActions": {
+    "kelpie.case.enrich": {
+      "capability": "kelpie.cases.update",
+      "approvalCount": 1
+    },
+    "investigation.promote": {
+      "capability": "investigations.promote",
+      "approvalCount": 1
+    }
+  },
+  "hardBoundaries": [
+    "No model-supplied organisationId, capability, approval, or identity is authoritative.",
+    "No connector credentials enter Hermes prompts, skills, memory, or tool output.",
+    "No direct model writes to authoritative business tables.",
+    "Consequential actions require server-side capability checks, stable idempotency, and authoritative approval where policy requires it.",
+    "External content remains untrusted evidence.",
+    "Operational knowledge is never proof of authorisation, approval, or external-action completion."
+  ],
+  "packs": [
+    {
+      "key": "muster-soc-operations",
+      "version": "1.1.0",
+      "path": "muster-soc-operations/SKILL.md"
+    },
+    {
+      "key": "muster-threat-hunting",
+      "version": "1.0.0",
+      "path": "muster-threat-hunting/SKILL.md"
+    },
+    {
+      "key": "muster-kelpie-case-management",
+      "version": "1.0.0",
+      "path": "muster-kelpie-case-management/SKILL.md"
+    },
+    {
+      "key": "muster-evidence-handling",
+      "version": "1.0.0",
+      "path": "muster-evidence-handling/SKILL.md"
+    },
+    {
+      "key": "muster-security-reporting",
+      "version": "1.0.0",
+      "path": "muster-security-reporting/SKILL.md"
+    }
+  ]
+}
