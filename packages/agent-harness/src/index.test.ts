@@ -3,8 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentHarnessInvokeSchema } from "@muster/contracts";
 import {
   missingSlackBotScopes,
+  normaliseSlackAgentRouteText,
   normaliseSlackConversation,
   requiredSlackBotScopes,
+  selectSlackExposedAgent,
   SlackRateLimitError,
   slackApi,
   slackHarnessMetrics,
@@ -13,6 +15,64 @@ import {
   verifySlackOAuthState,
   verifySlackRequest,
 } from "./index";
+
+describe("Slack agent routing", () => {
+  const eligible = [
+    {
+      agent: { name: "Parker" },
+      exposure: { isDefault: true },
+    },
+    {
+      agent: { name: "Jessie" },
+      exposure: { isDefault: false },
+    },
+    {
+      agent: { name: "Alfie" },
+      exposure: { isDefault: false },
+    },
+  ] as const;
+
+  it("routes natural greetings and explicit phrases to the named agent", () => {
+    expect(selectSlackExposedAgent(eligible, "Hey Jessie you there")?.agent.name).toBe(
+      "Jessie",
+    );
+    expect(selectSlackExposedAgent(eligible, "hi alfie")?.agent.name).toBe("Alfie");
+    expect(
+      selectSlackExposedAgent(eligible, "Jessie What Kelpie cases are open?")
+        ?.agent.name,
+    ).toBe("Jessie");
+    expect(selectSlackExposedAgent(eligible, "use Alfie for research")?.agent.name).toBe(
+      "Alfie",
+    );
+    expect(
+      selectSlackExposedAgent(eligible, "talk to Jessie about UniFi")?.agent.name,
+    ).toBe("Jessie");
+    expect(
+      selectSlackExposedAgent(eligible, "can I chat with Alfie please")?.agent.name,
+    ).toBe("Alfie");
+    expect(
+      selectSlackExposedAgent(eligible, "<@U0BOT> hey Jessie — status?")?.agent.name,
+    ).toBe("Jessie");
+  });
+
+  it("falls back to the default agent when no name is addressed", () => {
+    expect(selectSlackExposedAgent(eligible, "hello")?.agent.name).toBe("Parker");
+    expect(
+      selectSlackExposedAgent(eligible, "what can you help me with")?.agent.name,
+    ).toBe("Parker");
+  });
+
+  it("routes talk/chat-with phrases to the first named agent", () => {
+    expect(
+      selectSlackExposedAgent(eligible, "can i talk with jessie or alfie")
+        ?.agent.name,
+    ).toBe("Jessie");
+  });
+
+  it("normalises Slack mention markup before matching", () => {
+    expect(normaliseSlackAgentRouteText("<@U123> Jessie hello")).toBe("Jessie hello");
+  });
+});
 
 describe("Slack governed harness boundary", () => {
   const originalPublicUrl = process.env.MUSTER_PUBLIC_URL;

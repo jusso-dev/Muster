@@ -1110,6 +1110,84 @@ function slackText(value: unknown, max = 2_000) {
   });
 }
 
+/**
+ * Strip Slack markup so agent routing can see plain names.
+ * Removes <@U…> mentions, <#C…|name> channels, and <http…|label> links.
+ */
+export function normaliseSlackAgentRouteText(raw: string): string {
+  return raw
+    .replace(/<@[^>]+>/g, " ")
+    .replace(/<#[^>|]+(?:\|[^>]*)?>/g, " ")
+    .replace(/<(https?:[^|>]+)(?:\|[^>]*)?>/gi, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Pick which exposed agent a Slack message addresses.
+ *
+ * Supports natural address forms humans actually type:
+ * - "Jessie what cases are open?"
+ * - "Hey Jessie you there"
+ * - "use Alfie …" / "/muster Parker …"
+ * - "talk to Jessie" / "chat with Alfie" / "switch to Parker"
+ *
+ * Falls back to the default exposure, then first eligible.
+ * Name match prefers the longest agent name when one name is a prefix of another.
+ */
+export function selectSlackExposedAgent<
+  T extends {
+    agent: { name: string };
+    exposure: { isDefault: boolean };
+  },
+>(eligible: readonly T[], rawText: string): T | undefined {
+  if (eligible.length === 0) return undefined;
+  const text = normaliseSlackAgentRouteText(rawText);
+  const lower = text.toLowerCase();
+  const byLongestName = [...eligible].sort(
+    (left, right) => right.agent.name.length - left.agent.name.length,
+  );
+
+  const matchName = (candidate: string): T | undefined => {
+    const needle = candidate.trim().toLowerCase();
+    if (!needle) return undefined;
+    return byLongestName.find(
+      ({ agent }) => agent.name.toLowerCase() === needle,
+    );
+  };
+
+  // Explicit routing: /muster Jessie … | use Alfie … | talk to Parker …
+  const explicit =
+    lower.match(
+      /(?:^|\s)(?:\/muster|use|talk(?:ing)?\s+(?:to|with)|chat(?:ting)?\s+with|switch\s+to|ask)\s+([a-z][\w-]{0,40})(?:\s|$|[?,!.])/i,
+    )?.[1] ?? undefined;
+  const explicitHit = explicit ? matchName(explicit) : undefined;
+  if (explicitHit) return explicitHit;
+
+  // Leading agent name, optionally after a short greeting.
+  // "Jessie …" | "Hey Jessie …" | "hi alfie" | "yo parker — …"
+  for (const row of byLongestName) {
+    const name = row.agent.name.toLowerCase();
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const leading = new RegExp(
+      `^(?:(?:hey|hi|hello|yo|ok|okay|please|sup|g'day|gday|howdy)[,!:.\\s]+)?${escaped}(?:\\b|\\s|$|[?,!.])`,
+      "i",
+    );
+    if (leading.test(lower)) return row;
+  }
+
+  // Bare name only.
+  const exact = matchName(lower);
+  if (exact) return exact;
+
+  return (
+    eligible.find(({ exposure }) => exposure.isDefault) ?? eligible[0]
+  );
+}
+
 function slackMrkdwn(value: unknown, max = 2_000) {
   return slackText(value, max)
     .replaceAll("&", "&amp;")
@@ -1722,10 +1800,6 @@ export async function processSlackInboxEvent(inboxEventId: string) {
       ? slackText(payload.message?.text, 3_500)
       : "";
   const text = slackText(event.text, 4_000);
-  const requested = text
-    .match(/(?:\/muster|use)\s+([\w -]+)/i)?.[1]
-    ?.trim()
-    .toLowerCase();
   const direct = event.channel_type === "im" || Boolean(assistantThread);
   const eligible = exposures.filter(({ exposure }) => {
     // Empty allow-list means every channel (DMs still require allowDirectMessages).
@@ -1738,17 +1812,8 @@ export async function processSlackInboxEvent(inboxEventId: string) {
       allowedChannels.length === 0 || allowedChannels.includes(channelId);
     return direct ? exposure.allowDirectMessages : allowed;
   });
-  // Route: "use Jessie …" / "/muster Alfie …" / "Jessie …" then default agent.
-  const selected =
-    eligible.find(({ agent }) => agent.name.toLowerCase() === requested) ??
-    eligible.find(({ agent }) =>
-      text.toLowerCase().startsWith(`${agent.name.toLowerCase()} `),
-    ) ??
-    eligible.find(
-      ({ agent }) => text.toLowerCase() === agent.name.toLowerCase(),
-    ) ??
-    eligible.find(({ exposure }) => exposure.isDefault) ??
-    eligible[0];
+  // Route: "Hey Jessie …", "use Alfie …", "/muster Parker …", bare "Jessie", else default.
+  const selected = selectSlackExposedAgent(eligible, text);
   if (!selected) {
     await db
       .update(schema.slackInboxEvents)
