@@ -3,7 +3,8 @@
 FROM node:26-bookworm-slim AS build
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable
+# Node 26 official slim images no longer ship corepack on PATH by default.
+RUN npm install -g corepack@latest && corepack enable
 WORKDIR /workspace
 COPY . .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
