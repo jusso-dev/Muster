@@ -29,7 +29,7 @@ x-muster-environment: &muster-environment
   MUSTER_MOCK_INTEGRATIONS: "true"
   MUSTER_AGENT_RUNTIME: ${MUSTER_AGENT_RUNTIME:-codex}
   AGENT_GATEWAY_URL: http://agent-gateway:3002
-  MUSTER_AGENT_GATEWAY_TOKEN: ${MUSTER_AGENT_GATEWAY_TOKEN:-local-agent-gateway-token-change-me-32-characters}
+  MUSTER_AGENT_GATEWAY_TOKEN: ${MUSTER_AGENT_GATEWAY_TOKEN:?set MUSTER_AGENT_GATEWAY_TOKEN to a unique secret}
   CODEX_HOME: /var/lib/muster/codex
 
 services:

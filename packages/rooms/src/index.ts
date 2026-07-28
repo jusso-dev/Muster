@@ -699,6 +699,7 @@ export class RoomService {
           membershipRole: schema.roomMemberships.membershipRole,
           policies: schema.rooms.policies,
           archivedAt: schema.rooms.archivedAt,
+          roomType: schema.rooms.roomType,
         })
         .from(schema.roomMemberships)
         .innerJoin(
@@ -929,6 +930,28 @@ export class RoomService {
         idempotencyKey: `${eventType}:${parsed.idempotencyKey}`,
         traceId,
       });
+      // Durable direct-message agent evaluation in the same transaction as the
+      // message so a crash after commit still redrives invocation via outbox.
+      if (
+        membership.roomType === "direct" &&
+        !parsed.threadParentId &&
+        parsed.messageType === "text"
+      ) {
+        await writeOutbox(tx, {
+          organisationId: subject.organisationId,
+          eventType: "agent.direct_message.evaluate",
+          aggregateType: "message",
+          aggregateId: id,
+          queueName: "muster-agents",
+          payload: {
+            messageId: id,
+            roomId: parsed.roomId,
+            actorId: subject.actorId,
+          },
+          idempotencyKey: `agent.direct_message.evaluate:${id}`,
+          traceId,
+        });
+      }
       await appendAuditEvent(tx, {
         organisationId: subject.organisationId,
         actorId: subject.actorId,
@@ -1487,3 +1510,7 @@ export class RoomService {
 }
 
 export * from "./governance.ts";
+export {
+  AgentDirectMessageDomainService,
+  type DirectMessageInvocation,
+} from "./agent-direct-message.ts";

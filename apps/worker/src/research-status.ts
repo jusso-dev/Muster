@@ -1,5 +1,5 @@
 import { database, newId, schema, writeOutbox } from "@muster/database";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 type Transaction = Parameters<
   Parameters<ReturnType<typeof database>["transaction"]>[0]
@@ -39,11 +39,27 @@ export async function appendResearchTerminalMessage(
       ),
     )
     .innerJoin(
+      schema.rooms,
+      and(
+        eq(schema.rooms.organisationId, input.organisationId),
+        eq(schema.rooms.id, schema.researchWatchlists.roomId),
+        isNull(schema.rooms.archivedAt),
+      ),
+    )
+    .innerJoin(
       schema.agentRuns,
       and(
         eq(schema.agentRuns.organisationId, input.organisationId),
         eq(schema.agentRuns.id, schema.researchRuns.agentRunId),
         eq(schema.agentRuns.status, expectedStatus),
+      ),
+    )
+    .innerJoin(
+      schema.roomMemberships,
+      and(
+        eq(schema.roomMemberships.organisationId, input.organisationId),
+        eq(schema.roomMemberships.roomId, schema.researchWatchlists.roomId),
+        eq(schema.roomMemberships.actorId, schema.agentRuns.agentId),
       ),
     )
     .where(

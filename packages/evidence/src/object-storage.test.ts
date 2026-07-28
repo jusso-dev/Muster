@@ -10,6 +10,8 @@ describe("versioned object storage", () => {
   it("downloads the exact immutable version", async () => {
     vi.stubEnv("OBJECT_STORAGE_ENDPOINT", "http://127.0.0.1:9000");
     vi.stubEnv("OBJECT_STORAGE_BUCKET", "muster-evidence");
+    vi.stubEnv("OBJECT_STORAGE_ACCESS_KEY", "test-access-key");
+    vi.stubEnv("OBJECT_STORAGE_SECRET_KEY", "test-secret-key");
     const body = new TextEncoder().encode("exact version");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(body, {

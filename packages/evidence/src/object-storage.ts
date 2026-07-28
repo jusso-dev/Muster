@@ -29,6 +29,8 @@ export interface CleanupObjectStorage extends ContentObjectStorage {
   deleteObject(storageKey: string, versionId: string): Promise<void>;
 }
 
+const DEFAULT_OBJECT_STORAGE_TIMEOUT_MS = 30_000;
+
 function sha256(value: string | Uint8Array) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -115,14 +117,27 @@ function signingHeaders(
   };
 }
 
+function requireEnv(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`${name} is required for object storage`);
+  }
+  return value;
+}
+
 function storageConfiguration() {
   return {
     endpoint: process.env.OBJECT_STORAGE_ENDPOINT ?? "http://127.0.0.1:9000",
     bucket: process.env.OBJECT_STORAGE_BUCKET ?? "muster-evidence",
     region: process.env.OBJECT_STORAGE_REGION ?? "us-east-1",
-    accessKey: process.env.OBJECT_STORAGE_ACCESS_KEY ?? "muster",
-    secretKey: process.env.OBJECT_STORAGE_SECRET_KEY ?? "local-minio-secret",
+    accessKey: requireEnv("OBJECT_STORAGE_ACCESS_KEY"),
+    secretKey: requireEnv("OBJECT_STORAGE_SECRET_KEY"),
   };
+}
+
+function requestSignal(signal?: AbortSignal) {
+  if (signal) return signal;
+  return AbortSignal.timeout(DEFAULT_OBJECT_STORAGE_TIMEOUT_MS);
 }
 
 export async function checkObjectStorage(signal?: AbortSignal) {
@@ -140,7 +155,7 @@ export async function checkObjectStorage(signal?: AbortSignal) {
       accessKey,
       secretKey,
     ),
-    ...(signal ? { signal } : {}),
+    signal: requestSignal(signal),
   });
   if (!response.ok) {
     throw new Error(
@@ -166,6 +181,7 @@ export const defaultObjectStorage: CleanupObjectStorage = {
         object.contentType,
       ),
       body: Buffer.from(object.body),
+      signal: requestSignal(),
     });
     if (!response.ok) {
       throw new Error(
@@ -188,6 +204,7 @@ export const defaultObjectStorage: CleanupObjectStorage = {
         accessKey,
         secretKey,
       ),
+      signal: requestSignal(),
     });
     if (!response.ok) {
       throw new Error(
@@ -214,6 +231,7 @@ export const defaultObjectStorage: CleanupObjectStorage = {
         accessKey,
         secretKey,
       ),
+      signal: requestSignal(),
     });
     if (response.status === 404) return null;
     if (!response.ok) {
@@ -261,6 +279,7 @@ export const defaultObjectStorage: CleanupObjectStorage = {
         accessKey,
         secretKey,
       ),
+      signal: requestSignal(),
     });
     if (!response.ok) {
       throw new Error(
@@ -287,6 +306,7 @@ export const defaultObjectStorage: CleanupObjectStorage = {
         accessKey,
         secretKey,
       ),
+      signal: requestSignal(),
     });
     if (!response.ok && response.status !== 404) {
       throw new Error(
