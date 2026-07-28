@@ -99,10 +99,11 @@ Slack how-to
 ------------
   1. DM the Muster Slack bot (or post in a channel).
   2. Bare message → Parker (default).
-  3. Name prefix routes agents:
+  3. Address an agent by name (not only at the very start):
        Jessie which Tawny hosts look unhealthy?
-       Alfie summarise recent threat intel on …
-       Parker what Kelpie cases are open?
+       Hey Jessie you there
+       talk to Alfie about threat intel
+       use Parker for a case brief
   4. Your Slack user must be identity-mapped in Muster
      (otherwise inbox status = identity_unmapped).
   5. Worker metrics should show:

@@ -37,7 +37,10 @@ Muster connectors ──worker──► Kelpie / Tawny / UniFi (governed queries
 Slack routing:
 
 - bare message → **Parker** (default)
-- `Jessie list open cases` / `use Alfie …` / `/muster Jessie …` → named agent
+- natural address forms all work:
+  - `Jessie list open cases`
+  - `Hey Jessie you there`
+  - `use Alfie …` / `talk to Jessie` / `chat with Alfie` / `/muster Parker …`
 - DMs work when `allow_direct_messages=true`
 - Your Slack user must be **identity-mapped** or events die as `identity_unmapped`
 
