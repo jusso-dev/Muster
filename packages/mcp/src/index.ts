@@ -1,9 +1,13 @@
 export {
+  MCP_READ_TOOL_NAMES,
   MCP_SERVER_NAME,
   MCP_SERVER_VERSION,
   MCP_TOOL_NAMES,
   MCP_TOOL_VERSIONS,
+  MCP_WRITE_TOOL_NAMES,
   type McpToolName,
+  type McpReadToolName,
+  type McpWriteToolName,
 } from "./constants.ts";
 export { McpToolError, type McpToolErrorCode } from "./errors.ts";
 export {
@@ -33,4 +37,10 @@ export {
   searchKelpieCases,
   type ToolResult,
 } from "./tools.ts";
+export {
+  getActionStatus,
+  proposeKelpieAction,
+  McpKelpieActionProposalSchema,
+  type McpKelpieActionProposal,
+} from "./actions.ts";
 export { recordInvocation, type InvocationOutcome } from "./audit.ts";

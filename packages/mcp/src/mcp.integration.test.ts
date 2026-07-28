@@ -217,7 +217,11 @@ describeIntegration("Muster MCP vertical slice", () => {
       organisationId,
       actorType: "service",
       displayName: `Hermes MCP synthetic ${fullActorId}`,
-      capabilityAssignments: ["kelpie.cases.read"],
+      capabilityAssignments: [
+        "kelpie.cases.read",
+        "kelpie.cases.create",
+        "kelpie.cases.update",
+      ],
     });
     restrictedActorId = newId();
     await db.insert(schema.actors).values({
@@ -326,7 +330,7 @@ describeIntegration("Muster MCP vertical slice", () => {
     await closeDatabase();
   });
 
-  it("advertises exactly the four intended read-only tools", async () => {
+  it("defaults to the four read-only tools and only advertises write tools when scoped", async () => {
     const db = database();
     const { token } = await createInstallation(db, {
       organisationId,
@@ -337,12 +341,38 @@ describeIntegration("Muster MCP vertical slice", () => {
     });
     const client = await connectedClient(db, token);
     const { tools } = await client.listTools();
+    // Server always registers the full tool surface; scope/capability gate
+    // execution. Default installation scopes remain the four read tools.
     expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "muster_get_action_status",
       "muster_get_kelpie_case",
       "muster_get_status",
       "muster_list_capabilities",
+      "muster_propose_kelpie_action",
       "muster_search_kelpie_cases",
     ]);
+
+    const { MCP_READ_TOOL_NAMES, MCP_TOOL_NAMES } = await import("./constants.ts");
+    const scoped = await createInstallation(db, {
+      organisationId,
+      boundActorId: fullActorId,
+      installedByActorId: administratorActorId,
+      name: "Hermes write-enabled",
+      scopes: MCP_TOOL_NAMES,
+      traceId: randomUUID(),
+    });
+    const writeClient = await connectedClient(db, scoped.token);
+    const capabilities = await writeClient.callTool({
+      name: "muster_list_capabilities",
+      arguments: {},
+    });
+    const payload = JSON.parse(
+      (capabilities.content as { type: string; text: string }[])[0]!.text,
+    );
+    expect(payload.scopes).toEqual(expect.arrayContaining([...MCP_TOOL_NAMES]));
+    expect(payload.tools.map((t: { name: string }) => t.name)).toEqual(
+      expect.arrayContaining([...MCP_READ_TOOL_NAMES, "muster_propose_kelpie_action"]),
+    );
   });
 
   it("fails closed for missing, malformed, revoked, and cross-organisation credentials", async () => {
@@ -707,4 +737,135 @@ describeIntegration("Muster MCP vertical slice", () => {
       .limit(1);
     expect((audit?.metadata as Record<string, unknown>)?.outcome).toBe("error");
   }, 10_000);
+  it("propose_kelpie_action is approval-gated, idempotent, and resumable", async () => {
+    const db = database();
+    const { MCP_TOOL_NAMES } = await import("./constants.ts");
+    const { token } = await createInstallation(db, {
+      organisationId,
+      boundActorId: fullActorId,
+      installedByActorId: administratorActorId,
+      name: "Hermes write",
+      scopes: MCP_TOOL_NAMES,
+      traceId: randomUUID(),
+    });
+    const client = await connectedClient(db, token);
+    const idempotencyKey = `mcp-write-test-${randomUUID()}`;
+    const proposed = await client.callTool({
+      name: "muster_propose_kelpie_action",
+      arguments: {
+        operation: "kelpie.timeline.comment",
+        idempotencyKey,
+        caseId: "case-synthetic-1",
+        body: "Synthetic MCP-proposed timeline comment for approval.",
+        evidenceReferences: ["query-run-ref-1"],
+      },
+    });
+    expect(proposed.isError).toBeFalsy();
+    const first = JSON.parse(
+      (proposed.content as { type: string; text: string }[])[0]!.text,
+    );
+    expect(first.status).toBe("awaiting_approval");
+    expect(first.duplicate).toBe(false);
+    expect(first.approvalId).toBeTruthy();
+    expect(first.deliveryId).toBeTruthy();
+    expect(first.resumption.tool).toBe("muster_get_action_status");
+
+    const replay = await client.callTool({
+      name: "muster_propose_kelpie_action",
+      arguments: {
+        operation: "kelpie.timeline.comment",
+        idempotencyKey,
+        caseId: "case-synthetic-1",
+        body: "Synthetic MCP-proposed timeline comment for approval.",
+      },
+    });
+    const second = JSON.parse(
+      (replay.content as { type: string; text: string }[])[0]!.text,
+    );
+    expect(second.duplicate).toBe(true);
+    expect(second.deliveryId).toBe(first.deliveryId);
+    expect(second.approvalId).toBe(first.approvalId);
+
+    const status = await client.callTool({
+      name: "muster_get_action_status",
+      arguments: { deliveryId: first.deliveryId },
+    });
+    const resumed = JSON.parse(
+      (status.content as { type: string; text: string }[])[0]!.text,
+    );
+    expect(resumed.deliveryId).toBe(first.deliveryId);
+    expect(resumed.status).toBe("awaiting_approval");
+    expect(resumed.approval?.status).toBe("pending");
+
+    // Model-supplied org/capability cannot create an action in another org.
+    const cross = await client.callTool({
+      name: "muster_propose_kelpie_action",
+      arguments: {
+        operation: "kelpie.timeline.comment",
+        idempotencyKey: `mcp-write-cross-${randomUUID()}`,
+        caseId: "case-x",
+        body: "should still be org-bound",
+        organisationId: otherOrganisationId,
+        capabilities: ["administration.manage"],
+      },
+    });
+    expect(cross.isError).toBeFalsy();
+    const crossPayload = JSON.parse(
+      (cross.content as { type: string; text: string }[])[0]!.text,
+    );
+    const [row] = await db
+      .select({ organisationId: schema.integrationDeliveries.organisationId })
+      .from(schema.integrationDeliveries)
+      .where(eq(schema.integrationDeliveries.id, crossPayload.deliveryId))
+      .limit(1);
+    expect(row?.organisationId).toBe(organisationId);
+  });
+
+  it("denies propose_kelpie_action without scope or without capability", async () => {
+    const db = database();
+    // Default scopes are read-only — write tool is out of scope.
+    const { token: readOnlyToken } = await createInstallation(db, {
+      organisationId,
+      boundActorId: fullActorId,
+      installedByActorId: administratorActorId,
+      name: "Hermes read-only",
+      traceId: randomUUID(),
+    });
+    const readOnly = await connectedClient(db, readOnlyToken);
+    const scopedOut = await readOnly.callTool({
+      name: "muster_propose_kelpie_action",
+      arguments: {
+        operation: "kelpie.timeline.comment",
+        idempotencyKey: `scope-deny-${randomUUID()}`,
+        caseId: "c1",
+        body: "nope",
+      },
+    });
+    expect(scopedOut.isError).toBe(true);
+    expect(
+      (scopedOut.content as { type: string; text: string }[])[0]!.text,
+    ).toMatch(/not scoped|scope/i);
+
+    const { MCP_TOOL_NAMES } = await import("./constants.ts");
+    const { token: restrictedToken } = await createInstallation(db, {
+      organisationId,
+      boundActorId: restrictedActorId,
+      installedByActorId: administratorActorId,
+      name: "Hermes no update capability",
+      scopes: MCP_TOOL_NAMES,
+      traceId: randomUUID(),
+    });
+    const restricted = await connectedClient(db, restrictedToken);
+    const denied = await restricted.callTool({
+      name: "muster_propose_kelpie_action",
+      arguments: {
+        operation: "kelpie.timeline.comment",
+        idempotencyKey: `cap-deny-${randomUUID()}`,
+        caseId: "c1",
+        body: "nope",
+      },
+    });
+    expect(denied.isError).toBe(true);
+  });
+
 });
