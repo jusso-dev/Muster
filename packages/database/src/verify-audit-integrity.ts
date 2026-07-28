@@ -1,12 +1,19 @@
 import { asc, eq } from "drizzle-orm";
+import { z } from "zod";
 import { verifyAuditIntegrity } from "@muster/audit";
 import { closeDatabase, database, schema } from "./index.ts";
 
-const organisationId = process.env.MUSTER_AUDIT_ORGANISATION_ID;
+const organisationIdResult = z
+  .string()
+  .uuid()
+  .safeParse(process.env.MUSTER_AUDIT_ORGANISATION_ID);
 
-if (!organisationId) {
-  throw new Error("MUSTER_AUDIT_ORGANISATION_ID is required");
+if (!organisationIdResult.success) {
+  throw new Error(
+    "MUSTER_AUDIT_ORGANISATION_ID is required and must be a UUID",
+  );
 }
+const organisationId = organisationIdResult.data;
 
 try {
   const events = await database()

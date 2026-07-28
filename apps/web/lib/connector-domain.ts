@@ -94,6 +94,8 @@ export class ConnectorDomainService {
             status: "configured",
             mock: request.testMode,
             configuration: { ...publicConfiguration, authType: auth.type },
+            // Reactivate archived connectors so they reappear in list().
+            archivedAt: null,
             updatedAt: new Date(),
           })
           .where(

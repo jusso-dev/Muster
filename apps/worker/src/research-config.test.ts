@@ -8,14 +8,29 @@ function repositoryFile(path: string) {
   return readFileSync(new URL(path, `file://${repositoryRoot}/`), "utf8");
 }
 
+function extractComposeService(compose: string, service: string) {
+  const match = compose.match(
+    new RegExp(
+      `\\n  ${service}:\\n([\\s\\S]*?)(?=\\n  [a-zA-Z][\\w-]*:|\\n[a-zA-Z]|$)`,
+    ),
+  );
+  if (!match?.[1]) {
+    throw new Error(`Compose service block not found: ${service}`);
+  }
+  return match[1];
+}
+
 describe("Alfie homelab research configuration", () => {
   it("passes an explicitly configured feed-origin allowlist to web and worker only", () => {
     const compose = repositoryFile("deploy/docker/docker-compose.homelab.yml");
-    expect(
-      compose.match(
-        /MUSTER_RESEARCH_ALLOWED_FEED_ORIGINS: \$\{MUSTER_RESEARCH_ALLOWED_FEED_ORIGINS:-\}/g,
-      ),
-    ).toHaveLength(2);
+    const allowlist =
+      /MUSTER_RESEARCH_ALLOWED_FEED_ORIGINS: \$\{MUSTER_RESEARCH_ALLOWED_FEED_ORIGINS:-\}/;
+    const web = extractComposeService(compose, "web");
+    const worker = extractComposeService(compose, "worker");
+    const postgres = extractComposeService(compose, "postgres");
+    expect(web).toMatch(allowlist);
+    expect(worker).toMatch(allowlist);
+    expect(postgres).not.toMatch(/MUSTER_RESEARCH_ALLOWED_FEED_ORIGINS/);
   });
 
   it("documents an empty safe default without enabling a mock origin", () => {

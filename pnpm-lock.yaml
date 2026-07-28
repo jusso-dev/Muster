@@ -254,6 +254,9 @@ importers:
       '@muster/agents':
         specifier: workspace:*
         version: link:../../packages/agents
+      '@muster/authz':
+        specifier: workspace:*
+        version: link:../../packages/authz
       '@muster/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -269,6 +272,9 @@ importers:
       '@muster/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations
+      '@muster/rooms':
+        specifier: workspace:*
+        version: link:../../packages/rooms
       bullmq:
         specifier: 5.81.2
         version: 5.81.2
@@ -656,6 +662,9 @@ importers:
       '@muster/authz':
         specifier: workspace:*
         version: link:../authz
+      '@muster/config':
+        specifier: workspace:*
+        version: link:../config
       '@muster/contracts':
         specifier: workspace:*
         version: link:../contracts

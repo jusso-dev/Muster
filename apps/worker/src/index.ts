@@ -60,6 +60,15 @@ import {
 import { appendResearchTerminalMessage } from "./research-status.ts";
 import { queueDueParkerReports } from "./parker-scheduler.ts";
 import { processParkerReport } from "./parker-report.ts";
+import {
+  AgentDirectMessageDomainService,
+  type DirectMessageInvocation,
+} from "@muster/rooms";
+import {
+  capabilities,
+  type AuthorisationSubject,
+  type Capability,
+} from "@muster/authz";
 
 const redisUrl = new URL(process.env.REDIS_URL ?? "redis://localhost:6379");
 const connection = {
@@ -174,14 +183,28 @@ const authoritativeProcessor: Processor = async (job) => {
   }
   if (
     job.queueName === "muster-agents" &&
-    job.name !== "report.generate.queued"
+    job.name === "agent.direct_message.evaluate"
+  ) {
+    await processDirectMessageEvaluate(
+      job.data.organisationId,
+      job.data.aggregateId,
+      job.data.traceId,
+    );
+  }
+  if (
+    job.queueName === "muster-agents" &&
+    job.name !== "report.generate.queued" &&
+    job.name !== "agent.direct_message.evaluate"
   ) {
     const gatewayToken = process.env.MUSTER_AGENT_GATEWAY_TOKEN?.trim();
     if (!gatewayToken) throw new Error("Agent gateway token is not configured");
     const response = await fetch(
       `${process.env.AGENT_GATEWAY_URL ?? "http://agent-gateway:3002"}/v1/runs/dispatch`,
       {
-        headers: { authorization: `Bearer ${gatewayToken}` },
+        headers: {
+          authorization: `Bearer ${gatewayToken}`,
+          "x-muster-organisation-id": job.data.organisationId,
+        },
         method: "POST",
         signal: AbortSignal.timeout(10_000),
       },
@@ -2106,6 +2129,88 @@ for (const name of queueNames.filter((queue) => queue !== "muster-outbox")) {
     }),
   );
   workers.push(worker);
+}
+
+
+async function processDirectMessageEvaluate(
+  organisationId: string,
+  messageId: string,
+  traceId: string,
+) {
+  const db = database();
+  const [message] = await db
+    .select({
+      roomId: schema.messages.roomId,
+      authorActorId: schema.messages.authorActorId,
+    })
+    .from(schema.messages)
+    .where(
+      and(
+        eq(schema.messages.organisationId, organisationId),
+        eq(schema.messages.id, messageId),
+      ),
+    )
+    .limit(1);
+  if (!message) return;
+
+  const [actor] = await db
+    .select({
+      id: schema.actors.id,
+      organisationId: schema.actors.organisationId,
+      capabilityAssignments: schema.actors.capabilityAssignments,
+      status: schema.actors.status,
+      actorType: schema.actors.actorType,
+    })
+    .from(schema.actors)
+    .where(
+      and(
+        eq(schema.actors.organisationId, organisationId),
+        eq(schema.actors.id, message.authorActorId),
+        eq(schema.actors.actorType, "human"),
+        eq(schema.actors.status, "active"),
+      ),
+    )
+    .limit(1);
+  if (!actor) return;
+
+  const assigned = Array.isArray(actor.capabilityAssignments)
+    ? actor.capabilityAssignments.filter(
+        (value): value is Capability =>
+          typeof value === "string" &&
+          capabilities.includes(value as Capability),
+      )
+    : [];
+  const subject: AuthorisationSubject = {
+    actorId: actor.id,
+    organisationId: actor.organisationId,
+    capabilities: new Set(assigned),
+  };
+
+  let result: DirectMessageInvocation | null = null;
+  try {
+    result = await new AgentDirectMessageDomainService(db).maybeQueue(
+      subject,
+      { messageId, roomId: message.roomId },
+      traceId,
+    );
+  } catch (error) {
+    // Capability or eligibility failures are terminal for this redrive; do not
+    // poison the queue. Log and acknowledge the outbox job.
+    jsonLog("warn", "agent.direct_message.evaluate.skipped", {
+      organisationId,
+      messageId,
+      error: error instanceof Error ? error.message : "evaluate failed",
+    });
+    return;
+  }
+  if (result?.queued) {
+    jsonLog("info", "agent.direct_message.evaluate.queued", {
+      organisationId,
+      messageId,
+      agentRunId: result.agentRunId,
+      duplicate: result.duplicate,
+    });
+  }
 }
 
 async function dispatchOutbox() {

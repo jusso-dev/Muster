@@ -153,4 +153,33 @@ describe("audit chain", () => {
       legacyApprovalIdOmissions: [],
     });
   });
+
+  it("accepts legacy undefined approvalId on integration.action.failed", () => {
+    const historicalInput = {
+      ...base,
+      action: "integration.action.failed",
+      metadata: {
+        integrationId: "integration",
+        operation: "alerts.list",
+        capability: "alerts.read",
+        approvalId: undefined,
+      },
+    };
+    const historicalEvent = {
+      ...historicalInput,
+      metadata: {
+        integrationId: "integration",
+        operation: "alerts.list",
+        capability: "alerts.read",
+      },
+      eventHash: hashAuditEvent(historicalInput),
+    };
+
+    expect(verifyAuditIntegrity([historicalEvent])).toMatchObject({
+      outcome: "legacy-compatible-not-strict",
+      strict: { valid: false, brokenAt: 1 },
+      legacyCompatible: { valid: true },
+      legacyApprovalIdOmissions: [{ sequence: 1 }],
+    });
+  });
 });

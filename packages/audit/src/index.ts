@@ -34,6 +34,7 @@ type PersistedAuditEvent = HashableAuditEvent & { eventHash: string };
 const legacyApprovalIdActions = new Set([
   "integration.action.queued",
   "integration.action.succeeded",
+  "integration.action.failed",
 ]);
 
 function canonical(value: unknown): string {
