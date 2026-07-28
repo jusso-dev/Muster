@@ -45,6 +45,8 @@ const operationalTables = {
   auditEvents: schema.auditEvents,
   mcpInstallations: schema.mcpInstallations,
   operationalKnowledge: schema.operationalKnowledge,
+  governedMissions: schema.governedMissions,
+  governedMissionRuns: schema.governedMissionRuns,
 } as const;
 
 const db = database();

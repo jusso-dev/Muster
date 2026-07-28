@@ -2105,6 +2105,90 @@ export const operationalKnowledge = pgTable(
   ],
 );
 
+export const governedMissions = pgTable(
+  "governed_missions",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    status: text("status").notNull().default("active"),
+    capabilityEnvelope: jsonb("capability_envelope").notNull().default([]),
+    scheduleHint: text("schedule_hint"),
+    cancellationPolicy: jsonb("cancellation_policy").notNull().default({
+      killSwitchBlocksNew: true,
+    }),
+    hermesProfile: text("hermes_profile"),
+    createdByActorId: uuid("created_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    updatedByActorId: uuid("updated_by_actor_id").references(() => actors.id),
+    killSwitch: boolean("kill_switch").notNull().default(false),
+    ...timestamps,
+  },
+  (table) => [
+    index("governed_missions_org_status_idx").on(
+      table.organisationId,
+      table.status,
+    ),
+    uniqueIndex("governed_missions_org_name_unique").on(
+      table.organisationId,
+      table.name,
+    ),
+    check(
+      "governed_missions_status_check",
+      sql`${table.status} in ('active','paused','cancelled','archived')`,
+    ),
+    foreignKey({
+      name: "governed_missions_creator_org_fk",
+      columns: [table.createdByActorId, table.organisationId],
+      foreignColumns: [actors.id, actors.organisationId],
+    }),
+  ],
+);
+
+export const governedMissionRuns = pgTable(
+  "governed_mission_runs",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    missionId: uuid("mission_id")
+      .notNull()
+      .references(() => governedMissions.id),
+    idempotencyKey: text("idempotency_key").notNull(),
+    status: text("status").notNull().default("accepted"),
+    hermesInstallationId: uuid("hermes_installation_id").references(
+      () => mcpInstallations.id,
+    ),
+    hermesProfile: text("hermes_profile"),
+    initiatingActorId: uuid("initiating_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    deliveryEvidence: jsonb("delivery_evidence").notNull().default({}),
+    error: text("error"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("governed_mission_runs_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
+    ),
+    index("governed_mission_runs_mission_idx").on(
+      table.organisationId,
+      table.missionId,
+      table.createdAt,
+    ),
+    check(
+      "governed_mission_runs_status_check",
+      sql`${table.status} in ('accepted','blocked','running','succeeded','failed','cancelled')`,
+    ),
+  ],
+);
+
 export const integrationQueryTemplates = pgTable(
   "integration_query_templates",
   {

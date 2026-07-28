@@ -52,6 +52,22 @@
       "mode": "read",
       "version": "1.0.0",
       "requiresCapability": "audit.export"
+    },
+    "muster_list_missions": {
+      "mode": "read",
+      "version": "1.0.0"
+    },
+    "muster_get_mission_run": {
+      "mode": "read",
+      "version": "1.0.0"
+    },
+    "muster_upsert_mission": {
+      "mode": "write",
+      "version": "1.0.0"
+    },
+    "muster_accept_mission_run": {
+      "mode": "write",
+      "version": "1.0.0"
     }
   },
   "approvalActions": {
