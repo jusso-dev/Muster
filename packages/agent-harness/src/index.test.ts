@@ -8,6 +8,7 @@ import {
   requiredSlackBotScopes,
   selectSlackExposedAgent,
   SlackRateLimitError,
+  slackAgentMessageIdentity,
   slackApi,
   slackHarnessMetrics,
   slackResultBlocks,
@@ -71,6 +72,13 @@ describe("Slack agent routing", () => {
 
   it("normalises Slack mention markup before matching", () => {
     expect(normaliseSlackAgentRouteText("<@U123> Jessie hello")).toBe("Jessie hello");
+  });
+
+  it("presents each agent under its own Slack username", () => {
+    expect(slackAgentMessageIdentity("Jessie").username).toBe("Jessie");
+    expect(slackAgentMessageIdentity("Alfie").username).toBe("Alfie");
+    expect(slackAgentMessageIdentity("Parker").username).toBe("Parker");
+    expect(requiredSlackBotScopes).toContain("chat:write.customize");
   });
 });
 

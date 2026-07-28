@@ -42,9 +42,35 @@ export const requiredSlackBotScopes = [
   "app_mentions:read",
   "assistant:write",
   "chat:write",
+  // Required so each agent can post as its own display name + icon (Parker/Jessie/Alfie).
+  "chat:write.customize",
   "commands",
   "im:history",
 ] as const;
+
+/**
+ * Per-agent Slack presentation for chat.postMessage.
+ * Needs `chat:write.customize`. chat.update keeps the original username/icon.
+ */
+export function slackAgentMessageIdentity(agentName: string): {
+  username: string;
+  icon_emoji: string;
+} {
+  const name = agentName.trim() || "Muster";
+  switch (name.toLowerCase()) {
+    case "jessie":
+      // Border Collie hunter energy
+      return { username: "Jessie", icon_emoji: ":dog:" };
+    case "alfie":
+      // Bearded Collie researcher energy
+      return { username: "Alfie", icon_emoji: ":dog2:" };
+    case "parker":
+      // Border Collie ops lead
+      return { username: "Parker", icon_emoji: ":guide_dog:" };
+    default:
+      return { username: name, icon_emoji: ":shield:" };
+  }
+}
 
 export function missingSlackBotScopes(scopes: readonly string[]) {
   const granted = new Set(scopes);
@@ -1850,10 +1876,12 @@ export async function processSlackInboxEvent(inboxEventId: string) {
         encryptionKey(),
       ) as { token: string }
     ).token;
+    const identity = slackAgentMessageIdentity(selected.agent.name);
     const posted = await slackApi(token, "chat.postMessage", {
       channel: channelId,
       ...(threadTs ? { thread_ts: threadTs } : {}),
-      text: `Muster: ${selected.agent.name} is active. Run queued.`,
+      ...identity,
+      text: `${selected.agent.name} is on it — run queued.`,
       blocks: slackResultBlocks(selected.agent.name, "queued", {
         runId: accepted.runId,
         progress: "Queued; status will update here.",
@@ -1863,7 +1891,7 @@ export async function processSlackInboxEvent(inboxEventId: string) {
       await slackApi(token, "assistant.threads.setStatus", {
         channel_id: channelId,
         thread_ts: threadTs,
-        status: "Muster is preparing a governed response…",
+        status: `${selected.agent.name} is preparing a governed response…`,
       }).catch(() => undefined);
     }
     await db.transaction(async (tx) => {
@@ -2028,7 +2056,7 @@ export async function deliverSlackRun(runId: string) {
           await slackApi(token, "chat.update", {
             channel: row.delivery.channelId,
             ts: row.delivery.progressMessageTs,
-            text: `Muster: ${row.agent.name} is ${stage}.`,
+            text: `${row.agent.name} is ${stage}.`,
             blocks: slackResultBlocks(row.agent.name, row.run.status, {
               runId: row.run.id,
               summary: `Progress: ${stage}.`,
@@ -2049,14 +2077,15 @@ export async function deliverSlackRun(runId: string) {
           thread_ts: row.delivery.threadTs,
           status:
             row.run.status === "completed"
-              ? "Muster completed the governed response."
-              : `Muster ${row.run.status} the governed response.`,
+              ? `${row.agent.name} finished.`
+              : `${row.agent.name} ${row.run.status}.`,
         });
+      // chat.update cannot change username/icon; identity was set on postMessage.
       if (row.delivery.progressMessageTs)
         await slackApi(token, "chat.update", {
           channel: row.delivery.channelId,
           ts: row.delivery.progressMessageTs,
-          text: `Muster: ${row.agent.name} ${row.run.status}.`,
+          text: `${row.agent.name} ${row.run.status}.`,
           blocks: slackResultBlocks(row.agent.name, row.run.status, {
             ...(row.run.structuredOutput &&
             typeof row.run.structuredOutput === "object" &&

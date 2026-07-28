@@ -98,8 +98,9 @@ Configure Slack as follows:
 - Events URL: `/api/v1/slack/events`
 - Interactivity URL: `/api/v1/slack/interactions`
 - Slash command URL: `/api/v1/slack/commands`
-- Bot scopes: `app_mentions:read`, `assistant:write`, `chat:write`, `commands`,
-  and `im:history`
+- Bot scopes: `app_mentions:read`, `assistant:write`, `chat:write`,
+  `chat:write.customize` (per-agent username/icon for Parker/Jessie/Alfie),
+  `commands`, and `im:history`
 - Subscribe to app mentions and direct messages; add the Slack Assistant event
   subscriptions when Assistant Threads are enabled for the workspace.
 - Add a message shortcut with callback id `muster.review` when users should be
