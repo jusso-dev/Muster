@@ -375,8 +375,9 @@ describeIntegration("Muster MCP vertical slice", () => {
     const crypto = await import("node:crypto");
     const mismatchedToken = `muster_mcp_${crypto.randomBytes(32).toString("base64url")}`;
     const { hashInstallationToken } = await import("./installation.ts");
-    await expect(
-      db.insert(schema.mcpInstallations).values({
+    let insertError: unknown;
+    try {
+      await db.insert(schema.mcpInstallations).values({
         id: mismatchedId,
         organisationId,
         name: "Mismatched",
@@ -385,8 +386,15 @@ describeIntegration("Muster MCP vertical slice", () => {
         scopes: [],
         boundActorId: otherActorId,
         installedByActorId: administratorActorId,
-      }),
-    ).rejects.toThrow();
+      });
+    } catch (error) {
+      insertError = error;
+    }
+    // drizzle-orm wraps the driver error as `Failed query: ...`; the actual
+    // Postgres FK-violation message lives on `.cause`.
+    const cause = (insertError as { cause?: unknown } | undefined)?.cause;
+    expect(cause).toBeInstanceOf(Error);
+    expect((cause as Error).message).toMatch(/foreign key|violates/i);
     expect(await resolveInstallation(db, mismatchedToken)).toBeNull();
   });
 
@@ -675,7 +683,12 @@ describeIntegration("Muster MCP vertical slice", () => {
     const [run] = await db
       .select({ errorCode: schema.integrationQueryRuns.errorCode })
       .from(schema.integrationQueryRuns)
-      .where(eq(schema.integrationQueryRuns.integrationId, ssrfIntegrationId))
+      .where(
+        and(
+          eq(schema.integrationQueryRuns.organisationId, organisationId),
+          eq(schema.integrationQueryRuns.integrationId, ssrfIntegrationId),
+        ),
+      )
       .orderBy(desc(schema.integrationQueryRuns.createdAt))
       .limit(1);
     expect(run?.errorCode).toBe("egress_denied");
