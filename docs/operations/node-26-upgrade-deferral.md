@@ -35,6 +35,5 @@ fails health checks.
 - [ ] `pnpm check` (lint, typecheck, test, build)
 - [ ] `pnpm db:migrate` / `db:bootstrap` / `db:verify-clean` as applicable
 - [ ] Unit + integration suites under Node 26 CI
-- [ ] Playwright / Chromium e2e where required by the release
 - [ ] `linux/amd64` image build; web / worker / agent-gateway health
 - [ ] `pnpm audit --audit-level high`, licence/SBOM/container scans, CodeQL
