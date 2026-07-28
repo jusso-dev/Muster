@@ -15,7 +15,7 @@ Thank you for improving the shared workspace for human and agent-driven security
 
 1. Open an issue describing the operator problem and security impact.
 2. Add or update an architecture decision record for material boundary changes.
-3. Run `pnpm check` and the relevant Playwright project.
+3. Run `pnpm check` .
 4. Explain migrations, capability changes, connector compatibility, and rollback in the pull request.
 
 Commit generated migrations and public JSON Schemas. Do not hand-edit generated Drizzle snapshots.

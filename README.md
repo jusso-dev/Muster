@@ -132,10 +132,9 @@ pnpm db:bootstrap
 pnpm dev
 ```
 
-### Demo and screenshots are separate
+### Demo data is separate
 
 Only populate a disposable database when explicitly preparing tests or
-screenshots:
 
 ```bash
 MUSTER_DEMO_MODE=true NEXT_PUBLIC_MUSTER_DEMO_MODE=true pnpm db:seed
@@ -275,9 +274,9 @@ harnesses are upcoming work tracked in [#33](https://github.com/jusso-dev/Muster
 
 ## Testing and contribution checks
 
-For source tests, use Node 26+, pnpm 11.17.0, Docker, and installed Chromium
-browser dependencies. The application, worker, and gateway test servers are
-started by Playwright; PostgreSQL and Redis are the required local services.
+For source tests, use Node 26+, pnpm 11.17.0, and Docker. PostgreSQL and Redis
+are the required local services. Browser/web UI E2E (Playwright) has been
+removed — Muster is the Hermes MCP control plane, not a primary chat UI.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -285,22 +284,13 @@ docker compose up -d postgres redis minio minio-init
 pnpm db:migrate
 pnpm db:bootstrap
 pnpm check
-pnpm exec playwright install --with-deps chromium
-pnpm test:e2e -- --project=chromium
-pnpm exec playwright test --config=playwright.clean.config.ts
 ```
 
-The clean-install suite proves that no synthetic demo data is required. The
-standard suite uses synthetic mocks and test mode; it is not real-connector
-certification. Run `pnpm screenshots` only against synthetic data. Before
-submitting a change, follow [CONTRIBUTING.md](CONTRIBUTING.md), keep the
-organisation/capability/approval boundaries intact, and include the relevant
-unit, integration, browser, migration, and rollback evidence.
-
-CI currently runs clean-install and synthetic-demo browser checks with Chromium
-on Ubuntu `linux/amd64`. `pnpm test:e2e` also defines local Firefox, WebKit, and
-iPhone 13-emulation projects; those projects are useful regression checks, not
-a claim of a production-browser support or connector-certification matrix.
+Unit and package integration suites use synthetic mocks and test mode; they
+are not real-connector certification. Before submitting a change, follow
+[CONTRIBUTING.md](CONTRIBUTING.md), keep organisation/capability/approval
+boundaries intact, and include the relevant unit, integration, migration, and
+rollback evidence.
 
 ## Additional verification commands
 
@@ -309,8 +299,6 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
-pnpm test:e2e
-pnpm screenshots
 ```
 
 ## License

@@ -15,8 +15,6 @@
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "test:unit": "vitest run",
-    "test:e2e": "playwright test",
-    "test:e2e:homelab": "playwright test --config=playwright.homelab.config.ts",
     "test:homelab-installer": "bash scripts/test-install-homelab.sh",
     "test:release-homelab": "bash tests/homelab/install-homelab.test.sh",
     "test:release-image": "bash tests/homelab/verify-image-platform.test.sh && bash tests/homelab/promote-image-tag.test.sh",
@@ -30,13 +28,10 @@
     "alfie:cisa-smoke": "node scripts/alfie-cisa-smoke.mjs",
     "kelpie:certify-mock": "node scripts/kelpie-certify-mock.mjs",
     "skills:validate": "node scripts/validate-skill-packs.mjs",
-    "screenshots": "playwright test tests/screenshots.spec.ts",
     "format": "prettier --write .",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.12.1",
-    "@playwright/test": "1.62.0",
     "@types/node": "^26.1.1",
     "prettier": "^3.6.2",
     "turbo": "2.10.7",
