@@ -1,9 +1,43 @@
+# VCS / IDE
 .git
-.next
+.github
+.claude
+.hermes
 .turbo
+.next
+.playwright
+.vscode
+.idea
+
+# Dependencies & build outputs (rebuilt inside the image)
 node_modules
+**/node_modules
+**/dist
+**/.next
+**/coverage
+**/tsconfig.tsbuildinfo
+
+# Tests & local tooling (not needed for production image)
+tests
+**/*.test.ts
+**/*.spec.ts
 test-results
 playwright-report
 screenshots
+vitest.config.ts
+playwright*.config.ts
+
+# Docs / non-runtime content (keep skills + deploy runtime)
+docs
+*.md
+!skills/**/SKILL.md
+
+# Env & secrets
 .env
+.env.*
+!.env.example
+
+# Logs / temp
 *.log
+tmp
+.DS_Store
