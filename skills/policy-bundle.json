@@ -6,22 +6,52 @@
   "skillsMayNotExpandCapabilities": true,
   "skillsContainCredentials": false,
   "tools": {
-    "muster_get_status": { "mode": "read", "version": "1.0.0" },
-    "muster_list_capabilities": { "mode": "read", "version": "1.0.0" },
-    "muster_search_kelpie_cases": { "mode": "read", "version": "1.0.0" },
-    "muster_get_kelpie_case": { "mode": "read", "version": "1.0.0" },
-    "muster_search_knowledge": { "mode": "read", "version": "1.0.0" },
-    "muster_get_knowledge": { "mode": "read", "version": "1.0.0" },
+    "muster_get_status": {
+      "mode": "read",
+      "version": "1.0.0"
+    },
+    "muster_list_capabilities": {
+      "mode": "read",
+      "version": "1.0.0"
+    },
+    "muster_search_kelpie_cases": {
+      "mode": "read",
+      "version": "1.0.0"
+    },
+    "muster_get_kelpie_case": {
+      "mode": "read",
+      "version": "1.0.0"
+    },
+    "muster_search_knowledge": {
+      "mode": "read",
+      "version": "1.0.0"
+    },
+    "muster_get_knowledge": {
+      "mode": "read",
+      "version": "1.0.0"
+    },
     "muster_propose_kelpie_action": {
       "mode": "propose",
       "version": "1.0.0",
       "requiresApproval": true
     },
-    "muster_get_action_status": { "mode": "read", "version": "1.0.0" },
+    "muster_get_action_status": {
+      "mode": "read",
+      "version": "1.0.0"
+    },
     "muster_propose_knowledge": {
       "mode": "propose",
       "version": "1.0.0",
       "requiresReview": true
+    },
+    "muster_list_invocations": {
+      "mode": "read",
+      "version": "1.0.0"
+    },
+    "muster_export_audit": {
+      "mode": "read",
+      "version": "1.0.0",
+      "requiresCapability": "audit.export"
     }
   },
   "approvalActions": {

@@ -15,11 +15,13 @@ describe("MCP write/proposal surface", () => {
       "muster_get_kelpie_case",
       "muster_search_knowledge",
       "muster_get_knowledge",
+      "muster_list_invocations",
     ]);
     expect(MCP_WRITE_TOOL_NAMES).toEqual([
       "muster_propose_kelpie_action",
       "muster_get_action_status",
       "muster_propose_knowledge",
+      "muster_export_audit",
     ]);
     expect(MCP_TOOL_NAMES).toEqual([
       ...MCP_READ_TOOL_NAMES,

@@ -20,6 +20,7 @@ import {
   proposeKnowledge,
   searchKnowledge,
 } from "./knowledge.ts";
+import { exportAudit, listInvocations } from "./observability.ts";
 import {
   getKelpieCase,
   getStatus,
@@ -301,6 +302,52 @@ export function createMusterMcpServer(deps: McpServerDeps) {
     async (args) =>
       invoke("muster_propose_knowledge", () =>
         proposeKnowledge(deps.db, deps.context, args, deps.traceId),
+      ),
+  );
+
+
+  server.registerTool(
+    "muster_list_invocations",
+    {
+      description:
+        "List recent organisation-scoped MCP tool invocations from the audit log. No private reasoning; recorded hashes and outcomes only.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(50).default(20),
+        tool: z.string().trim().min(1).max(100).optional(),
+      },
+    },
+    async ({ limit, tool }) =>
+      invoke("muster_list_invocations", () =>
+        listInvocations(deps.db, deps.context, { limit, tool }),
+      ),
+  );
+
+  server.registerTool(
+    "muster_export_audit",
+    {
+      description:
+        "Bounded audit export for evaluation. Replay uses recorded results only and must not repeat external actions. No chain-of-thought.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(100).default(25),
+        since: z.string().datetime().optional(),
+        until: z.string().datetime().optional(),
+        actions: z
+          .array(
+            z.enum([
+              "mcp.tool.invoked",
+              "integration.action.approval_requested",
+              "integration.action.queued",
+              "connector.query.queued",
+              "knowledge.proposed",
+            ]),
+          )
+          .max(10)
+          .optional(),
+      },
+    },
+    async (args) =>
+      invoke("muster_export_audit", () =>
+        exportAudit(deps.db, deps.context, args),
       ),
   );
 

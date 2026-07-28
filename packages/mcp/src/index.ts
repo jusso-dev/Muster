@@ -50,4 +50,9 @@ export {
   KnowledgeProposalSchema,
   type KnowledgeProposal,
 } from "./knowledge.ts";
+export {
+  exportAudit,
+  listInvocations,
+  AuditExportSchema,
+} from "./observability.ts";
 export { recordInvocation, type InvocationOutcome } from "./audit.ts";
