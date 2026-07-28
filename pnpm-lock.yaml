@@ -7,6 +7,9 @@ settings:
 
 catalogs:
   default:
+    drizzle-orm:
+      specifier: 0.45.2
+      version: 0.45.2
     typescript:
       specifier: 7.0.2
       version: 7.0.2
@@ -67,6 +70,37 @@ importers:
       drizzle-orm:
         specifier: 0.45.2
         version: 0.45.2(@types/pg@8.20.0)(kysely@0.29.4)(pg@8.22.0)
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsx:
+        specifier: ^4.20.6
+        version: 4.23.1
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+
+  apps/mcp-server:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@4.4.3)
+      '@muster/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@muster/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@muster/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -550,6 +584,49 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
     devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+
+  packages/mcp:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@4.4.3)
+      '@muster/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@muster/authz':
+        specifier: workspace:*
+        version: link:../authz
+      '@muster/config':
+        specifier: workspace:*
+        version: link:../config
+      '@muster/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@muster/database':
+        specifier: workspace:*
+        version: link:../database
+      '@muster/integrations':
+        specifier: workspace:*
+        version: link:../integrations
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.20.0)(kysely@0.29.4)(pg@8.22.0)
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsx:
+        specifier: ^4.20.6
+        version: 4.23.1
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

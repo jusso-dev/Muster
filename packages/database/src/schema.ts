@@ -1983,6 +1983,41 @@ export const integrationConnectorCredentials = pgTable(
   ],
 );
 
+export const mcpInstallations = pgTable(
+  "mcp_installations",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    tokenPrefix: text("token_prefix").notNull(),
+    scopes: jsonb("scopes").notNull().default([]),
+    boundActorId: uuid("bound_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    status: text("status").notNull().default("active"),
+    installedByActorId: uuid("installed_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    installedAt: timestamp("installed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedByActorId: uuid("revoked_by_actor_id").references(() => actors.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("mcp_installations_token_hash_unique").on(table.tokenHash),
+    index("mcp_installations_org_status_idx").on(
+      table.organisationId,
+      table.status,
+    ),
+  ],
+);
+
 export const integrationQueryTemplates = pgTable(
   "integration_query_templates",
   {

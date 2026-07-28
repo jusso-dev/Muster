@@ -43,6 +43,7 @@ const operationalTables = {
   idempotencyRecords: schema.idempotencyRecords,
   outboxEvents: schema.outboxEvents,
   auditEvents: schema.auditEvents,
+  mcpInstallations: schema.mcpInstallations,
 } as const;
 
 const db = database();
