@@ -28,3 +28,7 @@ the homelab topology calls its corresponding private volume `codex-state`.
 Restrict Docker access, never publish or log this file, and revoke the Codex
 session if the host is compromised. The gateway reports
 `authentication_required` until the credential exists.
+
+## Hermes MCP
+
+See [hermes-mcp-runbook.md](hermes-mcp-runbook.md) for remote MCP packaging, credential provisioning, and kill switches.

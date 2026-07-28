@@ -163,6 +163,9 @@ importers:
       '@muster/investigations':
         specifier: workspace:*
         version: link:../../packages/investigations
+      '@muster/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       '@muster/rooms':
         specifier: workspace:*
         version: link:../../packages/rooms
