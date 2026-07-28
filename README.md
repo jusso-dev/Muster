@@ -4,156 +4,196 @@
 
 <h1 align="center">Muster</h1>
 
-> The governed workspace for human and agent-assisted security operations.
+> The governed control plane Hermes calls for security operations.
 
-Muster brings alerts, investigations, approvals, evidence, task work, and
-connector activity into durable security rooms. PostgreSQL is its authoritative
-record; agents and queues execute bounded work around that record. Muster is a
-coordination layer, not a replacement SIEM, EDR, SOAR, or case-management
-product.
+Muster is **not** a chat UI, PWA, or case-management product. Hermes owns
+sessions, models, memory, delegation, and Slack delivery. Muster is the
+authenticated, organisation-scoped control plane Hermes reaches over
+[remote MCP](https://modelcontextprotocol.io) (Streamable HTTP). PostgreSQL is
+the authoritative record; Redis and BullMQ are execution infrastructure only.
 
-![Synthetic Muster workspace showing a SOC room](docs/images/muster-security-workspace.png)
-
-The screenshot is a committed synthetic demo asset. It contains fictional
-people, cases, and indicators only; do not treat it as a production capture.
+Muster does not replace a SIEM, EDR, SOAR, or case system. It stores
+installation credentials, approvals, audit, missions, operational knowledge,
+and governed connector runs around upstream products.
 
 ## Where Muster fits
 
-Muster intentionally leaves each adjacent product authoritative for its own
-domain:
+Adjacent products stay authoritative for their own domains:
 
-- [Kelpie](https://github.com/jusso-dev/Kelpie) owns formal incident cases and
-  case lifecycle. Muster links case identifiers and posts governed case work;
-  it does not become the case system of record.
-- [Tawny](https://github.com/jusso-dev/tawny) owns endpoint telemetry,
-  detections, bounded hunts, and approved endpoint response. Muster stores the
-  request, approval, delivery, and evidence references around that work.
-- [Bower](https://github.com/jusso-dev/bower) owns application and legacy
-  telemetry delivery health. Muster presents its signals in operational rooms.
+- [Kelpie](https://github.com/jusso-dev/Kelpie) — formal incident cases and
+  case lifecycle. Muster proposes and records governed case work; Kelpie
+  remains system of record.
+- [Tawny](https://github.com/jusso-dev/tawny) — endpoint telemetry, detections,
+  bounded hunts, and approved response. Muster holds request, approval,
+  delivery, and evidence references around that work.
+- [Bower](https://github.com/jusso-dev/bower) — application and legacy
+  telemetry delivery health. Signals may be linked operationally; Bower is
+  not a fully certified production connector in this tree.
 
-## Current, verified surface
+Product direction and process boundaries are recorded in
+[ADR 0005](docs/architecture/0005-remote-mcp-server.md).
 
-The current application has room timelines, threads, reactions, mentions,
-durable tasks, investigations, approvals, evidence upload, search, SSE updates,
-agent readiness/activity, and responsive PWA navigation. The browser suite
-exercises the room lifecycle, task delegation, approvals, agent activity,
-governed connectors, clean install, accessibility, and mobile layouts; see
-[`tests/`](tests). The health endpoint is
-[`/api/v1/health`](apps/web/app/api/v1/health/route.ts).
+## Operating model
 
-### Task board and starter missions
+```mermaid
+flowchart LR
+  Slack --> Hermes
+  Hermes -- "Bearer installation token\nStreamable HTTP /mcp" --> MCP["Muster MCP server"]
+  MCP --> PG[(PostgreSQL)]
+  MCP -->|transactional outbox| Q[Redis + BullMQ]
+  Q --> Worker
+  Worker --> Kelpie
+  Worker --> Tawny
+  Worker --> Objects[(Private evidence storage)]
+```
 
-[`/tasks`](apps/web/app/tasks/page.tsx) reads only organisation-scoped tasks.
-It presents task status, assignment, run state, events, and governed delegation;
-delegation carries an idempotency key and its result remains attached to that
-task. It is not an autonomous-work queue: users with the applicable server-side
-capabilities create, assign, delegate, review, or cancel bounded work. Any
-connector-side action still needs its own capability and approval record.
+- **Hermes** — conversational runtime, cron, skill packs, Slack.
+- **`apps/mcp-server`** — Streamable HTTP MCP endpoint (`/mcp`) plus
+  unauthenticated `/health`.
+- **`packages/mcp`** — installation auth, tool handlers, audit, Kelpie
+  gateway, knowledge, missions.
+- **`apps/worker`** — executes queued connector queries and approval-gated
+  actions.
+- **`apps/web`** — residual operator/bootstrap HTTP surface (auth, admin MCP
+  installation API, health). Not the product interaction model.
+- **`skills/`** — Hermes skill packs plus server-enforced
+  `policy-bundle.json`.
 
-Starter agent definitions are installed with a clean database. Their work is
-bounded by an explicit task, approved schedule, or configured watchlist and
-remains reviewable through the [`/tasks` board](apps/web/app/tasks/page.tsx);
-no agent is an unbounded background operator:
+Redis is rebuildable. Significant state changes, audit events, and outbox
+rows are written transactionally in PostgreSQL. External connector content is
+**untrusted evidence**, never agent instructions.
 
-- **Alfie** — evidence-backed threat and technology research. Administrators
-  create bounded, allowlisted watchlists at
-  [`/settings/alfie-research`](apps/web/app/settings/alfie-research/page.tsx); see the
-  [research runbook](docs/operations/alfie-research.md). It reads allowlisted
-  HTTPS feeds only, produces source-backed briefs, and does not perform external
-  actions. A starter mission: summarise a named technology from an approved
-  watchlist, then review its citations and feedback state.
-- **Jessie** — bounded threat hunts and proposed Kelpie enrichment. It refuses
-  to run without a configured governed source; broader time, record, or
-  multi-source plans wait for human approval. A starter mission: investigate a
-  specific alert question, review recorded evidence and gaps, then decide
-  whether to approve the exact hunt or proposed enrichment.
-- **Parker** — operational reporting with organisation-scoped weekly or
-  monthly schedules at [`/settings/parker-reports`](apps/web/app/settings/parker-reports/page.tsx).
-  A due occurrence creates one Parker-assigned review task; delegating that task
-  produces a reproducible report manifest, review/version record, and room post.
-  Email delivery remains separately approved. See the
-  [Parker report runbook](docs/operations/parker-reports.md). A starter mission:
-  prepare an analyst, leadership, or executive report for a selected room and
-  period, then review the manifest before approving delivery.
+## MCP surface (verified)
 
-For a disposable evaluation, create three explicit tasks rather than treating
-the agents as autonomous staff: ask Alfie to summarise an allowlisted research
-topic with citations, Jessie to perform a bounded hunt against a linked alert,
-and Parker to prepare a leadership report for a selected room and period.
-Review the resulting evidence, run record, room post, and any approval before
-acting. The committed demo data is synthetic and separate from a clean install.
+Full tool contract, failure modes, and Hermes config:
+[docs/integrations/hermes-mcp.md](docs/integrations/hermes-mcp.md).
+Operational packaging:
+[docs/operations/hermes-mcp-runbook.md](docs/operations/hermes-mcp-runbook.md).
 
-All external actions remain server-side capability checked and approval gated.
-Codex receives read-only, no-network execution with typed output validation;
-it cannot directly perform connector writes.
+### Read tools (default scopes)
 
-### Mock and real connector status
+| Tool | Purpose |
+| --- | --- |
+| `muster_get_status` | Organisation-scoped Muster + Kelpie connector status |
+| `muster_list_capabilities` | Capabilities and tools authorised for this installation |
+| `muster_search_kelpie_cases` | Bounded Kelpie case search via governed connector path |
+| `muster_get_kelpie_case` | One Kelpie case by id |
+| `muster_search_knowledge` / `muster_get_knowledge` | Organisation operational knowledge |
+| `muster_list_invocations` | Recent MCP tool invocations from the audit log |
+| `muster_export_audit` | Bounded audit export (`audit.export` capability) |
+| `muster_list_missions` / `muster_get_mission_run` | Governed mission definitions and run status |
 
-Both supplied Compose topologies set `MUSTER_MOCK_INTEGRATIONS=true` and start
-synthetic Kelpie, Tawny, and Bower services. Their replies are demo/test data;
-a mock health check, query, or action result is never production delivery.
+### Write / proposal tools (opt-in scopes)
 
-| Product | Supplied Compose default | Configured endpoint surface                                                                                                          | Real status                                                              |
-| ------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| Kelpie  | Synthetic mock           | [`/integrations/connectors`](apps/web/app/integrations/connectors/page.tsx) has governed Kelpie query/case-management configuration. | Code and contract tests exist; no live-product certification is claimed. |
-| Tawny   | Synthetic mock           | Connector administration supports read-only Tawny and separately governed Tawny-response configuration.                              | Code and contract tests exist; no live-product certification is claimed. |
-| Bower   | Synthetic mock           | No Bower option exists in connector administration; product pages are demo-only.                                                     | Mock/demo only; do not treat it as a configured production connector.    |
+| Tool | Purpose |
+| --- | --- |
+| `muster_propose_kelpie_action` | Propose Kelpie create/update/comment/observable; always approval-gated + idempotent |
+| `muster_get_action_status` | Resume by `deliveryId` without re-executing |
+| `muster_propose_knowledge` | Propose operational knowledge; never auto-accepted |
+| `muster_upsert_mission` | Create/update mission definitions (Hermes owns cron) |
+| `muster_accept_mission_run` | Accept a Hermes delivery with stable idempotency key |
 
-Configured Kelpie and Tawny credentials are stored server-side per organisation;
-each endpoint, capability, and approval path must be validated in the target
-environment. See [current upstream contracts](docs/integrations/current-upstream-contracts.md).
+Hermes **never** supplies `organisationId`, actor id, capability, or
+`integrationId` as authority. The installation bearer token binds tenant and
+policy subject server-side on every request. Model proposals do not execute
+external writes until a human approval record exists where policy requires it.
 
-## Clean Docker quick start
+### Hermes skill packs
 
-Supported host: Intel/AMD64 Ubuntu with Docker Engine and the Compose plugin.
-The clean installer creates a fresh database, object store, local administrator,
-and agent definitions; it does **not** seed synthetic alerts, cases, messages,
-or tasks.
+Versioned packs under [`skills/`](skills), validated by
+`pnpm skills:validate`:
+
+- `muster-soc-operations`
+- `muster-threat-hunting`
+- `muster-kelpie-case-management`
+- `muster-evidence-handling`
+- `muster-security-reporting`
+
+## Local development
+
+Requires **Node 26+**, **pnpm 11.17.0**, and Docker (PostgreSQL, Redis, MinIO
+for a full stack).
 
 ```bash
 git clone https://github.com/jusso-dev/Muster.git
 cd Muster
+pnpm install --frozen-lockfile
+docker compose up -d postgres redis minio minio-init
+pnpm db:migrate
+pnpm db:bootstrap
+pnpm --filter @muster/mcp-server dev
+```
+
+MCP listens on `MCP_SERVER_PORT` (default **3003**):
+
+- Health (no auth): `GET http://127.0.0.1:3003/health`
+- MCP: `http://127.0.0.1:3003/mcp`
+
+Provision a revocable installation credential (token printed once; store only
+in Hermes secret storage):
+
+```bash
+pnpm --filter @muster/mcp create-installation \
+  --org=<organisationId> \
+  --actor=<boundActorId> \
+  --installed-by=<administratorActorId> \
+  --name="Hermes local"
+```
+
+Revoke:
+
+```bash
+pnpm --filter @muster/mcp revoke-installation \
+  --org=<organisationId> \
+  --installation=<installationId> \
+  --actor=<revokingActorId>
+```
+
+Admin HTTP (session + `administration.manage`) also exists under
+`/api/v1/mcp-installations` when the web process is running. Prefer the CLI
+for automation; never commit plaintext tokens.
+
+Hermes remote MCP config (placeholders only):
+
+```json
+{
+  "mcpServers": {
+    "muster": {
+      "url": "https://<muster-host>/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "authorization": "Bearer <installation-token-placeholder>"
+      }
+    }
+  }
+}
+```
+
+### Optional full Compose stack
+
+```bash
 ./scripts/bootstrap.sh
 ```
 
-Open `http://localhost:3000`. The script writes `.env` locally and prints the
-generated administrator password. The value is local `.env` state, not a demo
-credential: do not commit it and change it for any non-disposable installation.
-Local Compose exposes PostgreSQL, Redis, MinIO, Mailpit, the web application,
-and synthetic connector mocks for development; it is not a hardened
-Internet-facing topology.
-
-For source-based development instead:
+Bootstraps local `.env`, Compose services, and a local administrator. Default
+Compose still uses **synthetic** Kelpie/Tawny/Bower mocks
+(`MUSTER_MOCK_INTEGRATIONS=true`). Mock health or query results are never
+production delivery. For disposable synthetic data only:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm db:migrate
-pnpm db:bootstrap
-pnpm dev
+MUSTER_DEMO_MODE=true pnpm db:seed
 ```
 
-### Demo data is separate
+Never seed demo data into a production or clean-install database.
 
-Only populate a disposable database when explicitly preparing tests or
+## Homelab image install
 
-```bash
-MUSTER_DEMO_MODE=true NEXT_PUBLIC_MUSTER_DEMO_MODE=true pnpm db:seed
-```
+Public image targets `linux/amd64`. CI publishes SBOM/provenance. Use a
+reviewed OCI **digest**, not `latest`. At this README revision:
 
-Never run that command against a production or clean-install database.
-
-| Mode            | Data and route behaviour                                                                                                                                                                      |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Clean install   | `bootstrap.sh` creates local configuration, an administrator, starter rooms, and starter agent definitions. It does not seed synthetic alerts, cases, messages, tasks, or a fixed demo login. |
-| Demo/screenshot | `MUSTER_DEMO_MODE=true` plus `pnpm db:seed` adds synthetic data. Product integration and workflow views are demo-only and redirect in clean mode.                                             |
-
-## Homelab image install (port 3004)
-
-The public image is built for `linux/amd64`; CI publishes SBOM/provenance and
-verifies an anonymous GHCR pull on `main`. Use a reviewed OCI digest, not
-`latest`. At this README revision, the published `sha-a37ea88` image resolves to
-`ghcr.io/jusso-dev/muster@sha256:75ebdad962373ff1fa5dbef8dba8f0a005de6058e21655dad8c72b1129e90861`.
-Verify that digest or replace it with a newer reviewed release before deployment.
+`ghcr.io/jusso-dev/muster@sha256:75ebdad962373ff1fa5dbef8dba8f0a005de6058e21655dad8c72b1129e90861`
+(`sha-a37ea88`). Verify or replace with a newer reviewed release before
+deploy.
 
 ```bash
 git clone https://github.com/jusso-dev/Muster.git
@@ -164,119 +204,63 @@ MUSTER_IMAGE=ghcr.io/jusso-dev/muster@sha256:75ebdad962373ff1fa5dbef8dba8f0a005d
 ./scripts/install-homelab.sh
 ```
 
-`install-homelab.sh` persists an explicitly supplied `MUSTER_IMAGE` or legacy
-`MUSTER_VERSION` in `.env.homelab`; inspect that file before later upgrades.
-For a newer release, change the persisted reference only after its image,
-SBOM/provenance, migrations, and rollback path have been reviewed.
+`install-homelab.sh` writes `.env.homelab` (mode `600`). Keep it out of
+source control. Topology defaults still point at synthetic connectors until
+you configure governed real ones. See
+[deployment](docs/operations/deployment.md) and
+[release-homelab](docs/operations/release-homelab.md).
 
-The homelab Compose file publishes only web port `3004` by default and keeps
-PostgreSQL, Redis, MinIO, Mailpit, worker, gateway, and mocks internal. Set
-`MUSTER_PUBLIC_URL` and `AUTH_TRUSTED_ORIGINS` to the exact browser origin(s)
-that will use the service. When using HTTPS behind a reverse proxy, set
-`AUTH_SECURE_COOKIES=true`; do not add broad wildcard origins.
+## Connectors
 
-The installer creates `.env.homelab` with mode `600`. Keep it out of source
-control. Its generated `MUSTER_AGENT_GATEWAY_TOKEN` authenticates internal
-web/worker calls to the unexposed agent gateway; do not reuse or publish it.
-The generated topology still uses synthetic connector endpoints until you
-deliberately configure governed real connectors.
+| Product | Compose default | Real status |
+| --- | --- | --- |
+| Kelpie | Synthetic mock | Governed query + approval-gated write proposals via MCP; mock ≠ live certification |
+| Tawny | Synthetic mock | Code/contracts present; validate per environment |
+| Bower | Synthetic mock | Demo/mock only |
 
-### Codex subscription authentication
+Configured connector credentials are stored server-side per organisation.
+See [current upstream contracts](docs/integrations/current-upstream-contracts.md)
+and [Kelpie certification](docs/integrations/kelpie-certification.md).
 
-Agents use a ChatGPT Codex subscription, not an OpenAI API key. Authenticate
-the private persistent volume interactively after the stack is running:
+## Security boundaries
 
-```bash
-docker compose --profile setup run --rm codex-login
-```
+- Every domain query is organisation scoped; tools re-read the bound actor's
+  capabilities on each request.
+- Installation tokens are hashed at rest; revocation is fail-closed on the
+  next call.
+- Dangerous external actions need capability checks, idempotency keys, and
+  approval records.
+- Skills cannot expand capabilities; `policy-bundle.json` documents what the
+  server already enforces.
+- Kill switches: agent definition kill switches; mission `killSwitch: true`
+  blocks new `muster_accept_mission_run`; revoking an MCP installation stops
+  Hermes immediately.
 
-For the homelab topology, use its Compose file and generated environment file:
+Review [SECURITY.md](SECURITY.md), the
+[threat model](docs/security/threat-model.md),
+[authentication and capabilities](docs/security/authentication-and-capabilities.md),
+and [agent safety](docs/security/agent-safety.md) before deployment.
 
-```bash
-docker compose --env-file .env.homelab \
-  -f deploy/docker/docker-compose.homelab.yml \
-  --profile setup run --rm codex-login
-```
-
-The normal Compose gateway and setup job share the private `muster-codex`
-volume; the homelab topology calls the same private state volume `codex-state`.
-Do not mount either volume into the web service, copy its contents into a
-repository, or print it in logs. If no authorised Codex session exists, agent
-readiness correctly reports that limitation rather than pretending a run worked.
-
-## Operating model
-
-```mermaid
-flowchart LR
-  B[Browser / PWA] --> W[Next.js web]
-  W --> P[(PostgreSQL authoritative record)]
-  W -->|transactional outbox| Q[Redis + BullMQ]
-  Q --> K[Worker]
-  Q --> G[Agent gateway]
-  K --> E[Private evidence storage]
-  K --> X[Governed Kelpie / Tawny / Bower connectors]
-  G --> C[Codex subscription runtime]
-```
-
-Redis and BullMQ are execution infrastructure, not a source of truth. Significant
-state changes, audit events, and outbox records are written transactionally.
-Incoming connector content is untrusted evidence, not agent instruction.
-
-Read the [architecture](docs/architecture/README.md),
-[connector contract notes](docs/integrations/current-upstream-contracts.md), and
-[OpenAPI description](docs/openapi.yaml) before extending integrations. The
-[deployment guide](docs/operations/deployment.md) explains the supported
-single-node/evaluation topology; [CONTRIBUTING.md](CONTRIBUTING.md) defines the
-required design, test, migration, and rollback review for changes.
-
-## Security and operations
-
-- Every domain query is organisation scoped; routes, workers, and agent tools
-  perform server-side capability checks.
-- Dangerous actions require approval records. Evidence uses private object
-  storage, hash verification, classification, quarantine metadata, and audit
-  history.
-- Agent learning is evidence-backed, versioned, evaluated, approved, and
-  reversible; it cannot grant new permissions or tools.
-- Review [SECURITY.md](SECURITY.md), the [threat model](docs/security/threat-model.md),
-  [authentication and capabilities](docs/security/authentication-and-capabilities.md),
-  and [agent safety](docs/security/agent-safety.md) before deployment.
-
-Back up PostgreSQL and the versioned evidence bucket; Redis is rebuildable.
-The required restore order and verification checks are in
-[backup and restore](docs/operations/backup-restore.md). For a suspected Muster
-compromise, follow [incident recovery](docs/operations/incident-recovery.md).
+Back up PostgreSQL and the versioned evidence bucket. Restore order:
+[backup and restore](docs/operations/backup-restore.md). Compromise response:
+[incident recovery](docs/operations/incident-recovery.md).
 
 ### Troubleshooting
 
-- **Web is unhealthy:** run `docker compose ps`, then inspect the failing
-  service logs. For homelab use `docker compose --env-file .env.homelab -f
-deploy/docker/docker-compose.homelab.yml ps`. The web health route is
-  `/api/v1/health`; see the [deployment guide](docs/operations/deployment.md).
-- **Login loops or callback errors:** verify `MUSTER_PUBLIC_URL`,
-  `AUTH_TRUSTED_ORIGINS`, reverse-proxy headers, and `AUTH_SECURE_COOKIES`; then
-  restart the web service.
-- **Agent is not ready:** use the Agents view to distinguish missing Codex
-  authentication from disabled/readiness evidence. Re-run `codex-login` only
-  on the private volume; see [deployment guidance](docs/operations/deployment.md).
-- **Connector delivery does not happen:** confirm it is not a mock, then check
-  the connector health, organisation capability, approval record, outbox, and
-  upstream product logs. Do not replay raw queue jobs.
+- **MCP unhealthy:** `curl -sS http://127.0.0.1:3003/health` must report
+  PostgreSQL readiness. Check `DATABASE_URL` and process logs.
+- **401 on every tool:** missing/malformed/revoked token, or wrong host.
+  All denials look the same by design.
+- **Kelpie timeout / empty:** confirm connector not mock-only if you expect
+  live data; check worker, outbox, approval state, and
+  [kelpie-certification](docs/integrations/kelpie-certification.md).
+- **Connector delivery stuck:** capability, approval record, worker, and
+  upstream product logs — do not replay raw queue jobs blindly.
 
-## Known limits and roadmap
+## Testing and contribution
 
-Muster is an MVP reference implementation. It does not make the local Compose
-topology production-ready: plan identity policy, TLS/reverse proxy, egress
-controls, malware scanning, object lock/retention, backup restore exercises,
-monitoring, and high availability for your environment. The default external
-products are mocks. A first-class Slack surface and portable external agent
-harnesses are upcoming work tracked in [#33](https://github.com/jusso-dev/Muster/issues/33): there is no Slack app/event endpoint or external harness contract to configure yet.
-
-## Testing and contribution checks
-
-For source tests, use Node 26+, pnpm 11.17.0, and Docker. PostgreSQL and Redis
-are the required local services. Browser/web UI E2E (Playwright) has been
-removed — Muster is the Hermes MCP control plane, not a primary chat UI.
+Browser/web UI E2E (Playwright) is removed. Use package unit and integration
+suites with synthetic mocks.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -286,20 +270,27 @@ pnpm db:bootstrap
 pnpm check
 ```
 
-Unit and package integration suites use synthetic mocks and test mode; they
-are not real-connector certification. Before submitting a change, follow
-[CONTRIBUTING.md](CONTRIBUTING.md), keep organisation/capability/approval
-boundaries intact, and include the relevant unit, integration, migration, and
-rollback evidence.
-
-## Additional verification commands
+Individual gates:
 
 ```bash
 pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm skills:validate
+pnpm kelpie:certify-mock
 ```
+
+Before opening a PR: follow [CONTRIBUTING.md](CONTRIBUTING.md) and
+[AGENTS.md](AGENTS.md). Keep organisation, capability, approval, and
+prompt-trust boundaries intact. Include migration and rollback notes for
+schema changes.
+
+Further reading:
+
+- [Architecture](docs/architecture/README.md)
+- [OpenAPI](docs/openapi.yaml) (HTTP operator surface)
+- [Hermes MCP integration](docs/integrations/hermes-mcp.md)
 
 ## License
 

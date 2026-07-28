@@ -57,6 +57,8 @@ describe("Muster product branding", () => {
     expect(source).not.toContain("/muster-logo.png");
     expect(source).not.toMatch(/>\s*M\s*</);
     expect(source).toContain("Muster shield and tree logo");
-    expect(source).toContain("docs/images/muster-security-workspace.png");
+    expect(source).toContain("docs/images/muster-logo-master.png");
+    // Product is Hermes MCP control plane, not a browser workspace demo.
+    expect(source).not.toContain("muster-security-workspace.png");
   });
 });
