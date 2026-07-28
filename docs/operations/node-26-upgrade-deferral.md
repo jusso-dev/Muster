@@ -1,32 +1,40 @@
-# Node 26 runtime upgrade deferral (#34)
+# Node runtime support policy
 
-Tracker #78 item 10 defers the coordinated Node 26 runtime/type cutover until
-product gates for the Hermes MCP pivot are stable.
+## Supported runtime
 
-## Status: deferred
+Muster's supported production and CI Node.js major is **26**.
 
-Product gates landed (or in progress) under #78:
+| Surface | Policy |
+| --- | --- |
+| `package.json` `engines.node` | `>=26.0.0` (enforced via `.npmrc` `engine-strict=true`) |
+| CI / security workflows | `actions/setup-node` with `node-version: "26"` |
+| Docker build stage | `node:26-bookworm-slim` |
+| Distroless runtime | `gcr.io/distroless/nodejs26-debian13:nonroot` |
+| Compose mock images | `node:26-bookworm-slim` |
+| Type definitions | `@types/node` `^26.1.1` (aligned with runtime major) |
 
-- Remote MCP vertical slice (#72)
-- Write/proposal tools + approvals
-- Operational knowledge (#71)
-- Skill packs (#73)
-- Observability (#77)
-- Governed missions (#76)
-- Packaging/admin minimum
+Do not advance `@types/node` ahead of the production runtime major, and do not
+change only one of Dockerfile / distroless / CI / Compose / engines in isolation.
 
-The Node 26 matrix in #34 remains blocked until:
+## Upgrade history
 
-1. Node 26 is confirmed as the supported production/LTS target for Muster.
-2. Docker build image, distroless runtime, CI, Compose mocks, `engines`, and
-   `@types/node` move together with a frozen lockfile.
-3. Full `pnpm check`, migrate/bootstrap, unit/integration, Playwright, and
-   container security scans pass under Node 26.
+- **#34** — coordinated cutover from Node 24 → Node 26 (Docker, distroless,
+  CI, Compose, engines, `@types/node`, lockfile).
+- Supersedes Dependabot PRs #1 and #8, which were intentionally not merged alone.
 
-Do not merge Dependabot PRs #1 / #8 in isolation.
+## Rollback
 
-## Revisit trigger
+Rollback is the previous GHCR image built from the last Node 24 multi-stage
+Dockerfile (`node:24-bookworm-slim` + `gcr.io/distroless/nodejs24-debian13:nonroot`).
+Redeploy that digest and restore the matching git revision if a Node 26 image
+fails health checks.
 
-Open a replacement rollup PR against #34 only after the above gates are green
-on Node 24 in production-shaped environments and the support policy is written
-down in this document.
+## Compatibility gates (release checklist)
+
+- [ ] `pnpm install --frozen-lockfile` on Node 26
+- [ ] `pnpm check` (lint, typecheck, test, build)
+- [ ] `pnpm db:migrate` / `db:bootstrap` / `db:verify-clean` as applicable
+- [ ] Unit + integration suites under Node 26 CI
+- [ ] Playwright / Chromium e2e where required by the release
+- [ ] `linux/amd64` image build; web / worker / agent-gateway health
+- [ ] `pnpm audit --audit-level high`, licence/SBOM/container scans, CodeQL

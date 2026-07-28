@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN corepack enable
@@ -15,7 +15,7 @@ RUN pnpm deploy --filter=@muster/worker --prod /prod/worker \
     && cp -R /workspace/apps/web/.next/static /workspace/apps/web/.next/standalone/apps/web/.next/static \
     && cp -R /workspace/apps/web/public /workspace/apps/web/.next/standalone/apps/web/public
 
-FROM gcr.io/distroless/nodejs24-debian13:nonroot AS runtime
+FROM gcr.io/distroless/nodejs26-debian13:nonroot AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build --chown=nonroot:nonroot /workspace/apps/web/.next/standalone ./web

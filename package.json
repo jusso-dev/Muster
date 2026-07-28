@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "packageManager": "pnpm@11.17.0",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=26.0.0"
   },
   "scripts": {
     "build": "turbo build",
@@ -37,7 +37,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "1.62.0",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.1.1",
     "prettier": "^3.6.2",
     "turbo": "2.10.7",
     "typescript": "7.0.2",

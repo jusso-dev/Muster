@@ -275,7 +275,7 @@ harnesses are upcoming work tracked in [#33](https://github.com/jusso-dev/Muster
 
 ## Testing and contribution checks
 
-For source tests, use Node 24+, pnpm 11.17.0, Docker, and installed Chromium
+For source tests, use Node 26+, pnpm 11.17.0, Docker, and installed Chromium
 browser dependencies. The application, worker, and gateway test servers are
 started by Playwright; PostgreSQL and Redis are the required local services.
 
