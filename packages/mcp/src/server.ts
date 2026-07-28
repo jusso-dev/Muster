@@ -12,6 +12,10 @@ import { McpToolError } from "./errors.ts";
 import type { InstallationContext } from "./installation.ts";
 import { requireScope, ScopeError } from "./installation.ts";
 import {
+  getActionStatus,
+  proposeKelpieAction,
+} from "./actions.ts";
+import {
   getKelpieCase,
   getStatus,
   listCapabilities,
@@ -143,6 +147,93 @@ export function createMusterMcpServer(deps: McpServerDeps) {
     async ({ caseId }) =>
       invoke("muster_get_kelpie_case", () =>
         getKelpieCase(deps.db, deps.context, { caseId }, deps.traceId),
+      ),
+  );
+
+
+  server.registerTool(
+    "muster_propose_kelpie_action",
+    {
+      description:
+        "Propose a Kelpie write (create case, update case, timeline comment, or add observable). Always creates an approval-gated delivery with a client-supplied idempotency key. Does not execute the external action until a human approves. Never supply organisationId, actorId, capability, or integrationId — the installation credential is authoritative.",
+      inputSchema: {
+        operation: z.enum([
+          "kelpie.case.create",
+          "kelpie.case.update",
+          "kelpie.timeline.comment",
+          "kelpie.observable.add",
+        ]),
+        idempotencyKey: z.string().trim().min(8).max(200),
+        title: z.string().trim().min(1).max(300).optional(),
+        summary: z.string().trim().max(20_000).optional(),
+        severity: z.enum(["low", "medium", "high", "critical"]).optional(),
+        tlp: z
+          .enum(["clear", "green", "amber", "amber_strict", "red"])
+          .optional(),
+        pap: z.enum(["clear", "green", "amber", "red"]).optional(),
+        classification: z
+          .enum([
+            "malware",
+            "phishing",
+            "unauthorised_access",
+            "data_breach",
+            "dos",
+            "policy_violation",
+            "other",
+          ])
+          .optional(),
+        tags: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
+        evidenceReferences: z
+          .array(z.string().trim().min(1).max(500))
+          .max(100)
+          .optional(),
+        caseId: z.string().trim().min(1).max(200).optional(),
+        version: z.number().int().positive().optional(),
+        status: z
+          .enum([
+            "open",
+            "in_progress",
+            "contained",
+            "eradicated",
+            "recovered",
+            "closed",
+          ])
+          .optional(),
+        body: z.string().trim().min(1).max(20_000).optional(),
+        observableType: z
+          .enum([
+            "ip",
+            "domain",
+            "url",
+            "file_hash",
+            "email",
+            "hostname",
+            "username",
+            "registry_key",
+            "other",
+          ])
+          .optional(),
+        value: z.string().trim().min(1).max(4_000).optional(),
+        description: z.string().trim().max(2_000).optional(),
+        isIoc: z.boolean().optional(),
+      },
+    },
+    async (args) =>
+      invoke("muster_propose_kelpie_action", () =>
+        proposeKelpieAction(deps.db, deps.context, args, deps.traceId),
+      ),
+  );
+
+  server.registerTool(
+    "muster_get_action_status",
+    {
+      description:
+        "Resume and read the authoritative status of a previously proposed external action by delivery id. Does not re-execute the external action.",
+      inputSchema: { deliveryId: z.string().uuid() },
+    },
+    async ({ deliveryId }) =>
+      invoke("muster_get_action_status", () =>
+        getActionStatus(deps.db, deps.context, { deliveryId }),
       ),
   );
 

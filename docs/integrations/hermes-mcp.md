@@ -22,10 +22,10 @@ flowchart LR
 - Muster stores Kelpie connector credentials encrypted at rest and never
   returns them, or any header/field matching a secret-shaped key, in a tool
   result. Kelpie itself remains authoritative for case content.
-- Hermes never supplies an organisation id, actor id, or capability in a
-  tool call. Those fields do not exist in any of the four tool schemas; the
-  installation token is the only source of tenant identity, resolved
-  server-side on every request.
+- Hermes never supplies an organisation id, actor id, capability, or
+  integration id in a tool call. Those fields are not accepted as authority
+  in any tool schema; the installation token is the only source of tenant
+  identity, resolved server-side on every request.
 
 ## Provisioning an installation credential
 
@@ -84,6 +84,8 @@ token as a bearer credential. Placeholders only — never commit a real token:
 
 ## Tools
 
+### Read-only (default installation scopes)
+
 - `muster_get_status` — organisation-scoped Muster and Kelpie connector
   status.
 - `muster_list_capabilities` — capabilities and tools authorised for this
@@ -93,8 +95,22 @@ token as a bearer credential. Placeholders only — never commit a real token:
 - `muster_get_kelpie_case` — one Kelpie case by id, same bounding and
   classification.
 
-All four are read-only. There is no write, destructive, or
-external-communication tool in this slice; see
+### Write / proposal (opt-in scopes; always approval-gated)
+
+- `muster_propose_kelpie_action` — propose `kelpie.case.create`,
+  `kelpie.case.update`, `kelpie.timeline.comment`, or
+  `kelpie.observable.add`. Requires an explicit installation scope, the
+  matching Kelpie capability on the bound actor, and a client-supplied
+  `idempotencyKey`. Creates an `integration_deliveries` row in
+  `awaiting_approval` plus an `approvals` record; the worker does not run
+  until a human approves. Retries with the same key return the same
+  delivery (`duplicate: true`).
+- `muster_get_action_status` — resume by `deliveryId`; returns authoritative
+  delivery and approval status without re-executing the external action.
+
+Hermes never supplies `organisationId`, actor id, capability, or
+`integrationId`. The installation token and the organisation's enabled
+Kelpie connector bind those server-side. See
 [skills/muster-soc-operations/SKILL.md](../../skills/muster-soc-operations/SKILL.md)
 for the Hermes-side usage contract, evidence handling rules, and refusal
 boundaries.

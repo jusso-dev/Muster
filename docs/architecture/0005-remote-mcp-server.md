@@ -115,15 +115,17 @@ vertical slice:
 
 ## Consequences
 
-Hermes gets exactly four stable, schema-validated read-only tools
+Hermes gets four stable, schema-validated read-only tools
 (`muster_get_status`, `muster_list_capabilities`,
-`muster_search_kelpie_cases`, `muster_get_kelpie_case`) and a starter skill
-(`skills/muster-soc-operations/SKILL.md`) describing how to use them safely.
-Provisioning is deliberately not a chat- or UI-driven flow in this slice —
-an operator runs `pnpm --filter @muster/mcp create-installation` /
+`muster_search_kelpie_cases`, `muster_get_kelpie_case`) by default, plus
+opt-in write/proposal tools (`muster_propose_kelpie_action`,
+`muster_get_action_status`) for tracker item 2. Write tools reuse the same
+`integration_deliveries` + `approvals` + worker path as the web integration
+action domain: proposals are always approval-gated, client-supplied
+idempotency keys resume prior deliveries, and resumption is a status read
+that never re-executes external work. A starter skill
+(`skills/muster-soc-operations/SKILL.md`) describes how to use them safely.
+Provisioning is deliberately not a chat- or UI-driven flow — an operator
+runs `pnpm --filter @muster/mcp create-installation` /
 `revoke-installation` directly, which is consistent with "no arbitrary MCP
-registration from chat" and "no broad administration UI" for a first slice.
-A future write/approval-bearing slice (tracker item 2) can extend
-`packages/mcp` with additional tools and idempotency-keyed action requests
-using the same installation/capability model, without changing this ADR's
-credential or connector-routing decisions.
+registration from chat" and "no broad administration UI" for this slice.

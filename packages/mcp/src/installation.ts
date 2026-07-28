@@ -9,7 +9,11 @@ import {
 import type { ActorTypeSchema } from "@muster/contracts";
 import { appendAuditEvent, database, newId, schema } from "@muster/database";
 import type { z } from "zod";
-import { MCP_TOOL_NAMES, type McpToolName } from "./constants.ts";
+import {
+  MCP_READ_TOOL_NAMES,
+  MCP_TOOL_NAMES,
+  type McpToolName,
+} from "./constants.ts";
 
 type Database = ReturnType<typeof database>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -121,7 +125,7 @@ export async function createInstallation(
 ): Promise<{ id: string; token: string }> {
   const { token, tokenHash, tokenPrefix } = generateToken();
   const id = newId();
-  const scopes = input.scopes ?? MCP_TOOL_NAMES;
+  const scopes = input.scopes ?? MCP_READ_TOOL_NAMES;
   await db.transaction(async (tx) => {
     // Authoritative, re-derived from the database inside this transaction:
     // never trust that the caller already checked capability or org
