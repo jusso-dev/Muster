@@ -1876,11 +1876,11 @@ export async function processSlackInboxEvent(inboxEventId: string) {
         encryptionKey(),
       ) as { token: string }
     ).token;
-    const identity = slackAgentMessageIdentity(selected.agent.name);
+    const agentPresentation = slackAgentMessageIdentity(selected.agent.name);
     const posted = await slackApi(token, "chat.postMessage", {
       channel: channelId,
       ...(threadTs ? { thread_ts: threadTs } : {}),
-      ...identity,
+      ...agentPresentation,
       text: `${selected.agent.name} is on it — run queued.`,
       blocks: slackResultBlocks(selected.agent.name, "queued", {
         runId: accepted.runId,
