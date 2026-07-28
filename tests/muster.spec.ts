@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { database, newId, schema } from "@muster/database";
+import { demoIds } from "@muster/database/seed-data";
 import { and, eq, inArray } from "drizzle-orm";
 import { login } from "./helpers";
 
@@ -463,7 +464,7 @@ test("investigation exposes hypotheses, findings, and promotion approval", async
 test("agent learning is evidence-backed and approval gated", async ({
   page,
 }, testInfo) => {
-  const agentId = "018f55d8-c4c7-7c3e-88ef-000000000020";
+  const agentId = demoIds.actors.triage;
   const sourceRunId = newId();
   const skillKey = `browser-governance-${testInfo.project.name}-${Date.now()}`;
   const [definition] = await database()
@@ -556,7 +557,11 @@ test("agent readiness distinguishes ready, attention, unknown, and unauthorised 
 }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium");
   const db = database();
-  const definitions = await db.select().from(schema.agentDefinitions).limit(3);
+  const definitions = await db
+    .select()
+    .from(schema.agentDefinitions)
+    .where(eq(schema.agentDefinitions.organisationId, demoIds.organisation))
+    .limit(3);
   if (definitions.length < 3) {
     throw new Error("Three synthetic agent definitions required");
   }
@@ -1318,15 +1323,15 @@ test("Parker task produces a reviewable, versioned report manifest", async ({
   try {
     await db.insert(schema.tasks).values({
       id: taskId,
-      organisationId: "018f55d8-c4c7-7c3e-88ef-000000000001",
+      organisationId: demoIds.organisation,
       title,
       description:
         "Prepare an executive reporting brief from authoritative history.",
       status: "ready",
       priority: "normal",
-      assignedActorId: "018f55d8-c4c7-7c3e-88ef-000000000025",
-      createdByActorId: "018f55d8-c4c7-7c3e-88ef-000000000010",
-      roomId: "018f55d8-c4c7-7c3e-88ef-000000000100",
+      assignedActorId: demoIds.actors.threatIntel,
+      createdByActorId: demoIds.actors.jordan,
+      roomId: demoIds.rooms.soc,
       idempotencyKey: `parker-e2e:${suffix}`,
     });
     await page.goto("/tasks");
@@ -1419,7 +1424,7 @@ test("Parker schedule creates and displays a governed weekly task configuration"
     await page.goto("/settings/parker-reports");
     await page
       .getByLabel("Room ID")
-      .fill("018f55d8-c4c7-7c3e-88ef-000000000100");
+      .fill(demoIds.rooms.soc);
     await page.getByRole("button", { name: "Create weekly schedule" }).click();
     await expect(
       page.getByText("weekly leadership report").last(),
@@ -1430,7 +1435,7 @@ test("Parker schedule creates and displays a governed weekly task configuration"
       .where(
         eq(
           schema.reportSchedules.idempotencyKey,
-          "parker-ui:018f55d8-c4c7-7c3e-88ef-000000000100:weekly:leadership:Australia/Sydney",
+          `parker-ui:${demoIds.rooms.soc}:weekly:leadership:Australia/Sydney`,
         ),
       );
   }
@@ -1545,7 +1550,11 @@ test("agent observer APIs redact secrets for authorised and unauthorised callers
   const taskId = newId();
   const eventId = newId();
   const canary = `synthetic-observer-secret-${newId()}`;
-  const [definition] = await db.select().from(schema.agentDefinitions).limit(1);
+  const [definition] = await db
+    .select()
+    .from(schema.agentDefinitions)
+    .where(eq(schema.agentDefinitions.organisationId, demoIds.organisation))
+    .limit(1);
   if (!definition) throw new Error("Seeded agent definition required");
 
   try {

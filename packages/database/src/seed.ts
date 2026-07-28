@@ -1,5 +1,5 @@
 import { database, closeDatabase, schema } from "./index.ts";
-import { demoDirectRoomSeeds, demoIds } from "./seed-data.ts";
+import { demoDirectRoomSeeds, demoIds, starterIds } from "./seed-data.ts";
 import { sql } from "drizzle-orm";
 
 if (process.env.MUSTER_DEMO_MODE !== "true") {
@@ -9,6 +9,25 @@ if (process.env.MUSTER_DEMO_MODE !== "true") {
 }
 
 const db = database();
+
+// Demo mode is intentionally seeded on top of the clean-install bootstrap used
+// by release CI. The browser tests and demo UI use the demonstration workspace,
+// so remove the two bootstrap identifiers that would otherwise collide with the
+// demo fixtures when tests look up the authenticated admin actor or the default
+// SOC room by their public identifiers.
+await db
+  .update(schema.actors)
+  .set({ identityReference: "starter-admin@muster.local" })
+  .where(sql`${schema.actors.id} = ${starterIds.actors.jordan}`);
+await db
+  .update(schema.rooms)
+  .set({
+    name: "starter-soc-operations",
+    slug: "starter-soc-operations",
+    displayName: "Starter SOC operations",
+  })
+  .where(sql`${schema.rooms.id} = ${starterIds.rooms.soc}`);
+
 const allCapabilities = [
   "administration.manage",
   "rooms.read",
