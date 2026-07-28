@@ -28,6 +28,7 @@
     "db:verify-audit": "pnpm --filter @muster/database verify:audit",
     "db:seed": "pnpm --filter @muster/database seed",
     "alfie:cisa-smoke": "node scripts/alfie-cisa-smoke.mjs",
+    "kelpie:certify-mock": "node scripts/kelpie-certify-mock.mjs",
     "screenshots": "playwright test tests/screenshots.spec.ts",
     "format": "prettier --write .",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
