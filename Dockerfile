@@ -53,6 +53,7 @@ RUN --mount=type=cache,id=turbo,target=/workspace/.turbo \
 RUN pnpm deploy --filter=@muster/worker --prod /prod/worker \
     && pnpm deploy --filter=@muster/agent-gateway --prod /prod/agent-gateway \
     && pnpm deploy --filter=@muster/database --prod /prod/database \
+    && pnpm deploy --filter=@muster/mcp-server --prod /prod/mcp-server \
     && mkdir -p /workspace/apps/web/.next/standalone/apps/web/.next \
     && cp -R /workspace/apps/web/.next/static /workspace/apps/web/.next/standalone/apps/web/.next/static \
     && cp -R /workspace/apps/web/public /workspace/apps/web/.next/standalone/apps/web/public
@@ -68,7 +69,8 @@ COPY --from=build --chown=nonroot:nonroot /workspace/apps/web/.next/standalone .
 COPY --from=build --chown=nonroot:nonroot /prod/worker ./worker
 COPY --from=build --chown=nonroot:nonroot /prod/agent-gateway ./agent-gateway
 COPY --from=build --chown=nonroot:nonroot /prod/database ./database
+COPY --from=build --chown=nonroot:nonroot /prod/mcp-server ./mcp-server
 COPY --chown=nonroot:nonroot deploy/docker/runtime ./runtime
 COPY --chown=nonroot:nonroot deploy/docker/codex-home /var/lib/muster/codex
-EXPOSE 3000 3001 3002
+EXPOSE 3000 3001 3002 3003
 CMD ["/app/runtime/boot-web.mjs"]

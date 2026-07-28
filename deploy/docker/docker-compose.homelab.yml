@@ -35,7 +35,9 @@ x-muster-environment: &muster-environment
 
 x-muster-service: &muster-service
   image: ${MUSTER_IMAGE:-ghcr.io/jusso-dev/muster:${MUSTER_VERSION:?Set MUSTER_IMAGE to a reviewed digest or MUSTER_VERSION to an immutable sha tag.}}
-  pull_policy: always
+  # Homelab often runs a locally-built image (muster:homelab-e2e). Use if_not_present
+  # so compose does not try to pull private local tags from Docker Hub.
+  pull_policy: if_not_present
   restart: unless-stopped
   environment: *muster-environment
 
@@ -176,6 +178,33 @@ services:
       - codex-state:/var/lib/muster/codex
     depends_on:
       postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "/app/runtime/healthcheck.mjs"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # Streamable HTTP MCP for Hermes (and other clients). Bound to loopback so
+  # host-network Hermes can reach it without exposing the token surface LAN-wide.
+  mcp-server:
+    <<: *muster-service
+    networks:
+      - default
+      - kelpie
+    environment:
+      <<: *muster-environment
+      # Internal listen port inside the container; keep 3003 in-container.
+      MCP_SERVER_PORT: "3003"
+      MUSTER_HEALTHCHECK_URL: http://localhost:3003/health
+    command: ["/app/mcp-server/dist/index.js"]
+    ports:
+      # Host :3003 is collie; publish MCP on loopback 3013 for Hermes host network.
+      - "127.0.0.1:${MUSTER_MCP_PORT:-3013}:3003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      web:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/nodejs/bin/node", "/app/runtime/healthcheck.mjs"]

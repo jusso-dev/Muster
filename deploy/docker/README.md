@@ -24,3 +24,16 @@ exposing Muster beyond a trusted local network.
 
 Use the immutable-tag release, smoke, and rollback procedure in
 [release-homelab.md](../../docs/operations/release-homelab.md).
+
+## End-to-end wiring (Kelpie + Slack + Hermes)
+
+After the stack is up, run the status board (and optional Hermes MCP wire-up):
+
+```bash
+./scripts/bootstrap-e2e-homelab.sh
+./scripts/bootstrap-e2e-homelab.sh --check-only
+./scripts/bootstrap-e2e-homelab.sh --wire-hermes-mcp
+```
+
+Full map, agent routing, and failure table:
+[e2e-homelab-bootstrap.md](../../docs/operations/e2e-homelab-bootstrap.md).

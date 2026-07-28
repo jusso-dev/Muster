@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { handleSlackSocketMessage, runSlackSocketMode } from "./slack-socket";
+import {
+  handleSlackSocketMessage,
+  parseSocketMessage,
+  runSlackSocketMode,
+  SlackSocketDisconnectError,
+} from "./slack-socket";
 
 describe("Slack Socket Mode transport", () => {
   it("accepts the initial hello control frame without persisting or acknowledging it", async () => {
@@ -18,6 +23,20 @@ describe("Slack Socket Mode transport", () => {
 
     expect(recordEnvelope).not.toHaveBeenCalled();
     expect(acknowledge).not.toHaveBeenCalled();
+  });
+
+  it("ignores non-event control frames instead of throwing", () => {
+    expect(parseSocketMessage(JSON.stringify({ type: "pong" }))).toBeNull();
+    expect(parseSocketMessage("not-json")).toBeNull();
+    expect(parseSocketMessage("")).toBeNull();
+  });
+
+  it("signals disconnect so the transport can reconnect", () => {
+    expect(() =>
+      parseSocketMessage(
+        JSON.stringify({ type: "disconnect", reason: "warning" }),
+      ),
+    ).toThrow(SlackSocketDisconnectError);
   });
 
   it("persists an envelope before acknowledging it", async () => {

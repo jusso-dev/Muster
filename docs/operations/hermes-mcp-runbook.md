@@ -1,5 +1,9 @@
 # Operational runbook: Hermes + remote Muster MCP
 
+For the full homelab path (Kelpie connector + Slack agents + Hermes MCP), use
+[e2e-homelab-bootstrap.md](e2e-homelab-bootstrap.md) and
+`./scripts/bootstrap-e2e-homelab.sh`.
+
 ## Package layout
 
 | Component | Path | Role |

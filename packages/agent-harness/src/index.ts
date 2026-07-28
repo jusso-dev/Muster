@@ -1220,6 +1220,44 @@ export async function slackApi(
   throw new Error(`Slack ${method} retry limit exhausted`);
 }
 
+function firstSlackString(result: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = result[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function stringListField(result: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = result[key];
+    if (!Array.isArray(value)) continue;
+    const items = value
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") {
+          const record = item as Record<string, unknown>;
+          return firstSlackString(record, [
+            "text",
+            "title",
+            "summary",
+            "action",
+            "description",
+          ]);
+        }
+        return "";
+      })
+      .filter((item) => item.length > 0);
+    if (items.length) return items;
+  }
+  return [] as string[];
+}
+
+/**
+ * Render governed agent structured output for Slack.
+ * Agents emit typed schemas (ExecutiveUpdate, HuntResult, …) — not a flat
+ * `summary` field — so prefer headline/impact/title before falling back.
+ */
 export function slackResultBlocks(
   agentName: string,
   status: string,
@@ -1229,8 +1267,38 @@ export function slackResultBlocks(
     output && typeof output === "object" && !Array.isArray(output)
       ? (output as Record<string, unknown>)
       : {};
+  const headline = firstSlackString(result, [
+    "headline",
+    "title",
+    "summary",
+    "progress",
+  ]);
+  const body = firstSlackString(result, [
+    "impact",
+    "summary",
+    "rationale",
+    "detail",
+    "message",
+  ]);
+  const statusNote =
+    typeof result.status === "string" && result.status.trim()
+      ? result.status.trim()
+      : "";
+  const summaryParts = [
+    headline ? `*${slackMrkdwn(headline, 300)}*` : "",
+    body ? slackMrkdwn(body, 1_500) : "",
+    statusNote && statusNote !== status
+      ? `_Disposition: ${slackMrkdwn(statusNote, 80)}_`
+      : "",
+  ].filter(Boolean);
   const summary =
-    slackMrkdwn(result.summary, 1_500) || "No typed result was produced.";
+    summaryParts.join("\n") ||
+    (typeof result.progress === "string"
+      ? slackMrkdwn(result.progress, 500)
+      : "") ||
+    (status === "queued" || status === "running" || status === "executing"
+      ? "Working…"
+      : "No typed result was produced.");
   const confidence =
     typeof result.confidence === "number"
       ? `\n*Confidence:* ${Math.round(result.confidence * 100)}%`
@@ -1244,18 +1312,16 @@ export function slackResultBlocks(
         700,
       )
     : "";
-  const nextSteps = [
-    result.recommendedNextSteps,
-    result.recommendedActions,
-    result.followUpActions,
-  ].find(Array.isArray);
-  const renderedNextSteps = Array.isArray(nextSteps)
-    ? nextSteps
-        .filter((step): step is string => typeof step === "string")
-        .slice(0, 3)
-        .map((step) => `• ${slackMrkdwn(step, 300)}`)
-        .join("\n")
-    : "";
+  const nextSteps = stringListField(result, [
+    "actions",
+    "recommendedNextSteps",
+    "recommendedActions",
+    "followUpActions",
+  ]);
+  const renderedNextSteps = nextSteps
+    .slice(0, 6)
+    .map((step) => `• ${slackMrkdwn(step, 400)}`)
+    .join("\n");
   const linkedEvidence = evidenceIds(result)
     .map((id, index) => {
       const url = musterUrl(`/api/v1/evidence/${encodeURIComponent(id)}`);
@@ -1281,7 +1347,7 @@ export function slackResultBlocks(
     });
   }
   if (
-    ["queued", "running", "waiting_sources", "awaiting_approval"].includes(
+    ["queued", "running", "waiting_sources", "awaiting_approval", "executing"].includes(
       status,
     )
   )
@@ -1330,7 +1396,7 @@ export function slackResultBlocks(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Recommended next steps*\n${renderedNextSteps}`,
+        text: `*Actions / next steps*\n${renderedNextSteps}`,
       },
     });
   if (linkedEvidence.length)
@@ -1662,15 +1728,24 @@ export async function processSlackInboxEvent(inboxEventId: string) {
     .toLowerCase();
   const direct = event.channel_type === "im" || Boolean(assistantThread);
   const eligible = exposures.filter(({ exposure }) => {
-    const allowed = Array.isArray(exposure.allowedChannelIds)
-      ? exposure.allowedChannelIds.includes(channelId)
-      : false;
+    // Empty allow-list means every channel (DMs still require allowDirectMessages).
+    const allowedChannels = Array.isArray(exposure.allowedChannelIds)
+      ? exposure.allowedChannelIds.filter(
+          (id): id is string => typeof id === "string" && id.length > 0,
+        )
+      : [];
+    const allowed =
+      allowedChannels.length === 0 || allowedChannels.includes(channelId);
     return direct ? exposure.allowDirectMessages : allowed;
   });
+  // Route: "use Jessie …" / "/muster Alfie …" / "Jessie …" then default agent.
   const selected =
     eligible.find(({ agent }) => agent.name.toLowerCase() === requested) ??
     eligible.find(({ agent }) =>
       text.toLowerCase().startsWith(`${agent.name.toLowerCase()} `),
+    ) ??
+    eligible.find(
+      ({ agent }) => text.toLowerCase() === agent.name.toLowerCase(),
     ) ??
     eligible.find(({ exposure }) => exposure.isDefault) ??
     eligible[0];

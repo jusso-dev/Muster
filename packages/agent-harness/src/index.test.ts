@@ -167,7 +167,7 @@ describe("Slack governed harness boundary", () => {
     expect(JSON.stringify(failed)).toContain(
       "https://muster.example/api/v1/evidence/00000000-0000-4000-8000-000000000004",
     );
-    expect(JSON.stringify(failed)).toContain("Recommended next steps");
+    expect(JSON.stringify(failed)).toContain("Actions / next steps");
     expect(JSON.stringify(failed)).toContain("Review &lt;@U123&gt; findings");
     expect(JSON.stringify(failed)).not.toContain("https://untrusted.example");
     expect(JSON.stringify(failed)).not.toContain("connector-token");

@@ -3,6 +3,18 @@ export type SlackSocketEnvelope = {
   payload: Record<string, unknown>;
 };
 
+/** Slack asked the client to reconnect; finish the current socket cleanly. */
+export class SlackSocketDisconnectError extends Error {
+  override readonly name = "SlackSocketDisconnectError";
+  constructor(readonly reason?: string) {
+    super(
+      reason
+        ? `Slack Socket Mode disconnect requested: ${reason}`
+        : "Slack Socket Mode disconnect requested",
+    );
+  }
+}
+
 type SlackSocket = {
   addEventListener(
     type: "message" | "close" | "error",
@@ -37,29 +49,53 @@ export function slackSocketMetrics() {
   return { ...socketMetrics };
 }
 
-function parseSocketMessage(data: unknown): SlackSocketEnvelope | null {
-  const text =
-    typeof data === "string"
-      ? data
-      : data instanceof ArrayBuffer
-        ? new TextDecoder().decode(data)
-        : ArrayBuffer.isView(data)
-          ? new TextDecoder().decode(data)
-          : "";
-  const parsed = JSON.parse(text) as {
+function decodeSocketData(data: unknown): string {
+  if (typeof data === "string") return data;
+  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
+  if (ArrayBuffer.isView(data)) return new TextDecoder().decode(data);
+  return "";
+}
+
+/**
+ * Parse a Socket Mode frame.
+ * - `hello` / unknown control frames → null (ignore)
+ * - `disconnect` → throw SlackSocketDisconnectError so the outer loop reconnects
+ * - event envelopes → { envelope_id, payload }
+ */
+export function parseSocketMessage(
+  data: unknown,
+): SlackSocketEnvelope | null {
+  const text = decodeSocketData(data).trim();
+  if (!text) return null;
+  let parsed: {
     type?: unknown;
+    reason?: unknown;
     envelope_id?: unknown;
     payload?: unknown;
   };
+  try {
+    parsed = JSON.parse(text) as typeof parsed;
+  } catch {
+    // Non-JSON frames (browser pings, garbage) — ignore rather than crash loop.
+    return null;
+  }
   if (parsed.type === "hello") return null;
+  if (parsed.type === "disconnect") {
+    throw new SlackSocketDisconnectError(
+      typeof parsed.reason === "string" ? parsed.reason : undefined,
+    );
+  }
   if (
     typeof parsed.envelope_id !== "string" ||
     !parsed.envelope_id.trim() ||
     !parsed.payload ||
     typeof parsed.payload !== "object" ||
     Array.isArray(parsed.payload)
-  )
-    throw new Error("Slack Socket Mode envelope is invalid");
+  ) {
+    // Slack also sends non-event control frames without envelope_id.
+    // Throwing here used to tear the connection into a reconnect storm.
+    return null;
+  }
   return {
     envelope_id: parsed.envelope_id,
     payload: parsed.payload as Record<string, unknown>,
@@ -135,12 +171,24 @@ async function consumeConnection(
       void handleSlackSocketMessage(data, recordEnvelope, (acknowledgement) =>
         socket.send(acknowledgement),
       ).catch((error) => {
+        if (error instanceof SlackSocketDisconnectError) {
+          // Server requested reconnect — close cleanly so the outer loop opens a new URL.
+          socket.close(1000, "Slack Socket Mode disconnect");
+          finish();
+          return;
+        }
         socketMetrics.envelopeFailures += 1;
         onError(error);
       });
     };
     const onSocketError = (event: Event | MessageEvent) => {
-      onError(event);
+      const detail =
+        event instanceof ErrorEvent && event.message
+          ? event.message
+          : event instanceof MessageEvent && typeof event.data === "string"
+            ? event.data
+            : "Socket Mode transport error";
+      onError(new Error(detail));
       socket.close(1011, "Slack Socket Mode connection failed");
       finish();
     };
