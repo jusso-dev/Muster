@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   capabilities,
+  requireCapability,
   type AuthorisationSubject,
   type Capability,
 } from "@muster/authz";
@@ -11,6 +12,7 @@ import type { z } from "zod";
 import { MCP_TOOL_NAMES, type McpToolName } from "./constants.ts";
 
 type Database = ReturnType<typeof database>;
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 const TOKEN_PREFIX = "muster_mcp_";
 
@@ -20,6 +22,76 @@ export interface InstallationContext {
   scopes: readonly McpToolName[];
   subject: AuthorisationSubject;
   actorType: z.infer<typeof ActorTypeSchema>;
+}
+
+/** Thrown when a tool is requested outside an installation's scope allow-list. */
+export class ScopeError extends Error {
+  override readonly name = "ScopeError";
+  constructor(readonly tool: McpToolName) {
+    super(`Installation is not scoped for ${tool}`);
+  }
+}
+
+/** Thrown when a referenced actor does not belong to the target organisation. */
+export class ActorOrganisationMismatchError extends Error {
+  override readonly name = "ActorOrganisationMismatchError";
+  constructor(actorId: string) {
+    super(
+      `Actor ${actorId} does not belong to this organisation or is inactive.`,
+    );
+  }
+}
+
+async function requireActiveActorInOrganisation(
+  tx: Transaction,
+  organisationId: string,
+  actorId: string,
+): Promise<ReadonlySet<Capability>> {
+  const [actor] = await tx
+    .select({
+      status: schema.actors.status,
+      capabilityAssignments: schema.actors.capabilityAssignments,
+    })
+    .from(schema.actors)
+    .where(
+      and(
+        eq(schema.actors.id, actorId),
+        eq(schema.actors.organisationId, organisationId),
+      ),
+    )
+    .limit(1);
+  if (!actor || actor.status !== "active")
+    throw new ActorOrganisationMismatchError(actorId);
+  const assigned = Array.isArray(actor.capabilityAssignments)
+    ? actor.capabilityAssignments.filter(
+        (value): value is Capability =>
+          typeof value === "string" &&
+          capabilities.includes(value as Capability),
+      )
+    : [];
+  return new Set(assigned);
+}
+
+/**
+ * Authoritative, server-side re-check that the acting actor belongs to this
+ * organisation and holds `administration.manage` — never trusted from the
+ * caller. Installation lifecycle mutations are dangerous actions (AGENTS.md:
+ * "Require server-side capability checks ... for dangerous actions").
+ */
+async function requireInstallationAdministrator(
+  tx: Transaction,
+  organisationId: string,
+  actorId: string,
+): Promise<void> {
+  const assigned = await requireActiveActorInOrganisation(
+    tx,
+    organisationId,
+    actorId,
+  );
+  requireCapability(
+    { actorId, organisationId, capabilities: assigned },
+    "administration.manage",
+  );
 }
 
 export function hashInstallationToken(token: string): string {
@@ -51,6 +123,21 @@ export async function createInstallation(
   const id = newId();
   const scopes = input.scopes ?? MCP_TOOL_NAMES;
   await db.transaction(async (tx) => {
+    // Authoritative, re-derived from the database inside this transaction:
+    // never trust that the caller already checked capability or org
+    // membership. Both the installing actor and the actor the credential
+    // will be bound to must actually belong to this organisation.
+    await requireInstallationAdministrator(
+      tx,
+      input.organisationId,
+      input.installedByActorId,
+    );
+    if (input.boundActorId !== input.installedByActorId)
+      await requireActiveActorInOrganisation(
+        tx,
+        input.organisationId,
+        input.boundActorId,
+      );
     await tx.insert(schema.mcpInstallations).values({
       id,
       organisationId: input.organisationId,
@@ -85,6 +172,11 @@ export async function revokeInstallation(
   },
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
+    await requireInstallationAdministrator(
+      tx,
+      input.organisationId,
+      input.revokedByActorId,
+    );
     const [updated] = await tx
       .update(schema.mcpInstallations)
       .set({
@@ -194,6 +286,5 @@ export function requireScope(
   context: InstallationContext,
   tool: McpToolName,
 ): void {
-  if (!context.scopes.includes(tool))
-    throw new Error(`Installation is not scoped for ${tool}`);
+  if (!context.scopes.includes(tool)) throw new ScopeError(tool);
 }

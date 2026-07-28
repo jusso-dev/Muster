@@ -2,7 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDatabase, database, newId, schema } from "@muster/database";
 import {
@@ -171,6 +171,7 @@ describeIntegration("Muster MCP vertical slice", () => {
   let mock: ChildProcess;
   let mockOrigin = "";
   let organisationId = "";
+  let administratorActorId = "";
   let fullActorId = "";
   let restrictedActorId = "";
   let otherOrganisationId = "";
@@ -208,6 +209,7 @@ describeIntegration("Muster MCP vertical slice", () => {
     );
     if (!administrator) throw new Error("Seeded administrator actor required");
     organisationId = administrator.organisationId;
+    administratorActorId = administrator.id;
 
     fullActorId = newId();
     await db.insert(schema.actors).values({
@@ -329,7 +331,7 @@ describeIntegration("Muster MCP vertical slice", () => {
     const { token } = await createInstallation(db, {
       organisationId,
       boundActorId: fullActorId,
-      installedByActorId: fullActorId,
+      installedByActorId: administratorActorId,
       name: "Hermes primary",
       traceId: randomUUID(),
     });
@@ -351,7 +353,7 @@ describeIntegration("Muster MCP vertical slice", () => {
     const { id, token } = await createInstallation(db, {
       organisationId,
       boundActorId: fullActorId,
-      installedByActorId: fullActorId,
+      installedByActorId: administratorActorId,
       name: "Revocable",
       traceId: randomUUID(),
     });
@@ -359,29 +361,77 @@ describeIntegration("Muster MCP vertical slice", () => {
     await revokeInstallation(db, {
       organisationId,
       installationId: id,
-      revokedByActorId: fullActorId,
+      revokedByActorId: administratorActorId,
       traceId: randomUUID(),
     });
     expect(await resolveInstallation(db, token)).toBeNull();
 
-    // Cross-organisation: an installation row whose bound actor's actual
-    // organisation no longer matches the installation's organisation must
-    // fail closed rather than resolving into the wrong tenant.
+    // Cross-organisation, at the database level: the composite
+    // (bound_actor_id, organisation_id) -> actors(id, organisation_id) FK
+    // means Postgres itself refuses to persist an installation row whose
+    // bound actor belongs to a different organisation — a raw insert
+    // attempting it must fail, not merely resolve to null later.
     const mismatchedId = newId();
     const crypto = await import("node:crypto");
     const mismatchedToken = `muster_mcp_${crypto.randomBytes(32).toString("base64url")}`;
     const { hashInstallationToken } = await import("./installation.ts");
-    await db.insert(schema.mcpInstallations).values({
-      id: mismatchedId,
-      organisationId,
-      name: "Mismatched",
-      tokenHash: hashInstallationToken(mismatchedToken),
-      tokenPrefix: mismatchedToken.slice(0, 20),
-      scopes: [],
-      boundActorId: otherActorId,
-      installedByActorId: fullActorId,
-    });
+    await expect(
+      db.insert(schema.mcpInstallations).values({
+        id: mismatchedId,
+        organisationId,
+        name: "Mismatched",
+        tokenHash: hashInstallationToken(mismatchedToken),
+        tokenPrefix: mismatchedToken.slice(0, 20),
+        scopes: [],
+        boundActorId: otherActorId,
+        installedByActorId: administratorActorId,
+      }),
+    ).rejects.toThrow();
     expect(await resolveInstallation(db, mismatchedToken)).toBeNull();
+  });
+
+  it("requires administration.manage to create or revoke an installation, and rejects cross-organisation actor bindings", async () => {
+    const db = database();
+    // The installing/revoking actor's capability is re-derived from the
+    // database on every call — a caller cannot grant itself authority by
+    // simply not being challenged for it.
+    await expect(
+      createInstallation(db, {
+        organisationId,
+        boundActorId: fullActorId,
+        installedByActorId: restrictedActorId,
+        name: "Should be denied",
+        traceId: randomUUID(),
+      }),
+    ).rejects.toThrow(/Missing capability/);
+
+    // The bound actor must also actually belong to this organisation, even
+    // though the installing actor is a legitimate administrator here.
+    await expect(
+      createInstallation(db, {
+        organisationId,
+        boundActorId: otherActorId,
+        installedByActorId: administratorActorId,
+        name: "Cross-org bound actor",
+        traceId: randomUUID(),
+      }),
+    ).rejects.toThrow(/does not belong to this organisation/);
+
+    const { id } = await createInstallation(db, {
+      organisationId,
+      boundActorId: fullActorId,
+      installedByActorId: administratorActorId,
+      name: "Revocation authorisation target",
+      traceId: randomUUID(),
+    });
+    await expect(
+      revokeInstallation(db, {
+        organisationId,
+        installationId: id,
+        revokedByActorId: restrictedActorId,
+        traceId: randomUUID(),
+      }),
+    ).rejects.toThrow(/Missing capability/);
   });
 
   it("never lets model-supplied fields change server-side scope, and denies missing capability or scope", async () => {
@@ -389,7 +439,7 @@ describeIntegration("Muster MCP vertical slice", () => {
     const { token: restrictedToken } = await createInstallation(db, {
       organisationId,
       boundActorId: restrictedActorId,
-      installedByActorId: fullActorId,
+      installedByActorId: administratorActorId,
       name: "No Kelpie capability",
       traceId: randomUUID(),
     });
@@ -409,7 +459,7 @@ describeIntegration("Muster MCP vertical slice", () => {
     const { token: scopedToken } = await createInstallation(db, {
       organisationId,
       boundActorId: fullActorId,
-      installedByActorId: fullActorId,
+      installedByActorId: administratorActorId,
       name: "Status only",
       scopes: ["muster_get_status"],
       traceId: randomUUID(),
@@ -432,7 +482,7 @@ describeIntegration("Muster MCP vertical slice", () => {
     const { token } = await createInstallation(db, {
       organisationId,
       boundActorId: fullActorId,
-      installedByActorId: fullActorId,
+      installedByActorId: administratorActorId,
       name: "Schema failure client",
       traceId: randomUUID(),
     });
@@ -454,7 +504,7 @@ describeIntegration("Muster MCP vertical slice", () => {
     const { token } = await createInstallation(db, {
       organisationId,
       boundActorId: fullActorId,
-      installedByActorId: fullActorId,
+      installedByActorId: administratorActorId,
       name: "Search client",
       traceId: randomUUID(),
     });
@@ -506,7 +556,48 @@ describeIntegration("Muster MCP vertical slice", () => {
     expect(Array.isArray(metadata.evidenceRefs)).toBe(true);
   }, 15_000);
 
-  it("denies SSRF-shaped connector egress before it ever leaves the process", async () => {
+  it("dedupes a retried Kelpie search within the idempotency window instead of re-querying Kelpie", async () => {
+    const db = database();
+    const { token } = await createInstallation(db, {
+      organisationId,
+      boundActorId: fullActorId,
+      installedByActorId: administratorActorId,
+      name: "Retry client",
+      traceId: randomUUID(),
+    });
+    const client = await connectedClient(db, token);
+    const before = await db
+      .select({ value: count() })
+      .from(schema.integrationQueryRuns)
+      .where(eq(schema.integrationQueryRuns.organisationId, organisationId));
+
+    const [first] = await Promise.all([
+      client.callTool({
+        name: "muster_search_kelpie_cases",
+        arguments: { query: "retry-dedup-marker", limit: 5 },
+      }),
+      waitForQueuedRunAndDrain(organisationId),
+    ]);
+    expect(first.isError).toBeFalsy();
+
+    // Same installation, same arguments, retried immediately: a client
+    // retry or MCP transport-level replay must dedupe to the already-queued
+    // run rather than issuing a second connector query against Kelpie.
+    const second = await client.callTool({
+      name: "muster_search_kelpie_cases",
+      arguments: { query: "retry-dedup-marker", limit: 5 },
+    });
+    expect(second.isError).toBeFalsy();
+    expect(second).toEqual(first);
+
+    const after = await db
+      .select({ value: count() })
+      .from(schema.integrationQueryRuns)
+      .where(eq(schema.integrationQueryRuns.organisationId, organisationId));
+    expect((after[0]?.value ?? 0) - (before[0]?.value ?? 0)).toBe(1);
+  });
+
+  it("denies SSRF-shaped connector egress through the real MCP tool/gateway path", async () => {
     const db = database();
     const ssrfIntegrationId = newId();
     const auth = { type: "bearer" as const, token: "ssrf-guard-secret" };
@@ -556,33 +647,51 @@ describeIntegration("Muster MCP vertical slice", () => {
       definition,
       createdByActorId: fullActorId,
     });
-    // This organisation now has two "kelpie" integration records; the
-    // gateway picks the first configured one, which is fine for this
-    // assertion since we only care that link-local egress is denied,
-    // never silently allowed, once selected.
-    await expect(
-      executeGovernedQuery({
-        configuration: ConnectorConfigurationSchema.parse({
-          product: "kelpie",
-          instanceId: `${instanceId}-ssrf`,
-          displayName: "x",
-          baseUrl: "http://169.254.169.254",
-          allowedHosts: ["169.254.169.254"],
-          allowPrivateNetwork: false,
-          testMode: true,
-          auth,
-          limits: {
-            timeoutMs: 500,
-            maxResponseBytes: 10_000,
-            maxRecords: 10,
-            maxPages: 1,
-            requestsPerMinute: 60,
-          },
-        }),
-        auth,
-        template: definition,
-        values: {},
+
+    // This is now the most recently updated "kelpie" integration for the
+    // organisation, so kelpie-gateway.ts's findKelpieIntegration selects it
+    // for every subsequent call in this test — exercising the real
+    // muster_search_kelpie_cases tool and governed-connector gateway path,
+    // not executeGovernedQuery in isolation.
+    const { token } = await createInstallation(db, {
+      organisationId,
+      boundActorId: fullActorId,
+      installedByActorId: administratorActorId,
+      name: "SSRF path client",
+      traceId: randomUUID(),
+    });
+    const client = await connectedClient(db, token);
+    const [result] = await Promise.all([
+      client.callTool({
+        name: "muster_search_kelpie_cases",
+        arguments: { limit: 5 },
       }),
-    ).rejects.toThrow(/denied/);
+      waitForQueuedRunAndDrain(organisationId),
+    ]);
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(text).toContain("upstream_error");
+
+    const [run] = await db
+      .select({ errorCode: schema.integrationQueryRuns.errorCode })
+      .from(schema.integrationQueryRuns)
+      .where(eq(schema.integrationQueryRuns.integrationId, ssrfIntegrationId))
+      .orderBy(desc(schema.integrationQueryRuns.createdAt))
+      .limit(1);
+    expect(run?.errorCode).toBe("egress_denied");
+
+    const [audit] = await db
+      .select()
+      .from(schema.auditEvents)
+      .where(
+        and(
+          eq(schema.auditEvents.organisationId, organisationId),
+          eq(schema.auditEvents.action, "mcp.tool.invoked"),
+          eq(schema.auditEvents.targetId, "muster_search_kelpie_cases"),
+        ),
+      )
+      .orderBy(desc(schema.auditEvents.sequence))
+      .limit(1);
+    expect((audit?.metadata as Record<string, unknown>)?.outcome).toBe("error");
   }, 10_000);
 });

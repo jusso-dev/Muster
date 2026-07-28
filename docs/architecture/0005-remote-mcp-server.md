@@ -63,7 +63,55 @@ boundary this ADR exists to draw.
   `mcp.tool.invoked` event per call, carrying tool name, tool version,
   installation id, outcome, a SHA-256 hash of the returned payload, and
   evidence references (query run ids). No prompt, argument text, or model
-  reasoning is ever written to it.
+  reasoning is ever written to it. A failure to write that event is logged
+  (`mcp.audit.write_failed`), not silently swallowed, so an audit gap is
+  detectable rather than invisible.
+- **Actor/organisation integrity for installation lifecycle mutations**:
+  `createInstallation`/`revokeInstallation` re-derive the acting actor's
+  organisation membership and `administration.manage` capability from the
+  database inside the same transaction as the mutation — never trusted from
+  the caller — and a composite foreign key
+  (`(actor_id, organisation_id) -> actors(id, organisation_id)`, backed by a
+  new `actors_id_organisation_unique` index) makes a cross-organisation actor
+  binding impossible at the schema level too, as defence in depth.
+  Provisioning a credential is still not gated behind a multi-party approval
+  record; see "Deferred" below.
+- **Reliability hardening**: the HTTP server drains in-flight requests
+  (awaits `server.close()`'s callback) before closing the database pool on
+  shutdown; `/health` performs a real `select 1` against Postgres rather
+  than a static stub; `requestTimeout`/`headersTimeout`/`keepAliveTimeout`
+  are set explicitly (with headroom over the 8s Kelpie poll bound) so a
+  burst of concurrent bounded polls can't hold connections open
+  indefinitely; and `@muster/database`'s pool now has an `error` listener —
+  without one, an idle-client error (the database restarting) is an
+  unhandled Node `'error'` event that crashes the whole process, which is
+  exactly what a dependency-aware health check will provoke during any real
+  outage.
+
+## Deferred
+
+Two review findings described genuine architectural tensions rather than
+bugs, and are deliberately not addressed by a larger protocol change in this
+vertical slice:
+
+- **Kelpie tool calls poll inside the HTTP request handler for up to 8s.**
+  This is in tension with "keep long-running integration work out of
+  request handlers," but MCP's tool-call contract in this SDK is
+  synchronous request/response — returning immediately would mean either a
+  second "fetch the result" tool (expanding the four-tool contract this
+  issue specifies) or adopting the SDK's experimental async-tasks surface.
+  Both are a real protocol-shape decision for a later slice, not a small
+  fix. The request/socket timeouts above bound the resource cost in the
+  meantime.
+- **The per-integration rate-limit check is a soft limit**, not a hard
+  concurrency-safe one: it now runs inside the same transaction and under
+  an advisory lock scoped to the integration (mirroring
+  `appendAuditEvent`'s org-scoped lock), which closes the read-then-insert
+  race that existed before. A determined caller opening many concurrent
+  connections could still contend on that lock rather than being rejected
+  outright; a dedicated token-bucket limiter would be a heavier addition
+  reserved for if Kelpie rate limits become an operational problem in
+  practice.
 
 ## Consequences
 

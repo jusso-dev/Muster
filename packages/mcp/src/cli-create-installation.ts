@@ -42,6 +42,9 @@ async function main() {
         2,
       ),
     );
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "Create failed.");
+    process.exitCode = 1;
   } finally {
     await closeDatabase();
   }

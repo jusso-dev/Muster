@@ -16,6 +16,7 @@
     "@muster/config": "workspace:*",
     "@muster/database": "workspace:*",
     "@muster/mcp": "workspace:*",
+    "drizzle-orm": "catalog:",
     "zod": "4.4.3"
   },
   "devDependencies": {

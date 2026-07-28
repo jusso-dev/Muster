@@ -10,7 +10,7 @@ import {
 } from "./constants.ts";
 import { McpToolError } from "./errors.ts";
 import type { InstallationContext } from "./installation.ts";
-import { requireScope } from "./installation.ts";
+import { requireScope, ScopeError } from "./installation.ts";
 import {
   getKelpieCase,
   getStatus,
@@ -37,8 +37,7 @@ function toolFailure(error: unknown) {
       ? `${error.code}: ${error.message}`
       : error instanceof ForbiddenError
         ? "Installation lacks the required capability for this tool."
-        : error instanceof Error &&
-            error.message.startsWith("Installation is not scoped")
+        : error instanceof ScopeError
           ? error.message
           : "Muster tool request failed.";
   return {
@@ -48,11 +47,7 @@ function toolFailure(error: unknown) {
 }
 
 function isDenied(error: unknown): boolean {
-  return (
-    error instanceof ForbiddenError ||
-    (error instanceof Error &&
-      error.message.startsWith("Installation is not scoped"))
-  );
+  return error instanceof ForbiddenError || error instanceof ScopeError;
 }
 
 export function createMusterMcpServer(deps: McpServerDeps) {
@@ -82,7 +77,17 @@ export function createMusterMcpServer(deps: McpServerDeps) {
         outcome: isDenied(error) ? "denied" : "error",
         errorCode: error instanceof McpToolError ? error.code : undefined,
         traceId: deps.traceId,
-      }).catch(() => undefined);
+      }).catch((auditError: unknown) => {
+        // The tool call itself already failed; don't let a second failure
+        // writing that outcome to the audit trail vanish silently — an
+        // operator needs to be able to detect and reconcile the gap.
+        console.error("mcp.audit.write_failed", {
+          tool,
+          installationId: deps.context.installationId,
+          traceId: deps.traceId,
+          error: auditError instanceof Error ? auditError.message : "unknown",
+        });
+      });
       return toolFailure(error);
     }
   }

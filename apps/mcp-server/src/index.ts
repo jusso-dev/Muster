@@ -9,6 +9,8 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { redactObservationText } from "@muster/config";
 import { closeDatabase, database } from "@muster/database";
 import { createMusterMcpServer, resolveInstallation } from "@muster/mcp";
+import { checkDatabaseHealth } from "./health.ts";
+import { gracefulShutdown } from "./shutdown.ts";
 
 const db = database();
 
@@ -33,7 +35,11 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", "http://mcp-server.local");
 
   if (request.method === "GET" && url.pathname === "/health") {
-    respondJson(response, 200, { status: "ready", authority: "postgresql" });
+    const healthy = await checkDatabaseHealth(db);
+    respondJson(response, healthy ? 200 : 503, {
+      status: healthy ? "ready" : "not_ready",
+      authority: "postgresql",
+    });
     return;
   }
 
@@ -78,11 +84,18 @@ const server = createServer(async (request, response) => {
   }
 });
 
+// Kelpie tool calls poll for up to KELPIE_POLL_OPTIONS.timeoutMs (8s) inside
+// the request; these bound the socket/request lifecycle around that with
+// headroom, so a burst of concurrent bounded polls can't hold connections
+// open indefinitely instead of being bounded like everything else here.
+server.requestTimeout = 15_000;
+server.headersTimeout = 12_000;
+server.keepAliveTimeout = 5_000;
+
 server.listen(Number(process.env.MCP_SERVER_PORT ?? 3003), "0.0.0.0");
 
 async function shutdown() {
-  server.close();
-  await closeDatabase();
+  await gracefulShutdown(server, closeDatabase);
 }
 
 process.once("SIGINT", () => void shutdown());

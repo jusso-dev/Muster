@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, isNull } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { requireCapability, type AuthorisationSubject } from "@muster/authz";
 import type { ActorTypeSchema } from "@muster/contracts";
 import {
@@ -76,24 +76,6 @@ export async function queueKelpieQuery(
   const limits = ConnectorConfigurationSchema.shape.limits.parse(
     (integration.configuration as Record<string, unknown>).limits,
   );
-  const [recent] = await db
-    .select({ value: count() })
-    .from(schema.integrationQueryRuns)
-    .where(
-      and(
-        eq(schema.integrationQueryRuns.organisationId, subject.organisationId),
-        eq(schema.integrationQueryRuns.integrationId, integration.id),
-        gte(
-          schema.integrationQueryRuns.createdAt,
-          new Date(Date.now() - 60_000),
-        ),
-      ),
-    );
-  if ((recent?.value ?? 0) >= limits.requestsPerMinute)
-    throw new McpToolError(
-      "rate_limited",
-      "Kelpie connector request rate limit reached.",
-    );
   const [template] = await db
     .select()
     .from(schema.integrationQueryTemplates)
@@ -135,6 +117,34 @@ export async function queueKelpieQuery(
       )
       .limit(1);
     if (duplicate) return { id: duplicate.id, duplicate: true };
+    // Advisory lock scoped to this integration serialises the rate-limit
+    // check with the insert, the same way appendAuditEvent serialises audit
+    // sequence assignment per organisation — closing the race where
+    // concurrent calls could each observe a sub-limit count and all insert.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${integration.id}, 1))`,
+    );
+    const [recent] = await tx
+      .select({ value: count() })
+      .from(schema.integrationQueryRuns)
+      .where(
+        and(
+          eq(
+            schema.integrationQueryRuns.organisationId,
+            subject.organisationId,
+          ),
+          eq(schema.integrationQueryRuns.integrationId, integration.id),
+          gte(
+            schema.integrationQueryRuns.createdAt,
+            new Date(Date.now() - 60_000),
+          ),
+        ),
+      );
+    if ((recent?.value ?? 0) >= limits.requestsPerMinute)
+      throw new McpToolError(
+        "rate_limited",
+        "Kelpie connector request rate limit reached.",
+      );
     const id = newId();
     await tx.insert(schema.integrationQueryRuns).values({
       id,

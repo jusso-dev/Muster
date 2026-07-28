@@ -1,5 +1,5 @@
 {
-  "id": "03884917-5d88-40bd-9523-d29bad17c030",
+  "id": "57e02959-32dd-44df-8620-ea69bd36ee22",
   "prevId": "5a3f4b3d-0e42-4346-968e-c1b3220c872e",
   "version": "7",
   "dialect": "postgresql",
@@ -113,6 +113,27 @@
           ],
           "isUnique": true,
           "where": "\"actors\".\"identity_reference\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "actors_id_organisation_unique": {
+          "name": "actors_id_organisation_unique",
+          "columns": [
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "organisation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -6127,41 +6148,47 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "mcp_installations_bound_actor_id_actors_id_fk": {
-          "name": "mcp_installations_bound_actor_id_actors_id_fk",
+        "mcp_installations_bound_actor_org_fk": {
+          "name": "mcp_installations_bound_actor_org_fk",
           "tableFrom": "mcp_installations",
           "tableTo": "actors",
           "columnsFrom": [
-            "bound_actor_id"
+            "bound_actor_id",
+            "organisation_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "organisation_id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "mcp_installations_installed_by_actor_id_actors_id_fk": {
-          "name": "mcp_installations_installed_by_actor_id_actors_id_fk",
+        "mcp_installations_installed_by_actor_org_fk": {
+          "name": "mcp_installations_installed_by_actor_org_fk",
           "tableFrom": "mcp_installations",
           "tableTo": "actors",
           "columnsFrom": [
-            "installed_by_actor_id"
+            "installed_by_actor_id",
+            "organisation_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "organisation_id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "mcp_installations_revoked_by_actor_id_actors_id_fk": {
-          "name": "mcp_installations_revoked_by_actor_id_actors_id_fk",
+        "mcp_installations_revoked_by_actor_org_fk": {
+          "name": "mcp_installations_revoked_by_actor_org_fk",
           "tableFrom": "mcp_installations",
           "tableTo": "actors",
           "columnsFrom": [
-            "revoked_by_actor_id"
+            "revoked_by_actor_id",
+            "organisation_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "organisation_id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"

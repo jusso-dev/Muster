@@ -101,6 +101,9 @@ importers:
       '@muster/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.20.0)(kysely@0.29.4)(pg@8.22.0)
       zod:
         specifier: 4.4.3
         version: 4.4.3

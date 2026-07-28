@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -242,6 +243,12 @@ export const actors = pgTable(
     uniqueIndex("actors_org_identity_unique")
       .on(table.organisationId, table.identityReference)
       .where(sql`${table.identityReference} is not null`),
+    // Lets other tables declare a composite FK on (actorId, organisationId)
+    // so Postgres itself rejects a cross-organisation actor reference.
+    uniqueIndex("actors_id_organisation_unique").on(
+      table.id,
+      table.organisationId,
+    ),
   ],
 );
 
@@ -1283,8 +1290,12 @@ export const slackAgentExposures = pgTable(
     enabled: boolean("enabled").notNull().default(true),
     isDefault: boolean("is_default").notNull().default(false),
     allowedChannelIds: jsonb("allowed_channel_ids").notNull().default([]),
-    allowDirectMessages: boolean("allow_direct_messages").notNull().default(true),
-    allowThreadContext: boolean("allow_thread_context").notNull().default(false),
+    allowDirectMessages: boolean("allow_direct_messages")
+      .notNull()
+      .default(true),
+    allowThreadContext: boolean("allow_thread_context")
+      .notNull()
+      .default(false),
     updatedByActorId: uuid("updated_by_actor_id")
       .notNull()
       .references(() => actors.id),
@@ -1994,19 +2005,15 @@ export const mcpInstallations = pgTable(
     tokenHash: text("token_hash").notNull(),
     tokenPrefix: text("token_prefix").notNull(),
     scopes: jsonb("scopes").notNull().default([]),
-    boundActorId: uuid("bound_actor_id")
-      .notNull()
-      .references(() => actors.id),
+    boundActorId: uuid("bound_actor_id").notNull(),
     status: text("status").notNull().default("active"),
-    installedByActorId: uuid("installed_by_actor_id")
-      .notNull()
-      .references(() => actors.id),
+    installedByActorId: uuid("installed_by_actor_id").notNull(),
     installedAt: timestamp("installed_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
-    revokedByActorId: uuid("revoked_by_actor_id").references(() => actors.id),
+    revokedByActorId: uuid("revoked_by_actor_id"),
     ...timestamps,
   },
   (table) => [
@@ -2015,6 +2022,24 @@ export const mcpInstallations = pgTable(
       table.organisationId,
       table.status,
     ),
+    // Composite FKs (actorId, organisationId) -> actors(id, organisationId)
+    // so Postgres itself rejects binding, installing, or revoking with an
+    // actor from a different organisation, on top of the application check.
+    foreignKey({
+      name: "mcp_installations_bound_actor_org_fk",
+      columns: [table.boundActorId, table.organisationId],
+      foreignColumns: [actors.id, actors.organisationId],
+    }),
+    foreignKey({
+      name: "mcp_installations_installed_by_actor_org_fk",
+      columns: [table.installedByActorId, table.organisationId],
+      foreignColumns: [actors.id, actors.organisationId],
+    }),
+    foreignKey({
+      name: "mcp_installations_revoked_by_actor_org_fk",
+      columns: [table.revokedByActorId, table.organisationId],
+      foreignColumns: [actors.id, actors.organisationId],
+    }),
   ],
 );
 

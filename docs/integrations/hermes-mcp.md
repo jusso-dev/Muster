@@ -30,12 +30,19 @@ flowchart LR
 ## Provisioning an installation credential
 
 There is no chat- or UI-driven registration flow — an operator provisions a
-credential directly against Muster's database:
+credential directly against Muster's database. `--installed-by` (defaulting
+to `--actor` if omitted) must be an actor holding `administration.manage` in
+this organisation — re-checked server-side on every create/revoke call, not
+merely at the CLI layer — and `--actor` (the credential's bound, policy
+subject actor) must belong to the same organisation. Both are typically a
+low-privilege service actor scoped only to the capabilities Hermes needs
+(e.g. `kelpie.cases.read`), installed by a human administrator:
 
 ```bash
 pnpm --filter @muster/mcp create-installation \
   --org=<organisationId> \
   --actor=<boundActorId> \
+  --installed-by=<administratorActorId> \
   --name="Hermes production"
 ```
 
@@ -43,7 +50,8 @@ This prints the installation id and the plaintext token once. Store the
 token in Hermes's secret storage immediately; Muster only ever stores its
 SHA-256 hash afterward.
 
-To revoke a credential (immediate, fail-closed on the next call):
+To revoke a credential (immediate, fail-closed on the next call; `--actor`
+here must likewise hold `administration.manage`):
 
 ```bash
 pnpm --filter @muster/mcp revoke-installation \

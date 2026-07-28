@@ -30,6 +30,9 @@ async function main() {
     });
     console.log(JSON.stringify({ installationId, revoked }, null, 2));
     if (!revoked) process.exitCode = 1;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "Revoke failed.");
+    process.exitCode = 1;
   } finally {
     await closeDatabase();
   }
