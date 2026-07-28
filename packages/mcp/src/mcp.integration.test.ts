@@ -346,11 +346,13 @@ describeIntegration("Muster MCP vertical slice", () => {
     // Server always registers the full tool surface; scope/capability gate
     // execution. Default installation scopes remain the four read tools.
     expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "muster_export_audit",
       "muster_get_action_status",
       "muster_get_kelpie_case",
       "muster_get_knowledge",
       "muster_get_status",
       "muster_list_capabilities",
+      "muster_list_invocations",
       "muster_propose_kelpie_action",
       "muster_propose_knowledge",
       "muster_search_kelpie_cases",
