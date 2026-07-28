@@ -196,7 +196,7 @@ services:
 
   mock-kelpie:
     profiles: ["mock"]
-    image: node:24-bookworm-slim
+    image: node:26-bookworm-slim
     restart: unless-stopped
     working_dir: /mock
     command: ["node", "mock.mjs"]
@@ -208,7 +208,7 @@ services:
 
   mock-tawny:
     profiles: ["mock"]
-    image: node:24-bookworm-slim
+    image: node:26-bookworm-slim
     restart: unless-stopped
     working_dir: /mock
     command: ["node", "mock.mjs"]
@@ -220,7 +220,7 @@ services:
 
   mock-bower:
     profiles: ["mock"]
-    image: node:24-bookworm-slim
+    image: node:26-bookworm-slim
     restart: unless-stopped
     working_dir: /mock
     command: ["node", "mock.mjs"]
@@ -232,7 +232,7 @@ services:
 
   mock-connector:
     profiles: ["mock"]
-    image: node:24-bookworm-slim
+    image: node:26-bookworm-slim
     restart: unless-stopped
     working_dir: /mock
     command: ["node", "mock.mjs"]

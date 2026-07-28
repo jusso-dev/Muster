@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        # Full history only for gitleaks; shallow clone is enough for audit/licences.
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
@@ -33,7 +34,7 @@ jobs:
           version: 11.17.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "24"
+          node-version: "26"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --audit-level high
@@ -46,7 +47,12 @@ jobs:
           name: dependency-licences
           path: licenses.json
 
+  # Full image rebuild + Trivy used to run on every PR *and* duplicate the
+  # main CI container job. Keep the deep image security pass on schedule
+  # (and when this workflow is run on main via schedule only). PR/push image
+  # scan lives in ci.yml `container` (single build).
   image:
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -57,6 +63,8 @@ jobs:
           load: true
           pull: true
           tags: muster:security
+          cache-from: type=gha,scope=muster-image
+          cache-to: type=gha,mode=max,scope=muster-image
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: muster:security

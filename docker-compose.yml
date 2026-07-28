@@ -174,7 +174,7 @@ services:
     tty: true
 
   mock-kelpie:
-    image: node:24-bookworm-slim
+    image: node:26-bookworm-slim
     working_dir: /mock
     command: ["node", "mock.mjs"]
     environment:
@@ -186,7 +186,7 @@ services:
       - "4011:4011"
 
   mock-tawny:
-    image: node:24-bookworm-slim
+    image: node:26-bookworm-slim
     working_dir: /mock
     command: ["node", "mock.mjs"]
     environment:
@@ -198,7 +198,7 @@ services:
       - "4012:4012"
 
   mock-bower:
-    image: node:24-bookworm-slim
+    image: node:26-bookworm-slim
     working_dir: /mock
     command: ["node", "mock.mjs"]
     environment:

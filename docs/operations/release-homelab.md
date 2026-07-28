@@ -73,7 +73,7 @@ put those values in source control or shell history:
 MUSTER_BASE_URL=http://homelab:3004 MUSTER_HOMELAB_CRITICAL=true \
 MUSTER_CAPTURE_ARTIFACTS=false MUSTER_LOCAL_ADMIN_EMAIL=... \
 MUSTER_LOCAL_ADMIN_PASSWORD=... MUSTER_SECONDARY_EMAIL=... \
-MUSTER_SECONDARY_PASSWORD=... pnpm test:e2e:homelab --project=chromium
+MUSTER_SECONDARY_PASSWORD=... # Web UI E2E retired; use shell/API checks instead
 ```
 
 Rollback only after checking migration compatibility and preserving state:

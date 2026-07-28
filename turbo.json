@@ -1,10 +1,11 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
+  "globalPassThroughEnv": ["CI", "DATABASE_URL", "REDIS_URL", "NODE_ENV"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "dist/**", "generated/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "generated/**"]
     },
     "dev": {
       "cache": false,

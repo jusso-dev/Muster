@@ -159,15 +159,8 @@
     {
       "idx": 22,
       "version": "7",
-      "when": 1785219000000,
-      "tag": "0022_operational_knowledge",
-      "breakpoints": true
-    },
-    {
-      "idx": 23,
-      "version": "7",
-      "when": 1785220000000,
-      "tag": "0023_governed_missions",
+      "when": 1785224461959,
+      "tag": "0022_messy_proteus",
       "breakpoints": true
     }
   ]

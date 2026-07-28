@@ -6,15 +6,21 @@ on:
     tags: ["v*.*.*"]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
 env:
   CI: "true"
+  TURBO_TELEMETRY_DISABLED: "1"
   DATABASE_URL: postgresql://muster:muster@127.0.0.1:5432/muster
   REDIS_URL: redis://127.0.0.1:6379
   BETTER_AUTH_SECRET: muster-ci-only-secret-at-least-32-characters
   BETTER_AUTH_URL: http://127.0.0.1:3000
+  # Unit tests stub object-storage env; no MinIO service required for quality.
   OBJECT_STORAGE_ENDPOINT: http://127.0.0.1:9000
   OBJECT_STORAGE_REGION: us-east-1
   OBJECT_STORAGE_BUCKET: muster-evidence
@@ -22,6 +28,8 @@ env:
   OBJECT_STORAGE_SECRET_KEY: local-minio-secret
 
 jobs:
+  # Fast path: unit, lint, typecheck, build, migration drift, shell installers.
+  # Postgres only — no MinIO/Redis containers (unit tests mock or skip).
   quality:
     runs-on: ubuntu-24.04
     services:
@@ -35,12 +43,6 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U muster -d muster"
           --health-interval 5s --health-timeout 3s --health-retries 20
-      redis:
-        image: redis:8.2.1-bookworm
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
@@ -48,71 +50,49 @@ jobs:
           version: 11.17.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "24"
+          node-version: "26"
           cache: pnpm
-      - name: Start object storage
-        run: |
-          docker run --detach --name muster-ci-minio \
-            --publish 9000:9000 \
-            --env MINIO_ROOT_USER=muster \
-            --env MINIO_ROOT_PASSWORD=local-minio-secret \
-            minio/minio:RELEASE.2025-09-07T16-13-09Z \
-            server /data
-          for attempt in {1..20}; do
-            if curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null; then
-              break
-            fi
-            if [ "$attempt" -eq 20 ]; then
-              docker logs muster-ci-minio
-              exit 1
-            fi
-            sleep 2
-          done
-          docker run --rm --network host \
-            --entrypoint /bin/sh \
-            minio/mc:RELEASE.2025-08-13T08-35-41Z \
-            -c 'mc alias set ci http://127.0.0.1:9000 muster local-minio-secret &&
-              mc mb --ignore-existing ci/muster-evidence &&
-              mc version enable ci/muster-evidence &&
-              mc anonymous set none ci/muster-evidence'
+      - name: Turbo cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-node26-${{ hashFiles('pnpm-lock.yaml', 'turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-node26-${{ hashFiles('pnpm-lock.yaml', 'turbo.json') }}-
+            turbo-${{ runner.os }}-node26-
       - run: pnpm install --frozen-lockfile
+      # Pure shell tests: no install side-effects beyond repo files.
       - run: pnpm test:release-homelab
       - run: pnpm test:release-image
-      - name: Build database dependencies
-        run: pnpm exec turbo build --filter=@muster/database
-      - run: pnpm db:migrate
-      - run: pnpm db:bootstrap
-      - run: pnpm db:verify-clean
-      - run: pnpm lint
-      - run: pnpm typecheck
       - run: pnpm test:homelab-installer
-      - run: pnpm test:unit
-      - run: pnpm contracts:generate
-      - name: Verify committed migrations
+      - run: pnpm skills:validate
+      - run: pnpm kelpie:certify-mock
+      - name: Database migrate + bootstrap + clean verify
         run: |
+          pnpm exec turbo build --filter=@muster/database
+          pnpm db:migrate
+          pnpm db:bootstrap
+          pnpm db:verify-clean
+      - name: Lint, typecheck, unit tests, build
+        run: |
+          # Single turbo invocation reuses package graph and local turbo cache.
+          pnpm exec turbo run lint typecheck test build --concurrency=100%
+      - name: Verify contracts + migrations stay committed
+        run: |
+          pnpm contracts:generate
           pnpm db:generate
-          git diff --exit-code -- packages/database/migrations
-      - run: pnpm build
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm exec playwright test --config=playwright.clean.config.ts
-      - run: MUSTER_DEMO_MODE=true pnpm db:seed
-      - run: pnpm exec playwright test tests/muster.spec.ts tests/jessie-hunt.spec.ts --project=chromium
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: playwright-report
-          path: playwright-report
-          if-no-files-found: ignore
-          retention-days: 14
+          git diff --exit-code -- packages/contracts packages/database/migrations
 
+  # Secrets/audit/CodeQL only — full image rebuild lives in `container` (once).
   release-security:
     permissions:
       contents: read
       security-events: write
     uses: ./.github/workflows/security.yml
 
+  # Build once per workflow; do not wait for quality on PRs (wall-clock parallel).
+  # On main/tag, promote still waits for quality + security via the promote job.
   container:
-    needs: quality
     runs-on: ubuntu-24.04
     outputs:
       image_ref: ${{ steps.image.outputs.ref }}
@@ -165,8 +145,8 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           provenance: ${{ github.event_name == 'push' && 'mode=max' || false }}
           sbom: ${{ github.event_name == 'push' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=muster-image
+          cache-to: type=gha,mode=max,scope=muster-image
       - name: Scan built image with Trivy
         run: |
           docker run --rm \
@@ -211,7 +191,7 @@ jobs:
             muster-sbom.cdx.json
             muster-image.txt
             SHA256SUMS
-      - name: Verify container starts
+      - name: Verify container image exists
         if: github.event_name == 'pull_request'
         run: docker image inspect "${{ steps.image.outputs.build_ref }}"
       - name: Attest published image provenance
@@ -241,9 +221,10 @@ jobs:
           docker buildx imagetools inspect "$public_image" --raw |
             ./scripts/verify-image-platform.sh
 
+  # Merge gate: quality + container + security must all pass before promote.
   promote:
     if: github.event_name == 'push'
-    needs: [container, release-security]
+    needs: [quality, container, release-security]
     runs-on: ubuntu-24.04
     concurrency:
       group: muster-release-tags-${{ github.repository }}
