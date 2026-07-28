@@ -16,8 +16,31 @@ RUN npm install -g corepack@latest && corepack enable
 WORKDIR /workspace
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.json ./
-# BuildKit --parents keeps apps/foo/package.json layout for the workspace.
-COPY --parents apps/*/package.json packages/*/package.json ./
+COPY apps/agent-gateway/package.json apps/agent-gateway/
+COPY apps/mcp-server/package.json apps/mcp-server/
+COPY apps/web/package.json apps/web/
+COPY apps/worker/package.json apps/worker/
+COPY packages/agent-harness/package.json packages/agent-harness/
+COPY packages/agents/package.json packages/agents/
+COPY packages/alerts/package.json packages/alerts/
+COPY packages/api-client/package.json packages/api-client/
+COPY packages/audit/package.json packages/audit/
+COPY packages/auth/package.json packages/auth/
+COPY packages/authz/package.json packages/authz/
+COPY packages/config/package.json packages/config/
+COPY packages/contracts/package.json packages/contracts/
+COPY packages/database/package.json packages/database/
+COPY packages/event-protocol/package.json packages/event-protocol/
+COPY packages/evidence/package.json packages/evidence/
+COPY packages/integrations/package.json packages/integrations/
+COPY packages/investigations/package.json packages/investigations/
+COPY packages/mcp/package.json packages/mcp/
+COPY packages/notifications/package.json packages/notifications/
+COPY packages/rooms/package.json packages/rooms/
+COPY packages/search/package.json packages/search/
+COPY packages/test-utils/package.json packages/test-utils/
+COPY packages/ui/package.json packages/ui/
+COPY packages/workflows/package.json packages/workflows/
 
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
