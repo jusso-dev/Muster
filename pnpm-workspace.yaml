@@ -15,6 +15,7 @@ allowBuilds:
 overrides:
   postcss: 8.5.18
   sharp: 0.35.0
+  "@hono/node-server": ^2.0.5
 
 catalog:
   typescript: 7.0.2
@@ -42,3 +43,4 @@ minimumReleaseAgeExclude:
   - next@16.2.12
   - recharts@3.10.1
   - turbo@2.10.7
+  - '@modelcontextprotocol/sdk@1.30.0'
