@@ -64,13 +64,13 @@ type TimelineItem = (typeof roomTimeline)[number];
 type ThreadParent = TimelineItem | RoomMessageRecord;
 
 const persistedTimelineIds = new Set([
-  "018f55d8-c4c7-7c3e-88ef-000000000701",
-  "018f55d8-c4c7-7c3e-88ef-000000000705",
+  "019e7a10-0000-7000-8000-000000000701",
+  "019e7a10-0000-7000-8000-000000000705",
 ]);
 const seededThreadMessageIds = new Set([
-  "018f55d8-c4c7-7c3e-88ef-000000000702",
-  "018f55d8-c4c7-7c3e-88ef-000000000703",
-  "018f55d8-c4c7-7c3e-88ef-000000000704",
+  "019e7a10-0000-7000-8000-000000000702",
+  "019e7a10-0000-7000-8000-000000000703",
+  "019e7a10-0000-7000-8000-000000000704",
 ]);
 const actorIdentity: Record<
   string,

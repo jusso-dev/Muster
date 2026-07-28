@@ -7,6 +7,9 @@ settings:
 
 catalogs:
   default:
+    drizzle-orm:
+      specifier: 0.45.2
+      version: 0.45.2
     typescript:
       specifier: 7.0.2
       version: 7.0.2
@@ -14,6 +17,7 @@ catalogs:
 overrides:
   postcss: 8.5.18
   sharp: 0.35.0
+  '@hono/node-server': ^2.0.5
 
 importers:
 
@@ -66,6 +70,40 @@ importers:
         version: 0.145.0
       drizzle-orm:
         specifier: 0.45.2
+        version: 0.45.2(@types/pg@8.20.0)(kysely@0.29.4)(pg@8.22.0)
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsx:
+        specifier: ^4.20.6
+        version: 4.23.1
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+
+  apps/mcp-server:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.30.0
+        version: 1.30.0(zod@4.4.3)
+      '@muster/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@muster/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@muster/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
+      drizzle-orm:
+        specifier: 'catalog:'
         version: 0.45.2(@types/pg@8.20.0)(kysely@0.29.4)(pg@8.22.0)
       zod:
         specifier: 4.4.3
@@ -263,8 +301,8 @@ importers:
   packages/agent-harness:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: 1.29.0
-        version: 1.29.0(zod@4.4.3)
+        specifier: 1.30.0
+        version: 1.30.0(zod@4.4.3)
       '@muster/authz':
         specifier: workspace:*
         version: link:../authz
@@ -550,6 +588,49 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
     devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+
+  packages/mcp:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.30.0
+        version: 1.30.0(zod@4.4.3)
+      '@muster/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@muster/authz':
+        specifier: workspace:*
+        version: link:../authz
+      '@muster/config':
+        specifier: workspace:*
+        version: link:../config
+      '@muster/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@muster/database':
+        specifier: workspace:*
+        version: link:../database
+      '@muster/integrations':
+        specifier: workspace:*
+        version: link:../integrations
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.20.0)(kysely@0.29.4)(pg@8.22.0)
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsx:
+        specifier: ^4.20.6
+        version: 4.23.1
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -1240,9 +1321,9 @@ packages:
   '@hexagon/base64@1.1.28':
     resolution: {integrity: sha512-lhqDEAvWixy3bZ+UOYbPwUbBkwBq5C1LAJ/xPC8Oi+lL54oyakv/npbA0aU2hgCsx/1NUd4IBvV03+aUBWxerw==}
 
-  '@hono/node-server@1.19.15':
-    resolution: {integrity: sha512-Za2ai6TLdKjUvnur+eenO6nuYYipVAEhyCAdaV8IRvmU9kK8crOZUSYvIXn72E4f8fJqyAbpcJuTsYYmZp9Deg==}
-    engines: {node: '>=18.14.1'}
+  '@hono/node-server@2.0.12':
+    resolution: {integrity: sha512-eWpQYr67tqJLeaSUl0Q+TquuYfUdTibpOJlUMV2FfUP7+KqCC5TufnwnlXL6mobZBJbGAYRd7ZvEBDCbLInjhg==}
+    engines: {node: '>=20'}
     peerDependencies:
       hono: ^4
 
@@ -1430,8 +1511,8 @@ packages:
   '@levischuck/tiny-cbor@0.2.11':
     resolution: {integrity: sha512-llBRm4dT4Z89aRsm6u2oEZ8tfwL/2l6BwpZ7JcyieouniDECM5AqNgr/y08zalEIvW3RSK4upYyybDcmjXqAow==}
 
-  '@modelcontextprotocol/sdk@1.29.0':
-    resolution: {integrity: sha512-zo37mZA9hJWpULgkRpowewez1y6ML5GsXJPY8FI0tBBCd77HEvza4jDqRKOXgHNn867PVGCyTdzqpz0izu5ZjQ==}
+  '@modelcontextprotocol/sdk@1.30.0':
+    resolution: {integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==}
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
@@ -4736,7 +4817,7 @@ snapshots:
 
   '@hexagon/base64@1.1.28': {}
 
-  '@hono/node-server@1.19.15(hono@4.12.32)':
+  '@hono/node-server@2.0.12(hono@4.12.32)':
     dependencies:
       hono: 4.12.32
 
@@ -4869,9 +4950,9 @@ snapshots:
 
   '@levischuck/tiny-cbor@0.2.11': {}
 
-  '@modelcontextprotocol/sdk@1.29.0(zod@4.4.3)':
+  '@modelcontextprotocol/sdk@1.30.0(zod@4.4.3)':
     dependencies:
-      '@hono/node-server': 1.19.15(hono@4.12.32)
+      '@hono/node-server': 2.0.12(hono@4.12.32)
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       content-type: 1.0.5
