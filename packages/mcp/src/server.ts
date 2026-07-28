@@ -22,6 +22,12 @@ import {
 } from "./knowledge.ts";
 import { exportAudit, listInvocations } from "./observability.ts";
 import {
+  acceptMissionRun,
+  getMissionRun,
+  listMissions,
+  upsertMission,
+} from "./missions.ts";
+import {
   getKelpieCase,
   getStatus,
   listCapabilities,
@@ -348,6 +354,77 @@ export function createMusterMcpServer(deps: McpServerDeps) {
     async (args) =>
       invoke("muster_export_audit", () =>
         exportAudit(deps.db, deps.context, args),
+      ),
+  );
+
+
+  server.registerTool(
+    "muster_list_missions",
+    {
+      description:
+        "List organisation-scoped governed mission definitions for Hermes cron/delegation.",
+      inputSchema: { limit: z.number().int().min(1).max(50).default(20) },
+    },
+    async ({ limit }) =>
+      invoke("muster_list_missions", () =>
+        listMissions(deps.db, deps.context, { limit }),
+      ),
+  );
+
+  server.registerTool(
+    "muster_upsert_mission",
+    {
+      description:
+        "Create or update a governed mission definition (name is the stable key). Does not schedule work — Hermes owns cron.",
+      inputSchema: {
+        name: z.string().trim().min(1).max(120),
+        description: z.string().trim().max(4_000).optional(),
+        capabilityEnvelope: z
+          .array(z.string().trim().min(1).max(100))
+          .max(50)
+          .optional(),
+        scheduleHint: z.string().trim().max(200).optional(),
+        hermesProfile: z.string().trim().max(200).optional(),
+        status: z
+          .enum(["active", "paused", "cancelled", "archived"])
+          .optional(),
+        killSwitch: z.boolean().optional(),
+      },
+    },
+    async (args) =>
+      invoke("muster_upsert_mission", () =>
+        upsertMission(deps.db, deps.context, args, deps.traceId),
+      ),
+  );
+
+  server.registerTool(
+    "muster_accept_mission_run",
+    {
+      description:
+        "Accept a Hermes cron/delegation delivery for a mission with a stable idempotency key. Kill switch blocks new runs immediately.",
+      inputSchema: {
+        missionId: z.string().uuid(),
+        idempotencyKey: z.string().trim().min(8).max(200),
+        hermesProfile: z.string().trim().max(200).optional(),
+        deliveryEvidence: z.record(z.string(), z.unknown()).optional(),
+      },
+    },
+    async (args) =>
+      invoke("muster_accept_mission_run", () =>
+        acceptMissionRun(deps.db, deps.context, args, deps.traceId),
+      ),
+  );
+
+  server.registerTool(
+    "muster_get_mission_run",
+    {
+      description:
+        "Read authoritative status of a governed mission run (resumption; no re-execution).",
+      inputSchema: { runId: z.string().uuid() },
+    },
+    async ({ runId }) =>
+      invoke("muster_get_mission_run", () =>
+        getMissionRun(deps.db, deps.context, { runId }),
       ),
   );
 

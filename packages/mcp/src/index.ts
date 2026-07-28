@@ -55,4 +55,12 @@ export {
   listInvocations,
   AuditExportSchema,
 } from "./observability.ts";
+export {
+  acceptMissionRun,
+  getMissionRun,
+  listMissions,
+  upsertMission,
+  MissionUpsertSchema,
+  MissionRunSchema,
+} from "./missions.ts";
 export { recordInvocation, type InvocationOutcome } from "./audit.ts";

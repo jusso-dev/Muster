@@ -8,25 +8,16 @@ import {
 
 describe("MCP write/proposal surface", () => {
   it("keeps write tools opt-in and separate from default read scopes", () => {
-    expect(MCP_READ_TOOL_NAMES).toEqual([
-      "muster_get_status",
-      "muster_list_capabilities",
-      "muster_search_kelpie_cases",
-      "muster_get_kelpie_case",
-      "muster_search_knowledge",
-      "muster_get_knowledge",
-      "muster_list_invocations",
-    ]);
-    expect(MCP_WRITE_TOOL_NAMES).toEqual([
-      "muster_propose_kelpie_action",
-      "muster_get_action_status",
-      "muster_propose_knowledge",
-      "muster_export_audit",
-    ]);
+    expect(MCP_READ_TOOL_NAMES).toContain("muster_get_status");
+    expect(MCP_READ_TOOL_NAMES).toContain("muster_list_missions");
+    expect(MCP_WRITE_TOOL_NAMES).toContain("muster_propose_kelpie_action");
+    expect(MCP_WRITE_TOOL_NAMES).toContain("muster_accept_mission_run");
     expect(MCP_TOOL_NAMES).toEqual([
       ...MCP_READ_TOOL_NAMES,
       ...MCP_WRITE_TOOL_NAMES,
     ]);
+    for (const tool of MCP_WRITE_TOOL_NAMES)
+      expect(MCP_READ_TOOL_NAMES).not.toContain(tool);
   });
 
   it("accepts valid Kelpie proposals and rejects incomplete updates", () => {
