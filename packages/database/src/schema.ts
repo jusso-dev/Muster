@@ -2043,6 +2043,68 @@ export const mcpInstallations = pgTable(
   ],
 );
 
+export const operationalKnowledge = pgTable(
+  "operational_knowledge",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    content: text("content").notNull(),
+    contentHash: text("content_hash").notNull(),
+    status: text("status").notNull().default("proposed"),
+    classification: text("classification").notNull().default("internal"),
+    evidenceReferences: jsonb("evidence_references").notNull().default([]),
+    sourceInstallationId: uuid("source_installation_id").references(
+      () => mcpInstallations.id,
+    ),
+    proposedByActorId: uuid("proposed_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    supersedesId: uuid("supersedes_id"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    reviewedByActorId: uuid("reviewed_by_actor_id").references(() => actors.id),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewReason: text("review_reason"),
+    policyDecision: text("policy_decision").notNull().default("pending_review"),
+    ...timestamps,
+  },
+  (table) => [
+    index("operational_knowledge_org_status_idx").on(
+      table.organisationId,
+      table.status,
+      table.createdAt,
+    ),
+    index("operational_knowledge_org_hash_idx").on(
+      table.organisationId,
+      table.contentHash,
+    ),
+    check(
+      "operational_knowledge_kind_check",
+      sql`${table.kind} in ('fact','finding','correction','procedure')`,
+    ),
+    check(
+      "operational_knowledge_status_check",
+      sql`${table.status} in ('proposed','accepted','quarantined','rejected','superseded','expired')`,
+    ),
+    check(
+      "operational_knowledge_policy_check",
+      sql`${table.policyDecision} in ('accepted','quarantined','rejected','pending_review')`,
+    ),
+    check(
+      "operational_knowledge_classification_check",
+      sql`${table.classification} in ('public','internal','confidential','restricted')`,
+    ),
+    foreignKey({
+      name: "operational_knowledge_proposer_org_fk",
+      columns: [table.proposedByActorId, table.organisationId],
+      foreignColumns: [actors.id, actors.organisationId],
+    }),
+  ],
+);
+
 export const integrationQueryTemplates = pgTable(
   "integration_query_templates",
   {

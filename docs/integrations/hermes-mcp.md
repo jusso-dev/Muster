@@ -94,8 +94,11 @@ token as a bearer credential. Placeholders only — never commit a real token:
   through the governed connector path.
 - `muster_get_kelpie_case` — one Kelpie case by id, same bounding and
   classification.
+- `muster_search_knowledge` / `muster_get_knowledge` — organisation-scoped
+  operational knowledge. Results are never proof of authorisation, approval,
+  or external-action completion.
 
-### Write / proposal (opt-in scopes; always approval-gated)
+### Write / proposal (opt-in scopes)
 
 - `muster_propose_kelpie_action` — propose `kelpie.case.create`,
   `kelpie.case.update`, `kelpie.timeline.comment`, or
@@ -107,6 +110,9 @@ token as a bearer credential. Placeholders only — never commit a real token:
   delivery (`duplicate: true`).
 - `muster_get_action_status` — resume by `deliveryId`; returns authoritative
   delivery and approval status without re-executing the external action.
+- `muster_propose_knowledge` — propose operational knowledge with evidence
+  references. Model proposals never auto-accept; secrets and hidden
+  reasoning are rejected; unsupported claims may be quarantined.
 
 Hermes never supplies `organisationId`, actor id, capability, or
 `integrationId`. The installation token and the organisation's enabled
