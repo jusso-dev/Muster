@@ -43,4 +43,11 @@ export {
   McpKelpieActionProposalSchema,
   type McpKelpieActionProposal,
 } from "./actions.ts";
+export {
+  getKnowledge,
+  proposeKnowledge,
+  searchKnowledge,
+  KnowledgeProposalSchema,
+  type KnowledgeProposal,
+} from "./knowledge.ts";
 export { recordInvocation, type InvocationOutcome } from "./audit.ts";

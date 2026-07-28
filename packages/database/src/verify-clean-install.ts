@@ -44,6 +44,7 @@ const operationalTables = {
   outboxEvents: schema.outboxEvents,
   auditEvents: schema.auditEvents,
   mcpInstallations: schema.mcpInstallations,
+  operationalKnowledge: schema.operationalKnowledge,
 } as const;
 
 const db = database();

@@ -221,6 +221,8 @@ describeIntegration("Muster MCP vertical slice", () => {
         "kelpie.cases.read",
         "kelpie.cases.create",
         "kelpie.cases.update",
+        "evidence.read",
+        "evidence.upload",
       ],
     });
     restrictedActorId = newId();
@@ -346,10 +348,13 @@ describeIntegration("Muster MCP vertical slice", () => {
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       "muster_get_action_status",
       "muster_get_kelpie_case",
+      "muster_get_knowledge",
       "muster_get_status",
       "muster_list_capabilities",
       "muster_propose_kelpie_action",
+      "muster_propose_knowledge",
       "muster_search_kelpie_cases",
+      "muster_search_knowledge",
     ]);
 
     const { MCP_READ_TOOL_NAMES, MCP_TOOL_NAMES } = await import("./constants.ts");

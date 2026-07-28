@@ -69,6 +69,12 @@ Arguments: `caseId` (required string). Returns one case's detail, bounded
 and classified the same way. Use this once you have a specific case id from
 a search result or from the user.
 
+### `muster_search_knowledge` / `muster_get_knowledge`
+
+Organisation-scoped operational knowledge (not Hermes chat memory). Search
+returns accepted entries by default. Never treat a knowledge entry as proof
+of authorisation, approval, or that an external action completed.
+
 ### Write / proposal (opt-in installation scopes)
 
 These tools are **not** in the default installation scope. Operators must
@@ -97,6 +103,14 @@ write does **not** run until a human approves the linked approval record.
 
 Arguments: `deliveryId` (UUID). Returns authoritative delivery and approval
 status for resumption. Does not re-execute the external action.
+
+#### `muster_propose_knowledge`
+
+Propose a `fact` / `finding` / `correction` / `procedure` with required
+`evidenceReferences`, `title`, `content`, and `idempotencyKey`. Server policy
+may reject (secrets/hidden reasoning), quarantine (unsupported claims), or
+leave as `proposed` pending review — never auto-accept model proposals as
+authoritative knowledge.
 
 ## Evidence and citation requirements
 
