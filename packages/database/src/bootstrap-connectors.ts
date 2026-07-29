@@ -29,7 +29,9 @@ export function environmentConnectorTestMode(baseUrl: string) {
 }
 
 function optionalEnvironmentConnector(input: {
-  product: "kelpie" | "tawny" | "unifi";
+  // Derived from the schema rather than restated, so adding a product in one place cannot leave
+  // this list silently behind.
+  product: ConnectorConfiguration["product"];
   instanceId: string;
   displayName: string;
   baseUrl: string | undefined;
@@ -85,6 +87,14 @@ function configuredConnectors() {
       displayName: "Tawny homelab",
       baseUrl: process.env.TAWNY_BASE_URL,
       token: process.env.TAWNY_API_TOKEN,
+      auth: (token) => ({ type: "bearer", token }),
+    }),
+    optionalEnvironmentConnector({
+      product: "brolga",
+      instanceId: "homelab-brolga",
+      displayName: "Brolga homelab",
+      baseUrl: process.env.BROLGA_BASE_URL,
+      token: process.env.BROLGA_API_TOKEN,
       auth: (token) => ({ type: "bearer", token }),
     }),
     optionalEnvironmentConnector({

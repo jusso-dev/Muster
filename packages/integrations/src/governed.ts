@@ -65,6 +65,7 @@ export const ConnectorConfigurationSchema = z
       "tawny",
       "tawny_response",
       "kelpie",
+      "brolga",
     ]),
     instanceId: z.string().trim().min(1).max(160),
     displayName: z.string().trim().min(1).max(160),
@@ -111,6 +112,7 @@ export const QueryTemplateSchema = z
       "kelpie.cases.read",
       "sentinel.query.execute",
       "alerts.read",
+      "brolga.context.read",
     ]),
     inputSchema: JsonSchemaSchema,
     outputSchema: JsonSchemaSchema,
@@ -710,6 +712,93 @@ export async function executeGovernedActionRequest<T>(input: {
 }
 
 export const connectorPresets: Record<string, readonly QueryTemplate[]> = {
+  // Brolga is read-only by design: it answers questions about stored intelligence and has no
+  // route that changes it. An agent that can reach Brolga cannot alter what anyone else reads.
+  brolga: [
+    {
+      key: "brolga.context.pack",
+      version: 1,
+      displayName: "Brolga context for an observable",
+      method: "POST",
+      pathTemplate: "/api/v1/context",
+      requiredCapability: "brolga.context.read",
+      inputSchema: {
+        type: "object",
+        required: ["subject"],
+        properties: {
+          subject: {
+            type: "object",
+            required: ["kind", "value"],
+            properties: {
+              // Brolga normalises spelling — whitespace, case, IPv6 abbreviation — and echoes the
+              // canonical form back, so an agent may pass a value exactly as it found it.
+              kind: {
+                type: "string",
+                enum: [
+                  "ip",
+                  "ipv4",
+                  "ipv6",
+                  "domain",
+                  "hostname",
+                  "url",
+                  "file_hash",
+                  "md5",
+                  "sha1",
+                  "sha256",
+                  "email",
+                ],
+              },
+              value: { type: "string", minLength: 1, maxLength: 2_048 },
+            },
+            additionalProperties: false,
+          },
+          purpose: {
+            type: "string",
+            enum: [
+              "case_enrichment",
+              "incident_triage",
+              "threat_hunting",
+              "raw_research",
+            ],
+          },
+          case_id: { type: "string", maxLength: 160 },
+        },
+        additionalProperties: false,
+      },
+      outputSchema: {
+        type: "object",
+        required: ["schema_version", "subject", "disposition"],
+        properties: {
+          schema_version: { type: "string" },
+          subject: { type: "object" },
+          observable_id: { type: "string" },
+          // `unknown` means Brolga has not heard of the subject. It is NOT benign, and an agent
+          // that treats the two alike will close an alert that should have been raised.
+          disposition: {
+            type: "string",
+            enum: [
+              "malicious",
+              "suspicious",
+              "allow_listed",
+              "benign",
+              "unknown",
+            ],
+          },
+          entities: { type: "array" },
+          claims: { type: "array" },
+          relationships: { type: "array" },
+          // Where the answer came from. An agent asserting something in a case without this has
+          // nothing to cite.
+          evidence: { type: "array" },
+          // What Brolga does not know, stated rather than left to be inferred from an empty array.
+          gaps: { type: "array", items: { type: "string" } },
+          // What was left out, including any budget truncation. A pack that silently truncated
+          // would read as a complete one.
+          exclusions: { type: "array" },
+        },
+      },
+    },
+  ],
   tawny: [
     {
       key: "tawny.inventory.list",
