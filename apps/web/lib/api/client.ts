@@ -107,3 +107,9 @@ export async function apiPost<T>(path: string, body: unknown, signal?: AbortSign
   if (signal) options.signal = signal;
   return apiRequest<T>(path, options);
 }
+
+export async function apiPatch<T>(path: string, body: unknown, signal?: AbortSignal) {
+  const options: RequestOptions = { method: "PATCH", body };
+  if (signal) options.signal = signal;
+  return apiRequest<T>(path, options);
+}

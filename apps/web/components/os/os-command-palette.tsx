@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
+  BookOpen,
   Bot,
   Cable,
   CircleCheck,
@@ -26,6 +27,7 @@ const commands = [
   { label: "Go to Approvals", href: "/approvals", icon: CircleCheck, hint: "Nav" },
   { label: "Go to Audit", href: "/audit", icon: ShieldCheck, hint: "Nav" },
   { label: "Go to Integrations", href: "/integrations", icon: Cable, hint: "Nav" },
+  { label: "Go to Guides", href: "/guides", icon: BookOpen, hint: "Nav" },
   { label: "Go to Settings", href: "/settings", icon: Settings, hint: "Nav" },
 ] as const;
 

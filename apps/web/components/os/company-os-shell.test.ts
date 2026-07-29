@@ -17,6 +17,7 @@ describe("Company OS shell foundation", () => {
       "Approvals",
       "Audit",
       "Integrations",
+      "Guides",
       "Settings",
     ]) {
       expect(source).toContain(`label: "${label}"`);

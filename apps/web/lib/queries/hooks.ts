@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiGet, apiPost } from "@/lib/api/client";
+import { apiGet, apiPatch, apiPost } from "@/lib/api/client";
 import { queryKeys } from "@/lib/queries/keys";
 import type {
   AuditEventSummary,
@@ -175,6 +175,31 @@ export function useTasks() {
         return (data as { tasks: unknown[] }).tasks;
       }
       return [];
+    },
+  });
+}
+
+/** PATCH task coordination state (status, assignee, …). Server-enforced. */
+export function useUpdateTask() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      id: string;
+      status?: string;
+      priority?: string;
+      title?: string;
+      description?: string;
+      assignedActorId?: string | null;
+    }) => {
+      const { id, ...body } = input;
+      const res = await apiPatch<unknown>(`/api/v1/tasks/${id}`, body);
+      return res.data;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.tasks }),
+        client.invalidateQueries({ queryKey: queryKeys.commandSummary }),
+      ]);
     },
   });
 }
