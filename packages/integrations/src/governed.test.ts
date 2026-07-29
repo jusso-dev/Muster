@@ -329,3 +329,81 @@ describe("governed connector actions", () => {
     ).resolves.toEqual({ id: "synthetic-case", status: "contained" });
   });
 });
+
+describe("brolga context preset", () => {
+  const preset = connectorPresets.brolga?.[0];
+
+  it("posts to Brolga's versioned context route", () => {
+    expect(preset).toBeDefined();
+    expect(preset?.method).toBe("POST");
+    // Brolga versions its routes in the path. A preset pointing at an unversioned path would
+    // break the day Brolga serves /api/v2 alongside it.
+    expect(preset?.pathTemplate).toBe("/api/v1/context");
+    expect(preset?.requiredCapability).toBe("brolga.context.read");
+  });
+
+  it("accepts the subject spellings an agent actually holds", () => {
+    const kinds = (
+      preset?.inputSchema as {
+        properties: { subject: { properties: { kind: { enum: string[] } } } };
+      }
+    ).properties.subject.properties.kind.enum;
+
+    // An agent reading an alert has an address or a hash, not Brolga's internal spelling of one.
+    for (const kind of ["ip", "domain", "hostname", "sha256", "file_hash"]) {
+      expect(kinds).toContain(kind);
+    }
+  });
+
+  it("does not admit `unknown` as a synonym for benign", () => {
+    const dispositions = (
+      preset?.outputSchema as {
+        properties: { disposition: { enum: string[] } };
+      }
+    ).properties.disposition.enum;
+
+    // Both are present and distinct. An agent that collapsed them would close an alert about an
+    // address Brolga has simply never seen.
+    expect(dispositions).toContain("unknown");
+    expect(dispositions).toContain("benign");
+    expect(new Set(dispositions).size).toBe(dispositions.length);
+  });
+
+  it("carries a real pack through the governed path", async () => {
+    const pack = {
+      schema_version: "brolga.context_pack/1.0",
+      subject: { kind: "ipv4_address", value: "203.0.113.42" },
+      observable_id: "observable:7168327b-1c71-5692-a605-059cdfda1214",
+      disposition: "malicious",
+      entities: [{ id: "entity:9c8e", kind: "report", name: "C2 infrastructure" }],
+      claims: [{ predicate: "disposition", object: "malicious", status: "active" }],
+      relationships: [],
+      evidence: [{ source_object_id: "source:12fc" }],
+      gaps: ["no sightings recorded"],
+      exclusions: [],
+    };
+
+    let seenPath: string | undefined;
+    let seenAuthorization: string | undefined;
+    const { url } = await server((request, response) => {
+      seenPath = request.url;
+      seenAuthorization = request.headers.authorization;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(pack));
+    });
+
+    const result = await executeGovernedQuery({
+      configuration: configuration(url),
+      auth: { type: "bearer", token: "never-return-this" },
+      template: preset as QueryTemplate,
+      values: { subject: { kind: "ip", value: "203.0.113.42" } },
+    });
+
+    expect(seenPath).toBe("/api/v1/context");
+    expect(seenAuthorization).toBe("Bearer never-return-this");
+    // The evidence has to survive the transport, or an agent citing Brolga in a case has nothing
+    // to point at.
+    expect(JSON.stringify(result)).toContain("source:12fc");
+    expect(JSON.stringify(result)).toContain("malicious");
+  });
+});

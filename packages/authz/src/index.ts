@@ -25,6 +25,7 @@ export const capabilities = [
   "unifi.network.read",
   "tawny.response.kill_process",
   "tawny.response.isolate_host",
+  "brolga.context.read",
   "bower.fleet.read",
   "bower.policy.read",
   "bower.policy.propose",
@@ -67,6 +68,10 @@ const readCapabilities: Capability[] = [
   "alerts.read",
   "investigations.read",
   "kelpie.cases.read",
+  // Looking up what is already known about an observable is a read, and Brolga has no route that
+  // changes anything, so every role that can read at all gets it. Withholding it would mean an
+  // analyst can see an alert but not check whether the address in it is already known bad.
+  "brolga.context.read",
   "agents.read",
   "workflows.read",
   "evidence.read",
