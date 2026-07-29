@@ -44,7 +44,7 @@ describe("Muster product branding", () => {
       "../app/layout.tsx",
       "../app/login/page.tsx",
       "../app/offline/page.tsx",
-      "../components/app-shell.tsx",
+      "../components/os/company-os-shell.tsx",
       "../proxy.ts",
       "../../../README.md",
     ];

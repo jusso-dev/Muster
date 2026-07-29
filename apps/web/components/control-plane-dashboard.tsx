@@ -337,7 +337,7 @@ export function ControlPlaneDashboard() {
 
             <p className="text-xs text-muted-foreground">
               CLI status board:{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
                 ./scripts/bootstrap-e2e-homelab.sh --check-only
               </code>
             </p>

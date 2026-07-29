@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     template: "%s · Muster",
   },
   description:
-    "Muster is the shared workspace for human and agent-driven security operations.",
+    "Muster is the governed operating system for an AI-enabled security company.",
   applicationName: "Muster",
   icons: {
     icon: [
