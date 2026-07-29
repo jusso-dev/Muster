@@ -1,5 +1,5 @@
-import { ControlPlaneDashboard } from "@/components/control-plane-dashboard";
+import { CommandView } from "@/features/command/command-view";
 
 export default function HomePage() {
-  return <ControlPlaneDashboard />;
+  return <CommandView />;
 }
