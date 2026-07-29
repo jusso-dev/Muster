@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 
@@ -46,7 +46,7 @@ export function AgentRunView({ runId }: { runId: string }) {
   }, [runId]);
 
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Agent harness"
         title={run ? `${run.agentKey} run` : "Agent run"}
@@ -107,6 +107,6 @@ export function AgentRunView({ runId }: { runId: string }) {
           )}
         </div>
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }

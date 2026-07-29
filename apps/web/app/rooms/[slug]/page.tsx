@@ -1,10 +1,6 @@
-import { RoomView } from "@/components/room-view";
+import { redirect } from "next/navigation";
 
-export default async function RoomPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
-  return <RoomView slug={slug} />;
+/** Chat UI removed from product surface — see ADR 0006. */
+export default function RoomPage() {
+  redirect("/");
 }

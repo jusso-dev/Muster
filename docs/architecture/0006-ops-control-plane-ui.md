@@ -21,15 +21,20 @@ case SoR; Muster is the governed control plane.
 4. **Interaction model** — Parker / Jessie / Alfie talk in Slack; Hermes uses MCP.
 5. **Visual language** — dense admin shell inspired by modern shadcn dashboards
    (sidebar + cards + tables), still Muster brand tokens and anti-hype rules.
-6. **Channel onboarding** — when the bot joins a Slack channel, post one pack intro
-   (separate delivery; see agent-harness).
+6. **Channel onboarding** — when the bot joins a Slack channel
+   (`member_joined_channel` with `user` = bot user id), post one pack intro as
+   Parker (see `buildSlackPackChannelIntro` in agent-harness). Dedupe via Slack
+   inbox event idempotency.
 
 ## Consequences
 
 - PRODUCT/DESIGN/README must not describe rooms as primary.
+- `/rooms/*`, `/alerts`, `/cases`, and in-app room search redirect to `/`.
+- Ops pages use `OpsShell` (sidebar health nav), not the old room `AppShell`.
 - Operators use `./scripts/bootstrap-e2e-homelab.sh` plus the health UI.
 - Slack `agent_view` migration remains a separate track.
-- Room message APIs are not deleted in the first cut.
+- Room message APIs and room React components are not deleted in the first cut
+  (unreachable from product routes).
 
 ## Alternatives considered
 

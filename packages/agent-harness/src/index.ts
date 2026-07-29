@@ -77,6 +77,63 @@ export function missingSlackBotScopes(scopes: readonly string[]) {
   return requiredSlackBotScopes.filter((scope) => !granted.has(scope));
 }
 
+/**
+ * One-shot pack intro posted when the Muster bot joins a Slack channel.
+ * Dedupe is the inbox (installation_id, event_id) unique key — each join
+ * event posts once; re-add after leave posts again.
+ */
+export function buildSlackPackChannelIntro(): {
+  text: string;
+  blocks: Array<Record<string, unknown>>;
+} {
+  const text =
+    "G'day — the Muster pack is in this channel. Parker (default ops), Jessie (hunt), Alfie (research). Address by name: “Hey Jessie …”, “talk to Alfie …”, or bare message for Parker. Chat lives in Slack; the Muster web UI is health and wiring only.";
+  return {
+    text,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*G'day — the Muster pack is in this channel.*",
+        },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: [
+            ":guide_dog: *Parker* (default) — ops lead, triage, cases",
+            ":dog: *Jessie* — hunt and endpoint work",
+            ":dog2: *Alfie* — research and tech",
+          ].join("\n"),
+        },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: [
+            "*How to talk to us*",
+            "• Bare message → Parker",
+            "• `Hey Jessie …` / `talk to Alfie …` / `use Parker …`",
+            "• `/muster Jessie …`",
+          ].join("\n"),
+        },
+      },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: "Chat lives here in Slack. Muster web UI is health/wiring only — Kelpie stays case system of record.",
+          },
+        ],
+      },
+    ],
+  };
+}
+
 const slackMetrics = {
   apiRateLimits: 0,
   deliveryFailures: 0,
@@ -1619,6 +1676,73 @@ export async function processSlackInboxEvent(inboxEventId: string) {
           traceId: row.inbox.eventId,
         });
     });
+    return;
+  }
+  // Bot added to a channel → one pack intro (Parker). Not a human identity path.
+  if (event.type === "member_joined_channel") {
+    if (!channelId) {
+      await db
+        .update(schema.slackInboxEvents)
+        .set({ status: "ignored", processedAt: new Date() })
+        .where(eq(schema.slackInboxEvents.id, row.inbox.id));
+      return;
+    }
+    const botUserId = row.installation.botUserId;
+    if (!botUserId || slackUserId !== botUserId) {
+      await db
+        .update(schema.slackInboxEvents)
+        .set({
+          status: "ignored",
+          processedAt: new Date(),
+          error: "member_join_not_bot",
+        })
+        .where(eq(schema.slackInboxEvents.id, row.inbox.id));
+      return;
+    }
+    try {
+      const token = (
+        decryptConnectorPayload(
+          row.installation.encryptedBotToken,
+          encryptionKey(),
+        ) as { token: string }
+      ).token;
+      const intro = buildSlackPackChannelIntro();
+      const presentation = slackAgentMessageIdentity("Parker");
+      await slackApi(token, "chat.postMessage", {
+        channel: channelId,
+        ...presentation,
+        text: intro.text,
+        blocks: intro.blocks,
+      });
+      await db.transaction(async (tx) => {
+        await tx
+          .update(schema.slackInboxEvents)
+          .set({ status: "processed", processedAt: new Date() })
+          .where(eq(schema.slackInboxEvents.id, row.inbox.id));
+        await appendAuditEvent(tx, {
+          organisationId: row.inbox.organisationId,
+          actorId: row.installation.installedByActorId,
+          actorType: "service",
+          action: "slack.channel.pack_intro.posted",
+          targetType: "slack_installation",
+          targetId: row.installation.id,
+          metadata: { channelId, installationId: row.installation.id },
+          traceId: row.inbox.eventId,
+        });
+      });
+    } catch (error) {
+      await db
+        .update(schema.slackInboxEvents)
+        .set({
+          status: "failed",
+          processedAt: new Date(),
+          error: redactObservationText(
+            error instanceof Error ? error.message : "pack intro failed",
+          ),
+        })
+        .where(eq(schema.slackInboxEvents.id, row.inbox.id));
+      throw error;
+    }
     return;
   }
   if (!slackUserId || !channelId) {

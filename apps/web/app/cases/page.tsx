@@ -1,9 +1,6 @@
 import { redirect } from "next/navigation";
 
+/** Chat/room redirects retired — case SoR is Kelpie; chat is Slack (ADR 0006). */
 export default function CasesPage() {
-  redirect(
-    process.env.MUSTER_DEMO_MODE === "true"
-      ? "/rooms/active-incidents"
-      : "/rooms/soc-operations",
-  );
+  redirect("/");
 }

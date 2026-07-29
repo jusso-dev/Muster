@@ -6,7 +6,7 @@ import {
   RefreshCw,
   Settings2,
 } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ export function IntegrationView({
   if (product === "sentinel") return <SentinelView />;
   const data = integrationData[product];
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Integration"
         title={data.name}
@@ -149,13 +149,13 @@ export function IntegrationView({
           )}
         </div>
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }
 
 function SentinelView() {
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Integration"
         title="Microsoft Sentinel"
@@ -185,6 +185,6 @@ function SentinelView() {
           </p>
         </div>
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }

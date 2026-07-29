@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -150,7 +150,7 @@ export function ConnectorAdminView() {
   }
 
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Administration"
         title="Governed connectors"
@@ -250,6 +250,6 @@ export function ConnectorAdminView() {
           </section>
         </div>
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }

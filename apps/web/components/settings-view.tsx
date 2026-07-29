@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -26,7 +26,7 @@ const sections = [
 
 export function SettingsView() {
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Organisation"
         title="Settings"
@@ -137,6 +137,6 @@ export function SettingsView() {
           </div>
         </div>
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }

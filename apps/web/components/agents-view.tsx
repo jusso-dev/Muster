@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   ShieldOff,
 } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -126,7 +126,7 @@ export function AgentsView() {
       ? "unavailable"
       : "unknown";
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Tools"
         title="Agent directory"
@@ -229,7 +229,7 @@ export function AgentsView() {
           ))}
         </div>
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }
 
@@ -281,7 +281,7 @@ export function AgentDetailView({
 
   if (!agent) {
     return (
-      <AppShell>
+      <OpsShell>
         <PageHeader
           eyebrow="Agent"
           title="Agent readiness"
@@ -290,11 +290,11 @@ export function AgentDetailView({
         <div className="p-6 text-xs text-muted-foreground">
           {error || "Loading…"}
         </div>
-      </AppShell>
+      </OpsShell>
     );
   }
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Agent"
         title={agent.name}
@@ -351,7 +351,7 @@ export function AgentDetailView({
           )}
         </div>
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }
 

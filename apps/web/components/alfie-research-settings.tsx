@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { RefreshCw, ShieldCheck } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -115,7 +115,7 @@ export function AlfieResearchSettings() {
   }
 
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Organisation administration"
         title="Alfie research watchlists"
@@ -278,6 +278,6 @@ export function AlfieResearchSettings() {
           </form>
         </div>
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }

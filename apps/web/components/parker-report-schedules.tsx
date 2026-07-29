@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 type Schedule = {
@@ -53,7 +53,7 @@ export function ParkerReportSchedules() {
     await load();
   };
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Reports"
         title="Parker schedules"
@@ -122,6 +122,6 @@ export function ParkerReportSchedules() {
           ))}
         </div>
       </section>
-    </AppShell>
+    </OpsShell>
   );
 }

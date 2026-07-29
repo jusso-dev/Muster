@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { ImagePlus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -165,7 +165,7 @@ export function ReactionPackSettings() {
   }
 
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Organisation administration"
         title="Visual reaction packs"
@@ -406,6 +406,6 @@ export function ReactionPackSettings() {
           </p>
         )}
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }

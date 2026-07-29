@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Check, Clock3, ShieldCheck, X } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,7 +65,7 @@ export function ApprovalView() {
   }
 
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Operations"
         title="Approvals"
@@ -139,6 +139,6 @@ export function ApprovalView() {
           )}
         </div>
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }

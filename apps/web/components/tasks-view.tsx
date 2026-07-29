@@ -22,7 +22,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { AgentHandoffCard } from "@/components/agent-handoff-card";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
@@ -437,7 +437,7 @@ export function TasksView() {
   }
 
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Work"
         title="Tasks"
@@ -1137,6 +1137,6 @@ export function TasksView() {
           </div>
         )}
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }

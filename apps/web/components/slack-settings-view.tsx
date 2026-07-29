@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 
@@ -323,7 +323,7 @@ export function SlackSettingsView() {
   };
 
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Integrations"
         title="Slack agent harness"
@@ -843,6 +843,6 @@ export function SlackSettingsView() {
           </section>
         </div>
       ) : null}
-    </AppShell>
+    </OpsShell>
   );
 }

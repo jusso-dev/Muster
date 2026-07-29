@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentHarnessInvokeSchema } from "@muster/contracts";
 import {
+  buildSlackPackChannelIntro,
   missingSlackBotScopes,
   normaliseSlackAgentRouteText,
   normaliseSlackConversation,
@@ -72,6 +73,17 @@ describe("Slack agent routing", () => {
 
   it("normalises Slack mention markup before matching", () => {
     expect(normaliseSlackAgentRouteText("<@U123> Jessie hello")).toBe("Jessie hello");
+  });
+
+  it("builds a pack channel intro that names Parker, Jessie, and Alfie", () => {
+    const intro = buildSlackPackChannelIntro();
+    expect(intro.text).toMatch(/Parker/);
+    expect(intro.text).toMatch(/Jessie/);
+    expect(intro.text).toMatch(/Alfie/);
+    expect(intro.blocks.length).toBeGreaterThanOrEqual(3);
+    const blob = JSON.stringify(intro.blocks);
+    expect(blob).toMatch(/Hey Jessie/);
+    expect(blob).toMatch(/talk to Alfie/);
   });
 
   it("presents each agent under its own Slack username", () => {

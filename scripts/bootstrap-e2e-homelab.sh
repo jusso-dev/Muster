@@ -97,6 +97,8 @@ print_slack_howto_block() {
 
 Slack how-to
 ------------
+  0. Event subscription: member_joined_channel
+     (bot posts one pack intro when added to a channel).
   1. DM the Muster Slack bot (or post in a channel).
   2. Bare message → Parker (default).
   3. Address an agent by name (not only at the very start):

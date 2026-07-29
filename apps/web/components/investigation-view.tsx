@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { SeverityBadge } from "@/components/severity";
 import { Avatar } from "@/components/ui/avatar";
@@ -335,7 +335,7 @@ export function InvestigationView({ tab = "overview" }: { tab?: string }) {
   const [promotionOpen, setPromotionOpen] = useState(false);
 
   return (
-    <AppShell context={<Context />}>
+    <OpsShell>
       <PageHeader
         eyebrow={`Investigation · ${activeInvestigation.number}`}
         title={activeInvestigation.title}
@@ -432,6 +432,6 @@ export function InvestigationView({ tab = "overview" }: { tab?: string }) {
           )}
         </div>
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }

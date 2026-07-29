@@ -4,17 +4,14 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   Check,
-  CircleCheck,
-  Clock3,
   Code2,
   FlaskConical,
   Play,
   Save,
   Search,
-  ShieldCheck,
   Workflow,
 } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
+import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +19,7 @@ import { workflowYaml, workflows } from "@/lib/demo-data";
 
 export function WorkflowsView() {
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Tools"
         title="Workflows"
@@ -89,7 +86,7 @@ export function WorkflowsView() {
           ))}
         </div>
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }
 
@@ -97,49 +94,7 @@ export function WorkflowEditorView() {
   const [value, setValue] = useState(workflowYaml);
   const [validated, setValidated] = useState(true);
   return (
-    <AppShell
-      context={
-        <div className="h-full overflow-y-auto">
-          <div className="border-b p-4">
-            <h2 className="font-display text-sm font-bold">Visual steps</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Derived from current draft
-            </p>
-          </div>
-          <ol className="p-4">
-            {[
-              "Create investigation",
-              "Gather endpoint context",
-              "Enrich observables",
-              "Analyst review",
-              "Promote",
-            ].map((step, index) => (
-              <li
-                key={step}
-                className="relative flex gap-3 pb-5 text-xs last:pb-0"
-              >
-                <span className="z-10 grid size-6 shrink-0 place-items-center rounded-full border bg-background font-mono text-xs">
-                  {index + 1}
-                </span>
-                {index < 4 && (
-                  <span className="absolute left-3 top-6 h-full w-px bg-border" />
-                )}
-                <div>
-                  <p className="font-semibold">{step}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {index === 3
-                      ? "Human approval · 30m timeout"
-                      : index === 4
-                        ? "Kelpie case creation"
-                        : "Automatic · retry enabled"}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
-      }
-    >
+    <OpsShell>
       <PageHeader
         eyebrow="Workflow · Draft"
         title="Suspicious PowerShell triage"
@@ -202,13 +157,13 @@ export function WorkflowEditorView() {
           className="h-full min-h-[32rem] w-full resize-none rounded-md border bg-background p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-[var(--color-focus)]"
         />
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }
 
 export function WorkflowRunView() {
   return (
-    <AppShell>
+    <OpsShell>
       <PageHeader
         eyebrow="Workflow run · WFR-2026-2281"
         title="Suspicious PowerShell triage"
@@ -264,6 +219,6 @@ export function WorkflowRunView() {
           ))}
         </div>
       </div>
-    </AppShell>
+    </OpsShell>
   );
 }

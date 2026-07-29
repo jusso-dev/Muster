@@ -29,9 +29,9 @@ Muster connectors ──worker──► Kelpie / Tawny / UniFi (governed queries
 | Kelpie UI / API | **Kelpie** | Cases, tokens, SoR |
 | Muster web UI | **Muster** | Control-plane **health dashboard** + Slack/connectors/approvals — not chat |
 
-When the bot is **invited to a channel**, it should introduce the pack once
-(Parker / Jessie / Alfie, how to address them, what each helps with). Until that
-ships, operators can use the Slack howto below.
+When the bot is **invited to a channel**, subscribe to `member_joined_channel`
+and Muster posts one pack intro (Parker / Jessie / Alfie, how to address them).
+Same join event is never double-posted (inbox event idempotency).
 
 ## Dog pack agents
 
@@ -125,6 +125,8 @@ Codex: one-time `docker compose … --profile setup run --rm codex-login` until
 ### C. Slack (Muster bot)
 
 1. Slack app with Socket Mode + bot scopes (see `docs/integrations/agent-harness.md`).
+   Subscribe to `member_joined_channel` for the one-shot pack intro when the bot
+   is invited into a channel.
 2. Env: `SLACK_SOCKET_MODE_ENABLED=true`, `SLACK_APP_TOKEN=xapp-…`, signing secret, OAuth install.
 3. Confirm:
 

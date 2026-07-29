@@ -103,6 +103,10 @@ Configure Slack as follows:
   `commands`, and `im:history`
 - Subscribe to app mentions and direct messages; add the Slack Assistant event
   subscriptions when Assistant Threads are enabled for the workspace.
+- Subscribe to `member_joined_channel` so the bot posts a one-shot pack intro
+  (Parker / Jessie / Alfie how-to) when it is added to a channel. Inbox
+  `(installation_id, event_id)` uniqueness prevents duplicate posts for the
+  same join event.
 - Add a message shortcut with callback id `muster.review` when users should be
   able to submit an existing message as untrusted evidence for governed review.
 - Subscribe to `app_uninstalled` and `tokens_revoked` so Slack-side revocation
