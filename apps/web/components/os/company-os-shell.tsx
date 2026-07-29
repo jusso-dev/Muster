@@ -11,6 +11,7 @@ import {
 } from "react";
 import {
   Activity,
+  BookOpen,
   Bot,
   Cable,
   ChevronLeft,
@@ -58,6 +59,7 @@ const navItems: Array<{
   { href: "/approvals", label: "Approvals", icon: CircleCheck },
   { href: "/audit", label: "Audit", icon: ShieldCheck },
   { href: "/integrations", label: "Integrations", icon: Cable },
+  { href: "/guides", label: "Guides", icon: BookOpen },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
