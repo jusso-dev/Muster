@@ -54,8 +54,11 @@ flowchart LR
   gateway, knowledge, missions.
 - **`apps/worker`** — executes queued connector queries and approval-gated
   actions.
-- **`apps/web`** — residual operator/bootstrap HTTP surface (auth, admin MCP
-  installation API, health). Not the product interaction model.
+- **`apps/web`** — ops control-plane UI (health dashboard, agent pack status,
+  connectors, Slack install, approvals). Not a chat product. Operators talk to
+  agents in Slack; Hermes uses MCP. See
+  [ADR 0006](docs/architecture/0006-ops-control-plane-ui.md) and
+  [e2e-homelab-bootstrap.md](docs/operations/e2e-homelab-bootstrap.md).
 - **`skills/`** — Hermes skill packs plus server-enforced
   `policy-bundle.json`.
 

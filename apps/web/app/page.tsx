@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { ControlPlaneDashboard } from "@/components/control-plane-dashboard";
 
 export default function HomePage() {
-  redirect("/rooms/soc-operations");
+  return <ControlPlaneDashboard />;
 }

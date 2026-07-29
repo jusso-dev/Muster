@@ -1,8 +1,11 @@
 # Homelab E2E bootstrap (Muster + Kelpie + Hermes + Slack)
 
 This is the end-to-end map that is easy to miss. Muster is the **control plane**,
-not the chat UI. You talk to agents in **Slack** (Muster bot) or **Hermes**
+not the chat UI. The web app is a **health / wiring dashboard** (agents connected?,
+Slack/Codex/Kelpie/MCP ok?). You talk to agents in **Slack** (Muster bot) or **Hermes**
 (BlueBubbles / other Hermes platforms). Kelpie stays the **case system of record**.
+
+See [ADR 0006](../architecture/0006-ops-control-plane-ui.md).
 
 ## Architecture (what talks to what)
 
@@ -24,7 +27,11 @@ Muster connectors ──worker──► Kelpie / Tawny / UniFi (governed queries
 | Slack bot | **Muster** | Chat to Parker / Jessie / Alfie |
 | Hermes gateway | **Hermes** | Your existing chat apps + Muster MCP tools |
 | Kelpie UI / API | **Kelpie** | Cases, tokens, SoR |
-| Muster web UI | **Muster** | Admin only (tokens, connectors, approvals) — not daily chat |
+| Muster web UI | **Muster** | Control-plane **health dashboard** + Slack/connectors/approvals — not chat |
+
+When the bot is **invited to a channel**, it should introduce the pack once
+(Parker / Jessie / Alfie, how to address them, what each helps with). Until that
+ships, operators can use the Slack howto below.
 
 ## Dog pack agents
 

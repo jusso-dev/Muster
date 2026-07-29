@@ -1,6 +1,11 @@
 # Muster architecture
 
-Muster is a TypeScript-first modular monolith with three process boundaries: browser-facing web, asynchronous worker, and isolated agent gateway. Packages own domain logic; PostgreSQL owns durable state.
+Muster is a TypeScript-first modular monolith with process boundaries: browser-facing
+ops web UI, MCP server, asynchronous worker, and isolated agent gateway. Packages own
+domain logic; PostgreSQL owns durable state.
+
+Chat is not the web product: Slack + Hermes own conversation. See
+[ADR 0006](0006-ops-control-plane-ui.md).
 
 ## System
 
