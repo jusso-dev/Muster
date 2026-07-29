@@ -2,10 +2,6 @@
   <img src="docs/images/muster-governed-ai-operations.jpg" alt="Muster — Governed AI Operations: control plane linking AI agents, MCP tools, models, missions, and audit across Slack, Redis, BullMQ, GitHub, AWS, and the broader AI stack" width="100%">
 </p>
 
-<p align="center">
-  <img src="docs/images/muster-logo-master.png" alt="Muster shield and tree logo" width="112" height="112">
-</p>
-
 <h1 align="center">Muster</h1>
 
 > The governed control plane Hermes calls for security operations.
