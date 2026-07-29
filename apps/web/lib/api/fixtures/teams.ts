@@ -1,0 +1,88 @@
+/**
+ * Fixture workforce structure for development only.
+ * Organisations own their real team structure; do not hardcode as system constants.
+ */
+import type { TeamSummary } from "@/types/os";
+
+export const FIXTURE_TEAMS: TeamSummary[] = [
+  {
+    id: "fixture:team-soc",
+    name: "Security Operations",
+    purpose: "Alert triage, monitoring coordination, and ops briefs",
+    memberCount: 6,
+    agentCount: 1,
+    activeMissions: 2,
+    workload: 14,
+    origin: "fixture",
+  },
+  {
+    id: "fixture:team-ir",
+    name: "Incident Response",
+    purpose: "Incident containment coordination and approval-gated actions",
+    memberCount: 4,
+    agentCount: 1,
+    activeMissions: 1,
+    workload: 7,
+    origin: "fixture",
+  },
+  {
+    id: "fixture:team-hunt",
+    name: "Threat Hunting",
+    purpose: "Bounded hunts and hypothesis-driven investigation",
+    memberCount: 3,
+    agentCount: 1,
+    activeMissions: 3,
+    workload: 9,
+    origin: "fixture",
+  },
+  {
+    id: "fixture:team-de",
+    name: "Detection Engineering",
+    purpose: "Detection change proposals and coverage gaps",
+    memberCount: 3,
+    agentCount: 0,
+    activeMissions: 1,
+    workload: 5,
+    origin: "fixture",
+  },
+  {
+    id: "fixture:team-vm",
+    name: "Vulnerability Management",
+    purpose: "Remediation coordination and exposure tracking",
+    memberCount: 2,
+    agentCount: 0,
+    activeMissions: 0,
+    workload: 4,
+    origin: "fixture",
+  },
+  {
+    id: "fixture:team-grc",
+    name: "Assurance and GRC",
+    purpose: "Assessments, control evidence, and customer assurance",
+    memberCount: 2,
+    agentCount: 0,
+    activeMissions: 0,
+    workload: 3,
+    origin: "fixture",
+  },
+  {
+    id: "fixture:team-ti",
+    name: "Threat Intelligence",
+    purpose: "Research briefs and feed-backed reporting (Alfie)",
+    memberCount: 2,
+    agentCount: 1,
+    activeMissions: 1,
+    workload: 6,
+    origin: "fixture",
+  },
+  {
+    id: "fixture:team-platform",
+    name: "Platform Engineering",
+    purpose: "Connector health, MCP installations, and control-plane wiring",
+    memberCount: 3,
+    agentCount: 0,
+    activeMissions: 0,
+    workload: 5,
+    origin: "fixture",
+  },
+];
