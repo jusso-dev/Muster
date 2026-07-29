@@ -37,6 +37,109 @@ Adjacent products stay authoritative for their own domains:
 Product direction and process boundaries are recorded in
 [ADR 0005](docs/architecture/0005-remote-mcp-server.md).
 
+## Dog pack agents (Parker, Jessie, Alfie)
+
+You talk to agents in **Slack** (Muster bot) or **Hermes** (via MCP tools) — not
+in the Muster web UI. The web app is health, wiring, Slack install, and
+approvals only ([ADR 0006](docs/architecture/0006-ops-control-plane-ui.md)).
+
+Names are Australian working dogs. Shared style: keen, helpful, Australian
+spelling, human voice — not corporate-stiff and not cartoon mascots.
+
+| Agent | Breed vibe | Role | Best for |
+| --- | --- | --- | --- |
+| **Parker** | Border Collie — focused ops lead | Default Slack agent | Standups, executive/ops briefs, Kelpie case summaries, “what matters next” triage |
+| **Jessie** | Border Collie — hunter | Threat hunting | Tawny hosts, UniFi traffic, bounded hunts, separating facts vs inference, next checks |
+| **Alfie** | Bearded Collie — researcher | Threat research | Vendor/CVE briefs, research feeds, evidence-backed write-ups, readable intel summaries |
+
+### What each one does
+
+**Parker (default)** — herds the operational picture into order. Ask for open
+cases, a short brief, SLA pressure, or “what should we look at first?” Parker
+leans on governed Kelpie case paths, alerts/investigations context, and audit
+when policy allows. Replies stay standup-style: what matters, unknowns, next
+steps.
+
+**Jessie** — chases technical threads. Ask about unhealthy hosts, network
+oddities, or a bounded hunt question. Jessie prefers observed facts first,
+inference second, light ATT&CK when useful, and concrete follow-up checks.
+Connector work (Tawny, UniFi, Kelpie, hunts) stays capability-checked and
+governed.
+
+**Alfie** — digs into research. Ask for a CVE/vendor brief, threat context, or
+a readable summary with sources and confidence. Alfie uses research feeds and
+case-linked evidence when available; flags gaps instead of inventing intel.
+
+All three run under Muster governance: capability checks, approvals for
+dangerous writes, connector output treated as **untrusted evidence**, and
+audit. They do not replace Kelpie as case system of record.
+
+### How to use them in Slack
+
+1. **Install** the Muster Slack app and connect the workspace from Muster
+   Settings → Slack ([agent harness](docs/integrations/agent-harness.md)).
+2. **Map your Slack user** to a Muster actor. Unmapped users fail as
+   `identity_unmapped`.
+3. **Expose** Parker, Jessie, and Alfie for the installation (DMs and/or
+   allowed channels). Empty channel allow-list = all channels the bot is in.
+4. **Talk** in a DM with the bot or in a channel where the bot is present.
+
+**Routing (who answers):**
+
+| You say | Who runs |
+| --- | --- |
+| Bare message (no agent name) | **Parker** (default) |
+| `Jessie …` / `Hey Jessie …` / `hi jessie` | **Jessie** |
+| `Alfie …` / `talk to Alfie …` / `chat with Alfie …` | **Alfie** |
+| `use Parker …` / `switch to Parker …` / `/muster Parker …` | **Parker** |
+| `/muster Jessie …` or `/muster Alfie …` | Named agent |
+
+Natural address forms work anywhere in the phrase (not only the first word),
+for example:
+
+```text
+hello                          → Parker
+what cases are open?           → Parker
+Jessie which Tawny hosts look unhealthy?
+Hey Jessie you there
+talk to Alfie about that CVE
+use Alfie for a research brief
+/muster Parker status brief
+```
+
+Replies post as the agent’s Slack display name/icon (**Parker** / **Jessie** /
+**Alfie**) when the app has `chat:write.customize`. Runs show queued → progress
+→ terminal result in-thread, with capability-checked actions (e.g. cancel,
+retry, open approval) where policy allows.
+
+**Channel intro:** subscribe to `member_joined_channel`. When the bot is added
+to a channel it posts a one-shot pack how-to (deduped per join event).
+
+### Hermes path
+
+Hermes owns its own chat sessions and calls Muster over remote MCP with an
+installation bearer token. Agent personas above are the Slack dog pack; Hermes
+uses the MCP tool surface (`muster_*`) under the same governance model. See
+[hermes-mcp.md](docs/integrations/hermes-mcp.md) and
+[e2e-homelab-bootstrap.md](docs/operations/e2e-homelab-bootstrap.md).
+
+### Quick troubleshooting
+
+| Symptom | Likely cause |
+| --- | --- |
+| No reply / `identity_unmapped` | Slack user not mapped to a Muster actor |
+| Wrong agent | No name in message → Parker is default |
+| `agent_not_exposed` | Agent not enabled on that installation / channel |
+| Empty or dead Socket Mode | Worker not running or `SLACK_SOCKET_MODE_ENABLED` / `SLACK_APP_TOKEN` mis-set |
+| Always “Parker” username | Missing `chat:write.customize` — reinstall OAuth with full bot scopes |
+
+Operator checklist and health board:
+
+```bash
+./scripts/bootstrap-e2e-homelab.sh --check-only
+./scripts/bootstrap-e2e-homelab.sh --print-slack-howto
+```
+
 ## Operating model
 
 ```mermaid
