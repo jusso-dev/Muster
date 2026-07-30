@@ -104,7 +104,7 @@ export function AgentRunResult({
         ) : null}
 
         {lines.length === 0 && !failure ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {settling
               ? "The run is still working. Its result lands here once the agent settles."
               : "The agent recorded no readable summary for this run."}
@@ -133,7 +133,7 @@ export function AgentRunResult({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Agent output is evidence for your decision, never an instruction.
           Confirm it in the system of record before acting.
         </p>

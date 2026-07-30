@@ -15,7 +15,9 @@
   --color-overlay: oklch(0.11 0.012 250 / 0.82);
   --color-ink: oklch(0.955 0.008 250);
   --color-ink-2: oklch(0.87 0.01 250);
-  --color-muted: oklch(0.69 0.012 250);
+  /* Lifted so secondary copy stays clearly readable on the dark paper
+     surfaces rather than sitting near the contrast floor. */
+  --color-muted: oklch(0.74 0.012 250);
   --color-faint: oklch(0.54 0.014 250);
   --color-rule: oklch(0.285 0.016 250);
   --color-rule-strong: oklch(0.38 0.02 250);
@@ -56,9 +58,16 @@
   --space-3xl: 6rem;
   --space-4xl: 9rem;
 
-  --text-xs: 0.6875rem;
-  --text-sm: 0.8125rem;
-  --text-base: 0.9375rem;
+  /*
+   * The scale used to sit a step below browser defaults (xs 11px, sm 13px,
+   * base 15px). With `text-xs` carrying most body copy in the OS, that made
+   * the whole product read as small grey print. Bottom of the scale is now
+   * the conventional 12/14/16, so 12px is reserved for genuine metadata
+   * rather than being the default reading size.
+   */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
   --text-md: 1.0625rem;
   --text-lg: 1.25rem;
   --text-xl: 1.5rem;

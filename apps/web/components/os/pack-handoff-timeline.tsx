@@ -32,7 +32,7 @@ function HandoffEntry({ handoff }: { handoff: PackHandoffRow }) {
           {relativeTime(handoff.createdAt)}
         </span>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">{handoff.summary}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{handoff.summary}</p>
       {handoff.blockedReason ? (
         <p className="mt-1 text-xs text-[var(--color-error)]">
           {handoff.blockedReason}
@@ -86,7 +86,7 @@ export function PackHandoffTimeline({
     <section className="rounded-md border border-border bg-card">
       <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <h3 className="text-sm font-semibold">Pack handoffs</h3>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-sm text-muted-foreground">
           {rows.length} recorded
         </span>
       </header>

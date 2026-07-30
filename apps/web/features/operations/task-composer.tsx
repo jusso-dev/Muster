@@ -74,7 +74,7 @@ export function AgentBriefCards({
     <section className="space-y-2">
       <div>
         <h2 className="text-sm font-semibold">Hand work to the pack</h2>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Pick an example to start a task already assigned to that agent. You
           still review and dispatch it.
         </p>
@@ -94,7 +94,7 @@ export function AgentBriefCards({
                     <Bot className="size-3.5 shrink-0" aria-hidden />
                     {agent.displayName}
                   </h3>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <p className="mt-0.5 text-sm text-muted-foreground">
                     {brief.role}
                   </p>
                 </div>
@@ -198,7 +198,7 @@ export function TaskComposer({
       <div className="flex items-start justify-between gap-2">
         <div>
           <h2 className="text-sm font-semibold">New task</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-0.5 text-sm text-muted-foreground">
             Assign to a person to coordinate, or to an agent and dispatch it for
             execution.
           </p>

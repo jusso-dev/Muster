@@ -203,7 +203,7 @@ export function CapabilitiesView() {
           )}
         </section>
 
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Capability grants are enforced server-side on every request. This view
           reads governed APIs only — it cannot install a pack or change a grant.
         </p>

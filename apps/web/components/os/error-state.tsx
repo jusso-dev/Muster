@@ -34,7 +34,7 @@ export function ErrorState({
           <h2 className="text-sm font-semibold text-[var(--color-error)]">
             {permissionDenied ? "Permission denied" : title}
           </h2>
-          <p className="mt-1 text-xs text-foreground/90">{detail}</p>
+          <p className="mt-1 text-sm text-foreground/90">{detail}</p>
           {error instanceof ApiClientError && error.traceId ? (
             <p className="mt-2 font-mono text-xs text-muted-foreground">
               trace {error.traceId}
