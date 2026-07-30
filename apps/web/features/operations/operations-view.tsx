@@ -26,6 +26,7 @@ import {
   type ComposerSeed,
 } from "@/features/operations/task-composer";
 import {
+  useCancelTaskRun,
   useDelegateTask,
   useTasks,
   useUpdateTask,
@@ -162,17 +163,36 @@ function taskToBoardItem(task: RawTask): BoardItem {
   };
 }
 
-/** A run that is already queued or running must not be dispatched again. */
+/** Statuses the server treats as an in-flight run; cancel is the only exit. */
+const ACTIVE_RUN_STATUSES = [
+  "queued",
+  "running",
+  "awaiting_approval",
+  "waiting_sources",
+];
+
+function hasActiveRun(item: BoardItem): boolean {
+  return ACTIVE_RUN_STATUSES.includes(item.agentRunStatus ?? "");
+}
+
+/** A run already in flight must not be dispatched again. */
 function dispatchBlockedReason(item: BoardItem): string | null {
   if (!item.assigneeIsAgent)
     return "Assign this task to an agent to dispatch it.";
-  if (item.agentRunStatus === "queued" || item.agentRunStatus === "running")
-    return "This task already has an active agent run.";
+  if (hasActiveRun(item))
+    return "A run is already in flight. Cancel it before dispatching again.";
   if (item.assigneeReadiness !== "ready")
     return (
       item.assigneeReadinessReason ?? "Assigned agent is not ready for work."
     );
   return null;
+}
+
+/** A settled run can be handed back to the agent; label it as a retry. */
+function isRetry(item: BoardItem): boolean {
+  return (
+    item.agentRunStatus === "failed" || item.agentRunStatus === "cancelled"
+  );
 }
 
 export function OperationsView() {
@@ -473,6 +493,7 @@ export function OperationsView() {
 
 function DetailDrawer({ item }: { item: BoardItem | null }) {
   const delegateTask = useDelegateTask();
+  const cancelRun = useCancelTaskRun();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -501,6 +522,20 @@ function DetailDrawer({ item }: { item: BoardItem | null }) {
     }
   }
 
+  async function cancel() {
+    if (!item) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await cancelRun.mutateAsync(item.id);
+      setNotice("Run cancelled. You can dispatch it again.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not cancel the run.",
+      );
+    }
+  }
+
   return (
     <aside className="rounded-md border border-border bg-card p-4">
       <h2 className="text-sm font-semibold">{item.title}</h2>
@@ -518,19 +553,38 @@ function DetailDrawer({ item }: { item: BoardItem | null }) {
             )}
             {item.ownerName ?? "Unassigned"}
           </p>
-          <Button
-            type="button"
-            size="sm"
-            disabled={Boolean(blocked) || delegateTask.isPending}
-            title={blocked ?? undefined}
-            onClick={() => void dispatch()}
-          >
-            {delegateTask.isPending ? "Dispatching…" : "Dispatch to agent"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {hasActiveRun(item) ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={cancelRun.isPending}
+                onClick={() => void cancel()}
+              >
+                {cancelRun.isPending ? "Cancelling…" : "Cancel run"}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              disabled={Boolean(blocked) || delegateTask.isPending}
+              title={blocked ?? undefined}
+              onClick={() => void dispatch()}
+            >
+              {delegateTask.isPending
+                ? "Dispatching…"
+                : isRetry(item)
+                  ? "Retry dispatch"
+                  : "Dispatch to agent"}
+            </Button>
+          </div>
         </div>
-        <p className="mt-1.5 text-xs text-muted-foreground">
+        <p className="mt-1.5 text-sm text-muted-foreground">
           {blocked ??
-            "Runs under the agent's governed capability envelope. External writes stay approval-gated."}
+            (isRetry(item)
+              ? `Previous run ${item.agentRunStatus}. Dispatching again starts a fresh run under the agent's governed capability envelope.`
+              : "Runs under the agent's governed capability envelope. External writes stay approval-gated.")}
         </p>
         {error ? (
           <p role="alert" className="mt-1.5 text-xs text-[var(--color-error)]">

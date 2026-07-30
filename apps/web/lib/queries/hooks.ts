@@ -337,6 +337,31 @@ export function useCreateTask() {
 }
 
 /**
+ * Cancel a task's in-flight agent run. Without this a run wedged at
+ * queued/running (gateway crash, expired lease) blocks re-dispatch forever
+ * with no operator escape.
+ */
+export function useCancelTaskRun() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (taskId: string) => {
+      const res = await apiPost<{ status?: string }>(
+        `/api/v1/tasks/${taskId}/cancel`,
+        {},
+      );
+      return res.data;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.tasks }),
+        client.invalidateQueries({ queryKey: queryKeys.commandSummary }),
+        client.invalidateQueries({ queryKey: ["audit"] }),
+      ]);
+    },
+  });
+}
+
+/**
  * Hand a task to its assigned agent. The server re-checks capability,
  * readiness, and kill switch — this only asks.
  */

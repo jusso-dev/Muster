@@ -209,7 +209,11 @@ function ApprovalDetail({
 }) {
   const severity = riskSeverity(approval.riskSummary);
   const highImpact = severity === "critical";
-  const pending = approval.status === "pending";
+  // A row can still read as pending until the next inbox load expires it, so
+  // trust the deadline rather than the stored status for what is offerable.
+  const overdue = new Date(approval.expiresAt) <= new Date();
+  const pending = approval.status === "pending" && !overdue;
+  const closable = approval.status === "pending" && overdue;
 
   return (
     <div>
@@ -277,9 +281,15 @@ function ApprovalDetail({
           </div>
         </dl>
 
-        {pending ? (
+        {pending || closable ? (
           <div className="space-y-3 rounded-md border border-border bg-[var(--color-paper)] p-3">
-            <label className="block text-xs font-semibold" htmlFor="decision-reason">
+            {closable ? (
+              <p className="rounded-md border border-[var(--color-warning)]/40 bg-[var(--color-warning-soft)] p-2 text-sm text-[var(--color-warning)]">
+                This request passed its deadline, so it can no longer be
+                approved. Reject it to close it out with a recorded reason.
+              </p>
+            ) : null}
+            <label className="block text-sm font-semibold" htmlFor="decision-reason">
               Decision reason (required)
             </label>
             <textarea
@@ -308,28 +318,28 @@ function ApprovalDetail({
               </label>
             ) : null}
             <div className="flex flex-wrap gap-2">
+              {closable ? null : (
+                <Button type="button" disabled={busy} onClick={onApprove}>
+                  <Check className="size-4" />
+                  Approve
+                </Button>
+              )}
               <Button
                 type="button"
-                disabled={busy}
-                onClick={onApprove}
-              >
-                <Check className="size-4" />
-                Approve
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
+                variant={closable ? "default" : "outline"}
                 disabled={busy}
                 onClick={onReject}
               >
                 <X className="size-4" />
-                Reject
+                {closable ? "Reject and close" : "Reject"}
               </Button>
             </div>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            This approval is no longer pending.
+            {approval.status === "expired"
+              ? "This approval expired without a decision. Nothing was executed."
+              : "This approval is no longer pending."}
             {approval.reason ? ` Reason: ${approval.reason}` : ""}
           </p>
         )}

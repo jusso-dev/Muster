@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import {
   hasCapability,
   type AuthorisationSubject,
@@ -74,6 +74,9 @@ export async function getCommandSummary(
           and(
             eq(schema.approvals.organisationId, subject.organisationId),
             eq(schema.approvals.status, "pending"),
+            // An overdue row is still stored as pending until something reads
+            // the inbox and expires it. Never count it as actionable here.
+            gt(schema.approvals.expiresAt, new Date()),
           ),
         )
         .orderBy(desc(schema.approvals.requestedAt))
