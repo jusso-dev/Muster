@@ -239,6 +239,68 @@ export async function updateTask(
   });
 }
 
+/**
+ * Soft-delete a work item. Rows stay for audit correspondence — the board and
+ * every list already filter on archivedAt — so this is reversible and never
+ * orphans an audit event that references the task.
+ */
+export async function archiveTask(
+  context: TaskMutationContext,
+  taskId: string,
+  archived: boolean,
+) {
+  return database().transaction(async (tx) => {
+    const [existing] = await tx
+      .select({
+        id: schema.tasks.id,
+        agentRunStatus: schema.tasks.agentRunStatus,
+        archivedAt: schema.tasks.archivedAt,
+      })
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.id, taskId),
+          eq(schema.tasks.organisationId, context.organisationId),
+        ),
+      )
+      .limit(1);
+    if (!existing) throw new ApiProblem(404, "Not found", "Task not found.");
+    // Archiving a task with a live run would hide work that is still burning
+    // budget and may still write evidence. Cancel it first.
+    if (
+      archived &&
+      (existing.agentRunStatus === "queued" ||
+        existing.agentRunStatus === "running")
+    ) {
+      throw new ApiProblem(
+        409,
+        "Run in progress",
+        "Cancel the active agent run before archiving this task.",
+      );
+    }
+    if (Boolean(existing.archivedAt) === archived) {
+      return { id: taskId, archived, duplicate: true };
+    }
+    await tx
+      .update(schema.tasks)
+      .set({ archivedAt: archived ? new Date() : null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.tasks.id, taskId),
+          eq(schema.tasks.organisationId, context.organisationId),
+        ),
+      );
+    await recordMutation(
+      tx,
+      context,
+      taskId,
+      archived ? "task.archived" : "task.restored",
+      { agentRunStatus: existing.agentRunStatus },
+    );
+    return { id: taskId, archived, duplicate: false };
+  });
+}
+
 export type AcceptedAgentRun = {
   runId: string;
   status: string;

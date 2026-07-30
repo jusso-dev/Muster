@@ -129,3 +129,45 @@ describe("Stuck and failed agent work", () => {
     );
   });
 });
+
+describe("Removing work from the board", () => {
+  it("archives rather than deletes, so audit correspondence survives", async () => {
+    const view = await source("./operations-view.tsx");
+    expect(view).toContain("useArchiveTask");
+    expect(view).toContain("Archive");
+    expect(view).toContain("audit trail");
+  });
+
+  it("refuses to archive a task with a live run", async () => {
+    const view = await source("./operations-view.tsx");
+    expect(view).toContain("Cancel the active run before archiving");
+    const domain = await readFile(
+      new URL("../../lib/task-domain.ts", import.meta.url),
+      "utf8",
+    );
+    expect(domain).toContain("Cancel the active agent run before archiving");
+  });
+});
+
+describe("Force-releasing a wedged run", () => {
+  it("only forces when the run provably cannot still be executing", async () => {
+    const route = await readFile(
+      new URL("../../app/api/v1/tasks/[id]/cancel/route.ts", import.meta.url),
+      "utf8",
+    );
+    // Both clocks must have passed; a live run must never be reported cancelled.
+    expect(route).toContain("leaseExpiresAt");
+    expect(route).toContain("deadlineAt");
+    expect(route).toContain("if (!gatewayConfirmed && !stale)");
+    expect(route).toContain("may still be executing");
+  });
+
+  it("records that the gateway did not confirm", async () => {
+    const route = await readFile(
+      new URL("../../app/api/v1/tasks/[id]/cancel/route.ts", import.meta.url),
+      "utf8",
+    );
+    expect(route).toContain("Force-released by operator");
+    expect(route).toContain("gatewayConfirmed");
+  });
+});
