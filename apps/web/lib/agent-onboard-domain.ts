@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import {
+  capabilities,
   requireCapability,
   type AuthorisationSubject,
   type Capability,
@@ -12,8 +13,16 @@ import {
 } from "@muster/database";
 import { z } from "zod";
 import { ApiProblem } from "./api-context.ts";
+import {
+  AGENT_MODEL_OPTIONS,
+  DEFAULT_AGENT_CAPABILITIES,
+} from "./agent-onboard-options.ts";
 
-const CAPABILITY_RE = /^[a-z0-9][a-z0-9._-]*$/i;
+const MODEL_VALUES = AGENT_MODEL_OPTIONS.map((option) => option.value) as [
+  string,
+  ...string[],
+];
+const CAPABILITY_SET = new Set<string>(capabilities);
 
 const OnboardAgentSchema = z.object({
   name: z
@@ -33,12 +42,20 @@ const OnboardAgentSchema = z.object({
   runtime: z
     .enum(["codex-subscription", "codex", "http", "mock"])
     .default("codex-subscription"),
-  model: z.string().trim().min(1).max(120).default("configured"),
+  model: z.enum(MODEL_VALUES).default("configured"),
   systemPromptVersion: z.string().trim().min(1).max(80).default("v1"),
   capabilityRequirements: z
-    .array(z.string().trim().regex(CAPABILITY_RE).max(100))
+    .array(
+      z
+        .string()
+        .trim()
+        .refine((value) => CAPABILITY_SET.has(value), {
+          message: "Unknown capability",
+        }),
+    )
+    .min(1, "Select at least one capability")
     .max(40)
-    .default(["agents.read", "alerts.read"]),
+    .default([...DEFAULT_AGENT_CAPABILITIES]),
   allowedTools: z
     .array(z.string().trim().min(1).max(100))
     .max(40)

@@ -9,7 +9,15 @@ import { SkeletonRows } from "@/components/os/skeleton";
 import { PageBody } from "@/components/os/page-body";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
+import {
+  CapabilityChecklist,
+  ModelSelect,
+} from "@/components/agent-onboard-fields";
 import { Button } from "@/components/ui/button";
+import {
+  DEFAULT_AGENT_CAPABILITIES,
+  HUMAN_ROLE_OPTIONS,
+} from "@/lib/agent-onboard-options";
 import { useDirectory, type DirectoryEntry } from "@/lib/queries/hooks";
 import { queryKeys } from "@/lib/queries/keys";
 import { relativeTime } from "@/lib/utils";
@@ -152,7 +160,7 @@ export function TeamsView() {
     slug: "",
     description: "",
     model: "configured",
-    capabilityRequirements: "alerts.read, investigations.read, agents.read",
+    capabilityRequirements: [...DEFAULT_AGENT_CAPABILITIES] as string[],
   });
 
   const directory = useDirectory(query.trim());
@@ -235,10 +243,8 @@ export function TeamsView() {
     setBusy(true);
     setMessage(null);
     try {
-      const caps = agentForm.capabilityRequirements
-        .split(/[,\n]/)
-        .map((s) => s.trim())
-        .filter(Boolean);
+      if (agentForm.capabilityRequirements.length === 0)
+        throw new Error("Select at least one capability.");
       const response = await fetch("/api/v1/agents", {
         method: "POST",
         credentials: "include",
@@ -247,8 +253,8 @@ export function TeamsView() {
           name: agentForm.name.trim(),
           slug: agentForm.slug.trim() || undefined,
           description: agentForm.description.trim(),
-          model: agentForm.model.trim() || "configured",
-          capabilityRequirements: caps,
+          model: agentForm.model,
+          capabilityRequirements: agentForm.capabilityRequirements,
         }),
       });
       const body = (await response.json()) as {
@@ -269,7 +275,7 @@ export function TeamsView() {
         slug: "",
         description: "",
         model: "configured",
-        capabilityRequirements: "alerts.read, investigations.read, agents.read",
+        capabilityRequirements: [...DEFAULT_AGENT_CAPABILITIES],
       });
       setPanel("none");
       await refresh();
@@ -452,26 +458,31 @@ export function TeamsView() {
                   placeholder="SOC"
                 />
               </label>
-              <label className="block text-xs font-semibold">
-                Role
+              <div className="space-y-1">
+                <label htmlFor="human-role" className="block text-xs font-semibold">
+                  Role
+                </label>
                 <select
-                  className="mt-1 h-10 w-full border bg-background px-3 text-sm"
+                  id="human-role"
+                  className="h-10 w-full border bg-background px-3 text-sm"
                   value={humanForm.role}
                   onChange={(e) =>
                     setHumanForm((f) => ({ ...f, role: e.target.value }))
                   }
                 >
-                  <option value="analyst">analyst</option>
-                  <option value="senior_analyst">senior_analyst</option>
-                  <option value="incident_commander">incident_commander</option>
-                  <option value="threat_hunter">threat_hunter</option>
-                  <option value="detection_engineer">detection_engineer</option>
-                  <option value="security_manager">security_manager</option>
-                  <option value="administrator">administrator</option>
-                  <option value="read_only">read_only</option>
-                  <option value="auditor">auditor</option>
+                  {HUMAN_ROLE_OPTIONS.map((role) => (
+                    <option key={role.value} value={role.value}>
+                      {role.label}
+                    </option>
+                  ))}
                 </select>
-              </label>
+                <p className="text-xs text-muted-foreground">
+                  {
+                    HUMAN_ROLE_OPTIONS.find((r) => r.value === humanForm.role)
+                      ?.description
+                  }
+                </p>
+              </div>
               <label className="block text-xs font-semibold">
                 Temporary password (optional — auto if blank)
                 <input
@@ -548,29 +559,16 @@ export function TeamsView() {
                   placeholder="What this agent is for"
                 />
               </label>
-              <label className="block text-xs font-semibold">
-                Model label
-                <input
-                  className="mt-1 h-10 w-full border bg-background px-3 text-sm"
-                  value={agentForm.model}
-                  onChange={(e) =>
-                    setAgentForm((f) => ({ ...f, model: e.target.value }))
-                  }
-                />
-              </label>
-              <label className="block text-xs font-semibold">
-                Capabilities (comma-separated)
-                <input
-                  className="mt-1 h-10 w-full border bg-background px-3 text-sm font-mono"
-                  value={agentForm.capabilityRequirements}
-                  onChange={(e) =>
-                    setAgentForm((f) => ({
-                      ...f,
-                      capabilityRequirements: e.target.value,
-                    }))
-                  }
-                />
-              </label>
+              <ModelSelect
+                value={agentForm.model}
+                onChange={(model) => setAgentForm((f) => ({ ...f, model }))}
+              />
+              <CapabilityChecklist
+                value={agentForm.capabilityRequirements}
+                onChange={(capabilityRequirements) =>
+                  setAgentForm((f) => ({ ...f, capabilityRequirements }))
+                }
+              />
             </div>
             <div className="flex gap-2">
               <Button

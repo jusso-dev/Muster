@@ -16,7 +16,12 @@ import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { AgentProfilePanel } from "@/components/agent-profile-panels";
+import {
+  CapabilityChecklist,
+  ModelSelect,
+} from "@/components/agent-onboard-fields";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { DEFAULT_AGENT_CAPABILITIES } from "@/lib/agent-onboard-options";
 
 type EvidenceState = "reported" | "unavailable" | "unknown";
 type AgentReadiness = {
@@ -101,8 +106,7 @@ export function AgentsView() {
     slug: "",
     description: "",
     model: "configured",
-    capabilityRequirements:
-      "alerts.read, investigations.read, agents.read, agents.handoff",
+    capabilityRequirements: [...DEFAULT_AGENT_CAPABILITIES] as string[],
   });
 
   async function loadDirectory() {
@@ -138,10 +142,8 @@ export function AgentsView() {
     setBusy(true);
     setMessage(null);
     try {
-      const caps = form.capabilityRequirements
-        .split(/[,\n]/)
-        .map((s) => s.trim())
-        .filter(Boolean);
+      if (form.capabilityRequirements.length === 0)
+        throw new Error("Select at least one capability.");
       const response = await fetch("/api/v1/agents", {
         method: "POST",
         credentials: "include",
@@ -150,8 +152,8 @@ export function AgentsView() {
           name: form.name.trim(),
           slug: form.slug.trim() || undefined,
           description: form.description.trim(),
-          model: form.model.trim() || "configured",
-          capabilityRequirements: caps,
+          model: form.model,
+          capabilityRequirements: form.capabilityRequirements,
         }),
       });
       const body = (await response.json()) as {
@@ -168,8 +170,7 @@ export function AgentsView() {
         slug: "",
         description: "",
         model: "configured",
-        capabilityRequirements:
-          "alerts.read, investigations.read, agents.read, agents.handoff",
+        capabilityRequirements: [...DEFAULT_AGENT_CAPABILITIES],
       });
       setShowOnboard(false);
       await loadDirectory();
@@ -315,29 +316,16 @@ export function AgentsView() {
                     placeholder="What this agent does"
                   />
                 </label>
-                <label className="block text-xs font-semibold">
-                  Model label
-                  <input
-                    className="mt-1 h-10 w-full border bg-background px-3 text-sm"
-                    value={form.model}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, model: e.target.value }))
-                    }
-                  />
-                </label>
-                <label className="block text-xs font-semibold">
-                  Capabilities (comma-separated)
-                  <input
-                    className="mt-1 h-10 w-full border bg-background px-3 font-mono text-sm"
-                    value={form.capabilityRequirements}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        capabilityRequirements: e.target.value,
-                      }))
-                    }
-                  />
-                </label>
+                <ModelSelect
+                  value={form.model}
+                  onChange={(model) => setForm((f) => ({ ...f, model }))}
+                />
+                <CapabilityChecklist
+                  value={form.capabilityRequirements}
+                  onChange={(capabilityRequirements) =>
+                    setForm((f) => ({ ...f, capabilityRequirements }))
+                  }
+                />
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button
