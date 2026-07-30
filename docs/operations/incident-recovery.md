@@ -16,7 +16,11 @@ MUSTER_AUDIT_ORGANISATION_ID=<organisation-uuid> pnpm db:verify-audit
 
 The command emits an operator-visible JSON report and does not write, repair,
 delete, or otherwise alter audit history. It exits `0` only for
-`strict-valid`, `2` for `legacy-compatible-not-strict`, and `1` for `invalid`.
+`strict-valid`, `2` for `legacy-compatible-not-strict`, and `1` for `invalid`;
+`64` and `69` mean nothing was verified (missing organisation id, unreachable
+database). Running it, finding the organisation id, and interpreting each
+outcome are covered in
+[audit-chain-verification.md](audit-chain-verification.md).
 
 `legacy-compatible-not-strict` identifies only the known historical defect:
 an integration-action event was hashed before PostgreSQL JSONB omitted an
