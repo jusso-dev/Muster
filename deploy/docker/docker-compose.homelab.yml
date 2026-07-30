@@ -2,8 +2,10 @@ name: muster
 
 x-muster-environment: &muster-environment
   NODE_ENV: production
-  DATABASE_URL: postgresql://muster:${POSTGRES_PASSWORD}@postgres:5432/muster
-  REDIS_URL: redis://redis:6379
+  # Use project-unique hostnames: multi-network services also join kelpie/tawny/
+  # brolga external nets, where short names like postgres/redis collide.
+  DATABASE_URL: postgresql://muster:${POSTGRES_PASSWORD}@muster-postgres-1:5432/muster
+  REDIS_URL: redis://muster-redis-1:6379
   BETTER_AUTH_URL: ${MUSTER_PUBLIC_URL}
   AUTH_TRUSTED_ORIGINS: ${AUTH_TRUSTED_ORIGINS}
   BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
