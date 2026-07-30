@@ -304,6 +304,36 @@ export type DurableAgentRuntimeOptions = {
   mockEstimatedCostCents?: number;
 };
 
+/**
+ * Settle the task row behind a delegated agent run.
+ *
+ * Hunt and report paths already write their own task state; the guard on
+ * agentRunStatus makes this a no-op for those. Without it, a plainly
+ * delegated task stays "in progress / queued" forever after its run ends.
+ */
+async function settleDelegatedTask(
+  tx: Parameters<Parameters<ReturnType<typeof database>["transaction"]>[0]>[0],
+  organisationId: string,
+  runId: string,
+  status: "completed" | "failed" | "cancelled",
+  now: Date,
+) {
+  await tx
+    .update(schema.tasks)
+    .set({
+      status: status === "completed" ? "review" : "ready",
+      agentRunStatus: status,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(schema.tasks.organisationId, organisationId),
+        eq(schema.tasks.agentRunId, runId),
+        inArray(schema.tasks.agentRunStatus, ["queued", "running"]),
+      ),
+    );
+}
+
 export class DurableAgentRuntime {
   private readonly activeRuns = new Map<string, AbortController>();
   private readonly workerId = `agent-gateway:${randomUUID()}`;
@@ -623,6 +653,13 @@ export class DurableAgentRuntime {
           this.request(updated).traceId ?? `agent-run-${updated.id}`,
         ),
       });
+      await settleDelegatedTask(
+        tx,
+        updated.organisationId,
+        updated.id,
+        "cancelled",
+        now,
+      );
       const [hunt] = await tx
         .update(schema.huntRuns)
         .set({
@@ -1475,6 +1512,13 @@ export class DurableAgentRuntime {
           this.request(updated).traceId ?? `agent-run-${updated.id}`,
         ),
       });
+      await settleDelegatedTask(
+        tx,
+        run.organisationId,
+        run.id,
+        "completed",
+        now,
+      );
       const [hunt] = await tx
         .update(schema.huntRuns)
         .set({
@@ -1665,6 +1709,7 @@ export class DurableAgentRuntime {
           this.request(updated).traceId ?? `agent-run-${updated.id}`,
         ),
       });
+      await settleDelegatedTask(tx, run.organisationId, run.id, "failed", now);
       const [hunt] = await tx
         .update(schema.huntRuns)
         .set({
