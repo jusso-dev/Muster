@@ -32,7 +32,32 @@ export function MissionsView() {
         {missions.data && missions.data.length === 0 ? (
           <EmptyState
             title="No missions defined"
-            description="Mission definitions are created via governed MCP tools or bootstrap. They appear here once present."
+            description="Mission definitions are written by the governed MCP tool muster_upsert_mission, which Hermes calls against this workspace. This UI has no create path by design (ADR 0005)."
+            action={
+              <div className="max-w-md space-y-2 text-left text-xs text-muted-foreground">
+                <p>
+                  To get a mission listed here, grant the MCP installation the{" "}
+                  <span className="font-mono">workflows.manage</span> capability
+                  and the{" "}
+                  <span className="font-mono">muster_upsert_mission</span>{" "}
+                  scope, then have Hermes call that tool with a name,
+                  description, and capability envelope.
+                </p>
+                <p>
+                  An operator provisions the installation with{" "}
+                  <span className="font-mono">
+                    pnpm --filter @muster/mcp create-installation
+                  </span>
+                  .
+                </p>
+                <Link
+                  href="/guides"
+                  className="inline-block font-medium underline-offset-2 hover:underline"
+                >
+                  Guides: Missions and Audit
+                </Link>
+              </div>
+            }
           />
         ) : null}
         {missions.data && missions.data.length > 0 ? (

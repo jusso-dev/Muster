@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { closeDatabase, database, schema } from "./index.ts";
 import { bootstrapEnvironmentConnectors } from "./bootstrap-connectors.ts";
-import { starterIds } from "./seed-data.ts";
+import { starterActorSeeds, starterIds } from "./seed-data.ts";
 
 const db = database();
 const organisationName =
@@ -10,57 +10,6 @@ const organisationSlug =
   process.env.MUSTER_ORGANISATION_SLUG?.trim() || "muster";
 const administratorEmail =
   process.env.MUSTER_LOCAL_ADMIN_EMAIL?.trim() || "admin@muster.local";
-const administratorCapabilities = [
-  "administration.manage",
-  "rooms.read",
-  "rooms.create",
-  "rooms.manage",
-  "messages.create",
-  "messages.moderate",
-  "tasks.read",
-  "tasks.create",
-  "tasks.update",
-  "tasks.assign",
-  "alerts.read",
-  "alerts.acknowledge",
-  "alerts.dismiss",
-  "alerts.promote",
-  "investigations.read",
-  "investigations.create",
-  "investigations.update",
-  "investigations.promote",
-  "investigations.close",
-  "kelpie.cases.read",
-  "kelpie.cases.create",
-  "kelpie.cases.update",
-  "tawny.telemetry.read",
-  "tawny.hunts.execute",
-  "unifi.network.read",
-  "tawny.response.kill_process",
-  "tawny.response.isolate_host",
-  "bower.fleet.read",
-  "bower.policy.read",
-  "bower.policy.propose",
-  "bower.policy.publish",
-  "sentinel.query.execute",
-  "sentinel.rules.read",
-  "sentinel.rules.publish",
-  "research.feeds.read",
-  "agents.read",
-  "agents.invoke",
-  "agents.manage",
-  "agents.cancel",
-  "agents.handoff",
-  "workflows.read",
-  "workflows.execute",
-  "workflows.approve",
-  "workflows.manage",
-  "evidence.read",
-  "evidence.upload",
-  "evidence.export",
-  "audit.read",
-  "audit.export",
-];
 
 await db
   .insert(schema.organisations)
@@ -93,72 +42,7 @@ await db
 
 await db
   .insert(schema.actors)
-  .values([
-    {
-      id: starterIds.actors.jordan,
-      organisationId: starterIds.organisation,
-      actorType: "human",
-      displayName: "Muster Administrator",
-      identityReference: administratorEmail,
-      capabilityAssignments: administratorCapabilities,
-    },
-    {
-      id: starterIds.actors.triage,
-      organisationId: starterIds.organisation,
-      actorType: "agent",
-      displayName: "Alfie",
-      identityReference: "agent:alfie-threat-research",
-      capabilityAssignments: [
-        "alerts.read",
-        "investigations.read",
-        "kelpie.cases.read",
-        "sentinel.rules.read",
-        "research.feeds.read",
-        "agents.handoff",
-      ],
-    },
-    {
-      id: starterIds.actors.tawnyHunt,
-      organisationId: starterIds.organisation,
-      actorType: "agent",
-      displayName: "Jessie",
-      identityReference: "agent:jessie-hunt",
-      capabilityAssignments: [
-        "alerts.read",
-        "investigations.read",
-        "investigations.update",
-        "kelpie.cases.read",
-        "kelpie.cases.update",
-        "tawny.telemetry.read",
-        "tawny.hunts.execute",
-        "unifi.network.read",
-        "sentinel.query.execute",
-        "agents.handoff",
-      ],
-    },
-    {
-      id: starterIds.actors.threatIntel,
-      organisationId: starterIds.organisation,
-      actorType: "agent",
-      displayName: "Parker",
-      identityReference: "agent:parker-executive",
-      capabilityAssignments: [
-        "alerts.read",
-        "investigations.read",
-        "kelpie.cases.read",
-        "audit.read",
-        "agents.handoff",
-      ],
-    },
-    {
-      id: starterIds.actors.system,
-      organisationId: starterIds.organisation,
-      actorType: "system",
-      displayName: "Muster",
-      identityReference: "system:muster",
-      capabilityAssignments: [],
-    },
-  ])
+  .values(starterActorSeeds(administratorEmail))
   .onConflictDoUpdate({
     target: schema.actors.id,
     set: {

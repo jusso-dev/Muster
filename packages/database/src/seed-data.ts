@@ -1,3 +1,6 @@
+import type { actorTypeValues } from "@muster/contracts";
+import { starterRoleCapabilities, type Capability } from "@muster/authz";
+
 export const starterIds = {
   organisation: "018f55d8-c4c7-7c3e-88ef-000000000001",
   actors: {
@@ -49,6 +52,91 @@ export const starterIds = {
     priyaParent: "018f55d8-c4c7-7c3e-88ef-000000000705",
   },
 } as const;
+
+export interface StarterActorSeed {
+  id: string;
+  organisationId: string;
+  actorType: (typeof actorTypeValues)[number];
+  displayName: string;
+  identityReference: string;
+  capabilityAssignments: Capability[];
+}
+
+/**
+ * Bootstrap rewrites starter capability assignments on every boot, so any
+ * hand-maintained copy of the administrator grant silently reverts a migration
+ * that backfilled a newly declared capability. Derive it from authz instead.
+ */
+export function starterActorSeeds(
+  administratorEmail: string,
+): StarterActorSeed[] {
+  return [
+    {
+      id: starterIds.actors.jordan,
+      organisationId: starterIds.organisation,
+      actorType: "human",
+      displayName: "Muster Administrator",
+      identityReference: administratorEmail,
+      capabilityAssignments: [...starterRoleCapabilities.administrator],
+    },
+    {
+      id: starterIds.actors.triage,
+      organisationId: starterIds.organisation,
+      actorType: "agent",
+      displayName: "Alfie",
+      identityReference: "agent:alfie-threat-research",
+      capabilityAssignments: [
+        "alerts.read",
+        "investigations.read",
+        "kelpie.cases.read",
+        "sentinel.rules.read",
+        "research.feeds.read",
+        "agents.handoff",
+      ],
+    },
+    {
+      id: starterIds.actors.tawnyHunt,
+      organisationId: starterIds.organisation,
+      actorType: "agent",
+      displayName: "Jessie",
+      identityReference: "agent:jessie-hunt",
+      capabilityAssignments: [
+        "alerts.read",
+        "investigations.read",
+        "investigations.update",
+        "kelpie.cases.read",
+        "kelpie.cases.update",
+        "tawny.telemetry.read",
+        "tawny.hunts.execute",
+        "unifi.network.read",
+        "sentinel.query.execute",
+        "agents.handoff",
+      ],
+    },
+    {
+      id: starterIds.actors.threatIntel,
+      organisationId: starterIds.organisation,
+      actorType: "agent",
+      displayName: "Parker",
+      identityReference: "agent:parker-executive",
+      capabilityAssignments: [
+        "alerts.read",
+        "investigations.read",
+        "kelpie.cases.read",
+        "audit.read",
+        "agents.handoff",
+      ],
+    },
+    {
+      id: starterIds.actors.system,
+      organisationId: starterIds.organisation,
+      actorType: "system",
+      displayName: "Muster",
+      identityReference: "system:muster",
+      capabilityAssignments: [],
+    },
+  ];
+}
 
 /**
  * Deterministic IDs for demonstration data only. They must never overlap the
