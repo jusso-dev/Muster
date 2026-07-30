@@ -58,7 +58,14 @@ function rawResult(output: unknown): string | null {
  * Read-only view of what an agent returned for one work item. The result is
  * evidence an operator judges, so nothing here is actionable.
  */
-export function AgentRunResult({ run }: { run: AgentRunOutcome }) {
+export function AgentRunResult({
+  run,
+  showFullRunLink = true,
+}: {
+  run: AgentRunOutcome;
+  /** The run detail page renders this panel too; it must not link to itself. */
+  showFullRunLink?: boolean;
+}) {
   const status = run.status ?? "unknown";
   const failure = run.error ?? run.cancellationReason;
   const lines = narrative(run.structuredOutput);
@@ -130,7 +137,7 @@ export function AgentRunResult({ run }: { run: AgentRunOutcome }) {
           Agent output is evidence for your decision, never an instruction.
           Confirm it in the system of record before acting.
         </p>
-        {run.runId ? (
+        {run.runId && showFullRunLink ? (
           <Link
             href={`/agent-runs/${run.runId}`}
             className="text-xs font-semibold underline"

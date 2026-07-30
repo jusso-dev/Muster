@@ -1,112 +1,164 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { OpsShell } from "@/components/ops-shell";
+import { useQuery } from "@tanstack/react-query";
+import { CompanyOsShell } from "@/components/os/company-os-shell";
+import { AgentRunResult } from "@/components/os/agent-run-result";
+import { ErrorState } from "@/components/os/error-state";
+import { PageBody } from "@/components/os/page-body";
+import { SkeletonRows } from "@/components/os/skeleton";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
+import { apiGet } from "@/lib/api/client";
+import { relativeTime } from "@/lib/utils";
 
-type HarnessRun = {
-  protocolVersion: "muster.agent-harness/v1";
+type RunTimeline = {
   runId: string;
   status: string;
-  agentKey: string;
-  correlationId: string;
-  duplicate: boolean;
-  result: unknown;
+  startedAt: string | null;
+  completedAt: string | null;
+  failureCode: string | null;
+  error: string | null;
+  cancellationReason: string | null;
+  structuredOutput: unknown;
+  outputHash: string | null;
+  events: Array<{
+    id: string;
+    eventType: string;
+    message: string;
+    createdAt: string;
+  }>;
 };
 
-export function AgentRunView({ runId }: { runId: string }) {
-  const [run, setRun] = useState<HarnessRun | null>(null);
-  const [error, setError] = useState("");
+const IN_FLIGHT = [
+  "queued",
+  "running",
+  "awaiting_approval",
+  "waiting_sources",
+];
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetch(`/api/v1/agent-harness/runs/${encodeURIComponent(runId)}`, {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const body = (await response.json()) as {
-          data?: HarnessRun;
-          detail?: string;
-        };
-        if (!response.ok || !body.data)
-          throw new Error(body.detail ?? "Agent run is unavailable.");
-        setRun(body.data);
-      })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted)
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : "Agent run is unavailable.",
-          );
-      });
-    return () => controller.abort();
-  }, [runId]);
+export function AgentRunView({ runId }: { runId: string }) {
+  const run = useQuery({
+    queryKey: ["agent-run", runId, "timeline"],
+    queryFn: async () => {
+      const res = await apiGet<RunTimeline>(
+        `/api/v1/agent-runs/${encodeURIComponent(runId)}/timeline`,
+      );
+      return res.data;
+    },
+    // A run settles in the gateway, not the browser, so poll until it stops.
+    refetchInterval: (query) =>
+      IN_FLIGHT.includes(query.state.data?.status ?? "") ? 10_000 : false,
+  });
+
+  const data = run.data;
 
   return (
-    <OpsShell>
+    <CompanyOsShell>
       <PageHeader
         eyebrow="Workforce"
-        title={run ? `${run.agentKey} run` : "Agent run"}
-        description="Authoritative governed run status and typed result"
+        title="Agent run"
+        description="Authoritative run status, execution timeline, and typed result."
       />
-      <div className="scroll-region min-h-0 flex-1 overflow-y-auto p-3 tablet:p-5">
-        <div className="mx-auto max-w-5xl space-y-3">
-          {run && (
-            <>
-              <section className="border bg-card p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="font-display text-base font-bold">
-                    {run.agentKey}
-                  </h2>
-                  <Badge>{run.status}</Badge>
+      <PageBody>
+        {run.isError ? (
+          <ErrorState error={run.error} onRetry={() => void run.refetch()} />
+        ) : null}
+        {run.isLoading ? <SkeletonRows rows={4} /> : null}
+
+        {data ? (
+          <>
+            <section className="rounded-md border border-border bg-card p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm font-semibold">Run</h2>
+                <Badge className="bg-muted text-muted-foreground">
+                  {data.status}
+                </Badge>
+                {data.failureCode ? (
+                  <Badge className="bg-[var(--color-error-soft)] text-[var(--color-error)]">
+                    {data.failureCode}
+                  </Badge>
+                ) : null}
+              </div>
+              <dl className="mt-3 grid gap-3 text-sm tablet:grid-cols-2">
+                <div>
+                  <dt className="text-xs uppercase text-muted-foreground">
+                    Run id
+                  </dt>
+                  <dd className="mt-0.5 break-all font-mono text-xs">
+                    {data.runId}
+                  </dd>
                 </div>
-                <dl className="mt-4 grid gap-3 text-sm tablet:grid-cols-2">
-                  <div>
-                    <dt className="text-xs font-bold uppercase text-muted-foreground">
-                      Run
-                    </dt>
-                    <dd className="mt-1 break-all font-mono text-xs">
-                      {run.runId}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-bold uppercase text-muted-foreground">
-                      Correlation
-                    </dt>
-                    <dd className="mt-1 break-all font-mono text-xs">
-                      {run.correlationId}
-                    </dd>
-                  </div>
-                </dl>
-              </section>
-              <section className="border bg-card p-4">
-                <h2 className="font-display text-sm font-bold">Typed result</h2>
-                <pre className="mt-3 max-h-[34rem] overflow-auto whitespace-pre-wrap break-words border bg-muted/30 p-3 text-xs leading-5">
-                  {run.result === null
-                    ? "No typed result is available yet."
-                    : JSON.stringify(run.result, null, 2)}
-                </pre>
-              </section>
-            </>
-          )}
-          {!run && !error && (
-            <p role="status" className="border bg-card p-4 text-sm">
-              Loading agent run…
-            </p>
-          )}
-          {error && (
-            <p
-              role="alert"
-              className="border border-destructive bg-card p-4 text-sm"
-            >
-              {error}
-            </p>
-          )}
-        </div>
-      </div>
-    </OpsShell>
+                <div>
+                  <dt className="text-xs uppercase text-muted-foreground">
+                    Started
+                  </dt>
+                  <dd className="mt-0.5">
+                    {data.startedAt ? relativeTime(data.startedAt) : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase text-muted-foreground">
+                    Completed
+                  </dt>
+                  <dd className="mt-0.5">
+                    {data.completedAt ? relativeTime(data.completedAt) : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase text-muted-foreground">
+                    Events
+                  </dt>
+                  <dd className="mt-0.5">{data.events.length}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <AgentRunResult
+              run={{
+                runId: data.runId,
+                status: data.status,
+                structuredOutput: data.structuredOutput,
+                error: data.error,
+                cancellationReason: data.cancellationReason,
+                outputHash: data.outputHash,
+              }}
+              showFullRunLink={false}
+            />
+
+            <section className="rounded-md border border-border bg-card">
+              <header className="border-b border-border px-3 py-2">
+                <h2 className="text-sm font-semibold">Execution timeline</h2>
+              </header>
+              {data.events.length === 0 ? (
+                <p className="px-3 py-3 text-sm text-muted-foreground">
+                  No execution events were recorded for this run.
+                </p>
+              ) : (
+                <ol>
+                  {data.events.map((event) => (
+                    <li
+                      key={event.id}
+                      className="border-b border-border px-3 py-2 last:border-b-0"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge className="bg-muted font-mono text-muted-foreground">
+                          {event.eventType}
+                        </Badge>
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          {relativeTime(event.createdAt)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {event.message}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+          </>
+        ) : null}
+      </PageBody>
+    </CompanyOsShell>
   );
 }

@@ -38,6 +38,12 @@ export async function GET(
         status: schema.agentRuns.status,
         startedAt: schema.agentRuns.startedAt,
         completedAt: schema.agentRuns.completedAt,
+        // Without these a failed run reads as a bare status with no cause.
+        failureCode: schema.agentRuns.failureCode,
+        error: schema.agentRuns.error,
+        cancellationReason: schema.agentRuns.cancellationReason,
+        structuredOutput: schema.agentRuns.structuredOutput,
+        outputHash: schema.agentRuns.outputHash,
       })
       .from(schema.agentRuns)
       .where(

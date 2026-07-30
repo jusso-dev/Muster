@@ -227,18 +227,15 @@ export function AgentsView() {
   );
 }
 
-const agentTabs = [
-  "Overview",
-  "Instructions",
-  "Tools",
-  "Permissions",
-  "Rooms",
-  "Runs",
-  "Learning",
-  "Evaluations",
-  "Versions",
-  "Audit",
-];
+/**
+ * Only tabs that render distinct content. Instructions, Tools, Permissions,
+ * Rooms, Runs, Evaluations, Versions, and Audit all fell through to the
+ * Overview panel, so eight links looked navigable and silently showed the
+ * same page. Overview already carries the permission, runtime, and tool
+ * evidence the readiness payload actually provides; the rest need APIs that
+ * do not exist yet. Add a tab back when it has something of its own to show.
+ */
+const agentTabs = ["Overview", "Learning"];
 
 export function AgentDetailView({
   agentId,
