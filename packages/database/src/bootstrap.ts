@@ -50,6 +50,7 @@ const administratorCapabilities = [
   "agents.invoke",
   "agents.manage",
   "agents.cancel",
+  "agents.handoff",
   "workflows.read",
   "workflows.execute",
   "workflows.approve",
