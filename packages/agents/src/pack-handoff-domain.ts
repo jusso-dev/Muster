@@ -251,6 +251,17 @@ export async function requestPackHandoff(
       knownCapabilities,
     });
 
+    // A malformed request is not an operational event worth queueing for
+    // review, and a self-handoff row cannot satisfy the table's own
+    // distinct-agents constraint. Reject these outright; genuine route
+    // refusals below are still persisted as blocked rows.
+    if (
+      !decision.allowed &&
+      (decision.code === "self_handoff" || decision.code === "unknown_agent")
+    ) {
+      throw new PackHandoffError(400, "Invalid handoff", decision.detail);
+    }
+
     const id = newId();
     let status: PackHandoffStatus;
     let blockedReason: string | null = null;
