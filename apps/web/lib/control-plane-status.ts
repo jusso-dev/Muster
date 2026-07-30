@@ -124,6 +124,7 @@ export async function getControlPlaneStatus(
     status: schema.integrationRecords.status,
     configuration: schema.integrationRecords.configuration,
     lastSyncAt: schema.integrationRecords.lastSyncAt,
+    health: schema.integrationRecords.health,
     mock: schema.integrationRecords.mock,
   };
 
@@ -228,6 +229,7 @@ export async function getControlPlaneStatus(
           status: string;
           configuration: unknown;
           lastSyncAt: Date | null;
+          health?: unknown;
         }
       | undefined,
   ): ControlPlaneStatus["kelpie"] {
@@ -235,11 +237,22 @@ export async function getControlPlaneStatus(
       row?.configuration && typeof row.configuration === "object"
         ? (row.configuration as Record<string, unknown>)
         : {};
+    const health =
+      row?.health && typeof row.health === "object"
+        ? (row.health as Record<string, unknown>)
+        : {};
+    // Prefer the authoritative integration status. Fall back to last health
+    // probe JSON when bootstrap left status at "configured" after a prior
+    // successful sync (common after env rewrites).
     const status: ControlPlaneComponentStatus = !row
       ? "unavailable"
-      : row.status === "healthy"
+      : row.status === "healthy" || health.status === "healthy"
         ? "ready"
-        : "degraded";
+        : row.status === "configured" && row.lastSyncAt
+          ? "ready"
+          : row.status === "configured"
+            ? "degraded"
+            : "degraded";
     return {
       status,
       instanceId: row?.instanceId ?? null,

@@ -371,15 +371,35 @@ describe("brolga context preset", () => {
 
   it("carries a real pack through the governed path", async () => {
     const pack = {
-      schema_version: "brolga.context_pack/1.0",
-      subject: { kind: "ipv4_address", value: "203.0.113.42" },
-      observable_id: "observable:7168327b-1c71-5692-a605-059cdfda1214",
+      schema_version: "brolga.context_pack/1.1",
+      fingerprint: "sha256:synthetic",
+      subject: {
+        kind: "ipv4_address",
+        value: "203.0.113.42",
+        observable_id: "observable:7168327b-1c71-5692-a605-059cdfda1214",
+      },
+      purpose: "raw_research",
+      detail_level: "L1",
       disposition: "malicious",
-      entities: [{ id: "entity:9c8e", kind: "report", name: "C2 infrastructure" }],
-      claims: [{ predicate: "disposition", object: "malicious", status: "active" }],
-      relationships: [],
-      evidence: [{ source_object_id: "source:12fc" }],
-      gaps: ["no sightings recorded"],
+      graph: {
+        entities: [
+          { id: "entity:9c8e", kind: "report", name: "C2 infrastructure" },
+        ],
+        claims: [
+          { predicate: "disposition", object: "malicious", status: "active" },
+        ],
+        relationships: [],
+      },
+      handles: [],
+      findings: [
+        {
+          kind: "disposition",
+          statement: "Synthetic finding",
+          evidence: [{ source_object_id: "source:12fc" }],
+        },
+      ],
+      recommendations: [],
+      gaps: [{ summary: "no sightings recorded" }],
       exclusions: [],
     };
 
@@ -401,9 +421,10 @@ describe("brolga context preset", () => {
 
     expect(seenPath).toBe("/api/v1/context");
     expect(seenAuthorization).toBe("Bearer never-return-this");
-    // The evidence has to survive the transport, or an agent citing Brolga in a case has nothing
-    // to point at.
+    // Findings/evidence have to survive the transport, or an agent citing
+    // Brolga in a case has nothing to point at.
     expect(JSON.stringify(result)).toContain("source:12fc");
     expect(JSON.stringify(result)).toContain("malicious");
+    expect(JSON.stringify(result)).toContain("brolga.context_pack/1.1");
   });
 });

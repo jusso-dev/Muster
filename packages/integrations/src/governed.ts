@@ -717,7 +717,7 @@ export const connectorPresets: Record<string, readonly QueryTemplate[]> = {
   brolga: [
     {
       key: "brolga.context.pack",
-      version: 1,
+      version: 2,
       displayName: "Brolga context for an observable",
       method: "POST",
       pathTemplate: "/api/v1/context",
@@ -765,15 +765,18 @@ export const connectorPresets: Record<string, readonly QueryTemplate[]> = {
         },
         additionalProperties: false,
       },
+      // Brolga 1.1 packs nest graph/findings/handles; keep the contract loose so
+      // normalised TI can evolve without Muster hard-failing every field rename.
+      // Disposition `unknown` means not seen — never treat as benign.
       outputSchema: {
         type: "object",
         required: ["schema_version", "subject", "disposition"],
         properties: {
           schema_version: { type: "string" },
+          fingerprint: { type: "string" },
           subject: { type: "object" },
-          observable_id: { type: "string" },
-          // `unknown` means Brolga has not heard of the subject. It is NOT benign, and an agent
-          // that treats the two alike will close an alert that should have been raised.
+          purpose: { type: "string" },
+          detail_level: { type: "string" },
           disposition: {
             type: "string",
             enum: [
@@ -784,18 +787,23 @@ export const connectorPresets: Record<string, readonly QueryTemplate[]> = {
               "unknown",
             ],
           },
+          graph: { type: "object" },
+          handles: { type: "array" },
+          findings: { type: "array" },
+          recommendations: { type: "array" },
+          gaps: { type: "array" },
+          exclusions: { type: "array" },
+          budget: { type: "object" },
+          policy: { type: "object" },
+          metadata: { type: "object" },
+          // Legacy 1.0 fields still accepted when present.
+          observable_id: { type: "string" },
           entities: { type: "array" },
           claims: { type: "array" },
           relationships: { type: "array" },
-          // Where the answer came from. An agent asserting something in a case without this has
-          // nothing to cite.
           evidence: { type: "array" },
-          // What Brolga does not know, stated rather than left to be inferred from an empty array.
-          gaps: { type: "array", items: { type: "string" } },
-          // What was left out, including any budget truncation. A pack that silently truncated
-          // would read as a complete one.
-          exclusions: { type: "array" },
         },
+        additionalProperties: true,
       },
     },
   ],

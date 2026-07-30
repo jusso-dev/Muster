@@ -173,11 +173,19 @@ export async function bootstrapEnvironmentConnectors(db: Db) {
       const changed = !configurationMatches || !credentialMatches;
 
       if (existing) {
+        // Only force "configured" when credentials actually change (need a fresh
+        // health proof). Config-only rewrites must not clobber a proven healthy
+        // connector back to degraded on every web boot / template refresh.
+        const nextStatus = !changed
+          ? existing.record.status
+          : credentialMatches && existing.record.status === "healthy"
+            ? "healthy"
+            : "configured";
         await tx
           .update(schema.integrationRecords)
           .set({
             displayName: configuration.displayName,
-            status: changed ? "configured" : existing.record.status,
+            status: nextStatus,
             mock: false,
             configuration: publicConfiguration,
             archivedAt: null,
