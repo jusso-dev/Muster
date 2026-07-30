@@ -3,6 +3,10 @@
 import { useMemo, useState } from "react";
 import { Bot, GripVertical, Plus, User } from "lucide-react";
 import { CompanyOsShell } from "@/components/os/company-os-shell";
+import {
+  AgentRunResult,
+  type AgentRunOutcome,
+} from "@/components/os/agent-run-result";
 import { PackHandoffTimeline } from "@/components/os/pack-handoff-timeline";
 import { EmptyState } from "@/components/os/empty-state";
 import { ErrorState } from "@/components/os/error-state";
@@ -66,6 +70,14 @@ type RawTask = {
   createdAt: string | Date;
   updatedAt: string | Date;
   agentRunStatus?: string | null;
+  run?: {
+    id: string;
+    status: string;
+    structuredOutput?: unknown;
+    outputHash?: string | null;
+    error?: string | null;
+    cancellationReason?: string | null;
+  } | null;
 };
 
 type BoardItem = WorkItem & {
@@ -74,6 +86,7 @@ type BoardItem = WorkItem & {
   assigneeReadiness: string | null;
   assigneeReadinessReason: string | null;
   agentRunStatus: string | null;
+  run: AgentRunOutcome | null;
 };
 
 function priorityToSeverity(priority: string): Severity {
@@ -122,7 +135,18 @@ function taskToBoardItem(task: RawTask): BoardItem {
     assigneeIsAgent: Boolean(isAgent),
     assigneeReadiness: task.assignee?.readiness?.state ?? null,
     assigneeReadinessReason: task.assignee?.readiness?.reason ?? null,
-    agentRunStatus: task.agentRunStatus ?? null,
+    // The run row settles in the gateway, so it leads the task's copy of status.
+    agentRunStatus: task.run?.status ?? task.agentRunStatus ?? null,
+    run: task.run
+      ? {
+          runId: task.run.id,
+          status: task.run.status,
+          structuredOutput: task.run.structuredOutput ?? null,
+          error: task.run.error ?? null,
+          cancellationReason: task.run.cancellationReason ?? null,
+          outputHash: task.run.outputHash ?? null,
+        }
+      : null,
     sourceSystem: "Muster tasks",
     externalRecordId: task.relatedCaseId ?? null,
     externalRecordUrl: null,
@@ -554,6 +578,12 @@ function DetailDrawer({ item }: { item: BoardItem | null }) {
           <dd className="break-all font-mono text-xs">{item.id}</dd>
         </div>
       </dl>
+
+      {item.run ? (
+        <div className="mt-3">
+          <AgentRunResult run={item.run} />
+        </div>
+      ) : null}
 
       <div className="mt-3">
         <PackHandoffTimeline taskId={item.id} />

@@ -278,6 +278,9 @@ export type TaskRoom = { id: string; slug: string; displayName: string };
 /**
  * Tasks plus the assignee and room options the server is willing to accept.
  * Keeping meta here means the composer never invents an actor id.
+ *
+ * Runs settle in the agent gateway rather than in the browser, so a dispatched
+ * run only becomes readable here by asking again.
  */
 export function useTasks() {
   return useQuery({
@@ -304,6 +307,7 @@ export function useTasks() {
         rooms: meta.rooms ?? [],
       };
     },
+    refetchInterval: 20_000,
   });
 }
 

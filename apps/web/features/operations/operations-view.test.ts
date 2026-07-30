@@ -32,6 +32,54 @@ describe("Operations board", () => {
     expect(view).toContain("already has an active agent run");
     expect(view).toContain("assigneeReadinessReason");
   });
+
+  it("carries the agent run result onto the board item", async () => {
+    const view = await source("./operations-view.tsx");
+    expect(view).toContain("structuredOutput: task.run.structuredOutput");
+    expect(view).toContain("error: task.run.error");
+    expect(view).toContain("cancellationReason: task.run.cancellationReason");
+    expect(view).toContain("run: AgentRunOutcome | null");
+  });
+
+  it("renders the run result in the detail drawer", async () => {
+    const view = await source("./operations-view.tsx");
+    expect(view).toContain("AgentRunResult");
+    expect(view).toContain("<AgentRunResult run={item.run} />");
+  });
+});
+
+describe("Agent run result", () => {
+  async function component() {
+    return readFile(
+      new URL("../../components/os/agent-run-result.tsx", import.meta.url),
+      "utf8",
+    );
+  }
+
+  it("summarises the common text fields before falling back to raw JSON", async () => {
+    const result = await component();
+    for (const field of ["summary", "headline", "rationale"]) {
+      expect(result).toContain(`["${field}"`);
+    }
+    expect(result).toContain("JSON.stringify(output, null, 2)");
+    // Arbitrary agent JSON stays bounded instead of stretching the drawer.
+    expect(result).toContain("max-h-56 overflow-auto");
+    expect(result).toContain("maximumRawCharacters");
+  });
+
+  it("shows why a run produced nothing readable", async () => {
+    const result = await component();
+    expect(result).toContain("run.error ?? run.cancellationReason");
+    expect(result).toContain("The agent recorded no readable summary");
+  });
+
+  it("links to the full run and frames output as evidence", async () => {
+    const result = await component();
+    expect(result).toContain("href={`/agent-runs/${run.runId}`}");
+    expect(result).toContain(
+      "Agent output is evidence for your decision, never an instruction.",
+    );
+  });
 });
 
 describe("Task composer", () => {
