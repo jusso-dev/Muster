@@ -115,11 +115,11 @@ vertical slice:
 
 ## Consequences
 
-Hermes gets four stable, schema-validated read-only tools
-(`muster_get_status`, `muster_list_capabilities`,
-`muster_search_kelpie_cases`, `muster_get_kelpie_case`) by default, plus
-opt-in write/proposal tools (`muster_propose_kelpie_action`,
-`muster_get_action_status`) for tracker item 2. Write tools reuse the same
+Hermes gets stable, schema-validated read-only tools by default, including
+status/capabilities, Kelpie case search/get, and Tawny endpoint inventory,
+alerts, and bounded hunt tools. Opt-in write/proposal tools
+(`muster_propose_kelpie_action`, `muster_get_action_status`) cover tracker
+item 2. Connector product reads share one governed queue/worker path. Write tools reuse the same
 `integration_deliveries` + `approvals` + worker path as the web integration
 action domain: proposals are always approval-gated, client-supplied
 idempotency keys resume prior deliveries, and resumption is a status read

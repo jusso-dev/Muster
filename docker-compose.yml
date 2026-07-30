@@ -24,6 +24,8 @@ x-muster-environment: &muster-environment
   KELPIE_API_TOKEN: mock-kelpie-token
   TAWNY_BASE_URL: http://mock-tawny:4012
   TAWNY_API_TOKEN: mock-tawny-token
+  BROLGA_BASE_URL: http://mock-brolga:4014
+  BROLGA_API_TOKEN: mock-brolga-token
   BOWER_BASE_URL: http://mock-bower:4013
   BOWER_API_TOKEN: mock-bower-token
   MUSTER_MOCK_INTEGRATIONS: "true"
@@ -208,6 +210,18 @@ services:
       - ./integrations/bower/mock.mjs:/mock/mock.mjs:ro
     ports:
       - "4013:4013"
+
+  mock-brolga:
+    image: node:26-bookworm-slim
+    working_dir: /mock
+    command: ["node", "mock.mjs"]
+    environment:
+      PORT: 4014
+      MOCK_PRODUCT: Brolga
+    volumes:
+      - ./integrations/brolga/mock.mjs:/mock/mock.mjs:ro
+    ports:
+      - "4014:4014"
 
 volumes:
   muster-postgres:

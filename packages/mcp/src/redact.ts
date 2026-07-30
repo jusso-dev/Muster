@@ -37,11 +37,11 @@ export interface ClassifiedRecords {
 }
 
 /**
- * Bounds and redacts Kelpie query results before they can reach a prompt.
+ * Bounds and redacts connector query results before they can reach a prompt.
  * Every record is untrusted external evidence: it is never an instruction,
  * and secrets/oversized strings never survive this step.
  */
-export function classifyKelpieRecords(
+export function classifyEvidenceRecords(
   records: unknown[],
   limit: number,
 ): ClassifiedRecords {
@@ -59,9 +59,14 @@ export interface ClassifiedCase {
   record: unknown;
 }
 
-export function classifyKelpieCase(record: unknown): ClassifiedCase {
+export function classifyEvidenceCase(record: unknown): ClassifiedCase {
   return {
     classification: "untrusted_evidence",
     record: truncateStrings(redactUntrusted(record)),
   };
 }
+
+/** @deprecated Prefer classifyEvidenceRecords */
+export const classifyKelpieRecords = classifyEvidenceRecords;
+/** @deprecated Prefer classifyEvidenceCase */
+export const classifyKelpieCase = classifyEvidenceCase;

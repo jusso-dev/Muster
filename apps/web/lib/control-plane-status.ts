@@ -23,6 +23,20 @@ export type ControlPlaneStatus = {
     baseUrl: string | null;
     lastSyncAt: string | null;
   };
+  tawny: {
+    status: ControlPlaneComponentStatus;
+    instanceId: string | null;
+    displayName: string | null;
+    baseUrl: string | null;
+    lastSyncAt: string | null;
+  };
+  brolga: {
+    status: ControlPlaneComponentStatus;
+    instanceId: string | null;
+    displayName: string | null;
+    baseUrl: string | null;
+    lastSyncAt: string | null;
+  };
   slack: {
     status: ControlPlaneComponentStatus;
     health: unknown;
@@ -103,84 +117,141 @@ export async function getControlPlaneStatus(
   requireCapability(subject, "administration.manage");
   const db = database();
 
-  const [readiness, codex, kelpieRows, mcpRows, agentRows, exposures, slackHealth] =
-    await Promise.all([
-      musterReadiness(),
-      probeCodex(),
-      db
-        .select({
-          id: schema.integrationRecords.id,
-          instanceId: schema.integrationRecords.instanceId,
-          displayName: schema.integrationRecords.displayName,
-          status: schema.integrationRecords.status,
-          configuration: schema.integrationRecords.configuration,
-          lastSyncAt: schema.integrationRecords.lastSyncAt,
-          mock: schema.integrationRecords.mock,
-        })
-        .from(schema.integrationRecords)
-        .where(
-          and(
-            eq(schema.integrationRecords.organisationId, subject.organisationId),
-            eq(schema.integrationRecords.product, "kelpie"),
-            isNull(schema.integrationRecords.archivedAt),
-            eq(schema.integrationRecords.mock, false),
-          ),
-        )
-        .orderBy(desc(schema.integrationRecords.updatedAt))
-        .limit(1),
-      db
-        .select({
-          id: schema.mcpInstallations.id,
-          name: schema.mcpInstallations.name,
-          tokenPrefix: schema.mcpInstallations.tokenPrefix,
-          lastUsedAt: schema.mcpInstallations.lastUsedAt,
-          status: schema.mcpInstallations.status,
-        })
-        .from(schema.mcpInstallations)
-        .where(
-          and(
-            eq(schema.mcpInstallations.organisationId, subject.organisationId),
-            eq(schema.mcpInstallations.status, "active"),
-            isNull(schema.mcpInstallations.revokedAt),
-          ),
-        )
-        .orderBy(desc(schema.mcpInstallations.installedAt))
-        .limit(20),
-      db
-        .select({
-          id: schema.agentDefinitions.id,
-          name: schema.agentDefinitions.name,
-          status: schema.agentDefinitions.status,
-          killSwitch: schema.agentDefinitions.killSwitch,
-          runtime: schema.agentDefinitions.runtime,
-          systemPromptVersion: schema.agentDefinitions.systemPromptVersion,
-        })
-        .from(schema.agentDefinitions)
-        .where(eq(schema.agentDefinitions.organisationId, subject.organisationId))
-        .orderBy(schema.agentDefinitions.name),
-      db
-        .select({
-          agentId: schema.slackAgentExposures.agentId,
-          enabled: schema.slackAgentExposures.enabled,
-          isDefault: schema.slackAgentExposures.isDefault,
-        })
-        .from(schema.slackAgentExposures)
-        .where(eq(schema.slackAgentExposures.organisationId, subject.organisationId)),
-      new SlackGovernanceAdapter().health(subject).catch(() => null),
-    ]);
+  const connectorSelect = {
+    id: schema.integrationRecords.id,
+    instanceId: schema.integrationRecords.instanceId,
+    displayName: schema.integrationRecords.displayName,
+    status: schema.integrationRecords.status,
+    configuration: schema.integrationRecords.configuration,
+    lastSyncAt: schema.integrationRecords.lastSyncAt,
+    mock: schema.integrationRecords.mock,
+  };
 
-  const kelpie = kelpieRows[0];
-  const kelpieConfig =
-    kelpie?.configuration && typeof kelpie.configuration === "object"
-      ? (kelpie.configuration as Record<string, unknown>)
-      : {};
-  const kelpieStatus: ControlPlaneComponentStatus = !kelpie
-    ? "unavailable"
-    : kelpie.status === "healthy"
-      ? "ready"
-      : kelpie.status === "configured"
-        ? "degraded"
+  const [
+    readiness,
+    codex,
+    kelpieRows,
+    tawnyRows,
+    brolgaRows,
+    mcpRows,
+    agentRows,
+    exposures,
+    slackHealth,
+  ] = await Promise.all([
+    musterReadiness(),
+    probeCodex(),
+    db
+      .select(connectorSelect)
+      .from(schema.integrationRecords)
+      .where(
+        and(
+          eq(schema.integrationRecords.organisationId, subject.organisationId),
+          eq(schema.integrationRecords.product, "kelpie"),
+          isNull(schema.integrationRecords.archivedAt),
+          eq(schema.integrationRecords.mock, false),
+        ),
+      )
+      .orderBy(desc(schema.integrationRecords.updatedAt))
+      .limit(1),
+    db
+      .select(connectorSelect)
+      .from(schema.integrationRecords)
+      .where(
+        and(
+          eq(schema.integrationRecords.organisationId, subject.organisationId),
+          eq(schema.integrationRecords.product, "tawny"),
+          isNull(schema.integrationRecords.archivedAt),
+          eq(schema.integrationRecords.mock, false),
+        ),
+      )
+      .orderBy(desc(schema.integrationRecords.updatedAt))
+      .limit(1),
+    db
+      .select(connectorSelect)
+      .from(schema.integrationRecords)
+      .where(
+        and(
+          eq(schema.integrationRecords.organisationId, subject.organisationId),
+          eq(schema.integrationRecords.product, "brolga"),
+          isNull(schema.integrationRecords.archivedAt),
+          eq(schema.integrationRecords.mock, false),
+        ),
+      )
+      .orderBy(desc(schema.integrationRecords.updatedAt))
+      .limit(1),
+    db
+      .select({
+        id: schema.mcpInstallations.id,
+        name: schema.mcpInstallations.name,
+        tokenPrefix: schema.mcpInstallations.tokenPrefix,
+        lastUsedAt: schema.mcpInstallations.lastUsedAt,
+        status: schema.mcpInstallations.status,
+      })
+      .from(schema.mcpInstallations)
+      .where(
+        and(
+          eq(schema.mcpInstallations.organisationId, subject.organisationId),
+          eq(schema.mcpInstallations.status, "active"),
+          isNull(schema.mcpInstallations.revokedAt),
+        ),
+      )
+      .orderBy(desc(schema.mcpInstallations.installedAt))
+      .limit(20),
+    db
+      .select({
+        id: schema.agentDefinitions.id,
+        name: schema.agentDefinitions.name,
+        status: schema.agentDefinitions.status,
+        killSwitch: schema.agentDefinitions.killSwitch,
+        runtime: schema.agentDefinitions.runtime,
+        systemPromptVersion: schema.agentDefinitions.systemPromptVersion,
+      })
+      .from(schema.agentDefinitions)
+      .where(eq(schema.agentDefinitions.organisationId, subject.organisationId))
+      .orderBy(schema.agentDefinitions.name),
+    db
+      .select({
+        agentId: schema.slackAgentExposures.agentId,
+        enabled: schema.slackAgentExposures.enabled,
+        isDefault: schema.slackAgentExposures.isDefault,
+      })
+      .from(schema.slackAgentExposures)
+      .where(eq(schema.slackAgentExposures.organisationId, subject.organisationId)),
+    new SlackGovernanceAdapter().health(subject).catch(() => null),
+  ]);
+
+  function connectorComponent(
+    row:
+      | {
+          instanceId: string;
+          displayName: string;
+          status: string;
+          configuration: unknown;
+          lastSyncAt: Date | null;
+        }
+      | undefined,
+  ): ControlPlaneStatus["kelpie"] {
+    const config =
+      row?.configuration && typeof row.configuration === "object"
+        ? (row.configuration as Record<string, unknown>)
+        : {};
+    const status: ControlPlaneComponentStatus = !row
+      ? "unavailable"
+      : row.status === "healthy"
+        ? "ready"
         : "degraded";
+    return {
+      status,
+      instanceId: row?.instanceId ?? null,
+      displayName: row?.displayName ?? null,
+      baseUrl: typeof config.baseUrl === "string" ? config.baseUrl : null,
+      lastSyncAt: row?.lastSyncAt?.toISOString() ?? null,
+    };
+  }
+
+  const kelpie = connectorComponent(kelpieRows[0]);
+  const tawny = connectorComponent(tawnyRows[0]);
+  const brolga = connectorComponent(brolgaRows[0]);
 
   const slackStatus: ControlPlaneComponentStatus = slackHealth
     ? "ready"
@@ -241,20 +312,17 @@ export async function getControlPlaneStatus(
     overall: worst(
       readinessStatus,
       codex.status,
-      kelpieStatus,
+      kelpie.status,
+      tawny.status,
+      brolga.status,
       slackStatus === "unknown" ? "degraded" : slackStatus,
       mcpStatus,
     ),
     readiness,
     codex,
-    kelpie: {
-      status: kelpieStatus,
-      instanceId: kelpie?.instanceId ?? null,
-      displayName: kelpie?.displayName ?? null,
-      baseUrl:
-        typeof kelpieConfig.baseUrl === "string" ? kelpieConfig.baseUrl : null,
-      lastSyncAt: kelpie?.lastSyncAt?.toISOString() ?? null,
-    },
+    kelpie,
+    tawny,
+    brolga,
     slack: {
       status: slackStatus,
       health: slackHealth,

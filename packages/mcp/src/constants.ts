@@ -4,6 +4,10 @@ export const MCP_READ_TOOL_NAMES = [
   "muster_list_capabilities",
   "muster_search_kelpie_cases",
   "muster_get_kelpie_case",
+  "muster_list_tawny_endpoints",
+  "muster_list_tawny_alerts",
+  "muster_run_tawny_hunt",
+  "muster_get_brolga_context",
   "muster_search_knowledge",
   "muster_get_knowledge",
   "muster_list_invocations",
@@ -34,10 +38,14 @@ export type McpReadToolName = (typeof MCP_READ_TOOL_NAMES)[number];
 export type McpWriteToolName = (typeof MCP_WRITE_TOOL_NAMES)[number];
 
 export const MCP_TOOL_VERSIONS: Record<McpToolName, string> = {
-  muster_get_status: "1.0.0",
+  muster_get_status: "1.2.0",
   muster_list_capabilities: "1.0.0",
   muster_search_kelpie_cases: "1.0.0",
   muster_get_kelpie_case: "1.0.0",
+  muster_list_tawny_endpoints: "1.0.0",
+  muster_list_tawny_alerts: "1.0.0",
+  muster_run_tawny_hunt: "1.0.0",
+  muster_get_brolga_context: "1.0.0",
   muster_search_knowledge: "1.0.0",
   muster_get_knowledge: "1.0.0",
   muster_propose_kelpie_action: "1.0.0",
@@ -53,4 +61,4 @@ export const MCP_TOOL_VERSIONS: Record<McpToolName, string> = {
 };
 
 export const MCP_SERVER_NAME = "muster";
-export const MCP_SERVER_VERSION = "0.6.0";
+export const MCP_SERVER_VERSION = "0.8.0";

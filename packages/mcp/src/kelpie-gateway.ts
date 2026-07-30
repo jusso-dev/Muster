@@ -18,6 +18,9 @@ import { McpToolError } from "./errors.ts";
 
 type Database = ReturnType<typeof database>;
 
+/** Products MCP can queue through the governed connector path. */
+export type McpConnectorProduct = "kelpie" | "tawny" | "brolga";
+
 function encryptionKey(): string {
   const key = process.env.CONNECTOR_ENCRYPTION_KEY;
   if (!key)
@@ -28,10 +31,24 @@ function encryptionKey(): string {
   return key;
 }
 
-async function findKelpieIntegration(db: Database, organisationId: string) {
-  // An organisation may have reconfigured or rotated Kelpie instances over
-  // time; deterministically prefer the most recently touched, unarchived
-  // one rather than an arbitrary row.
+const PRODUCT_LABEL: Record<McpConnectorProduct, string> = {
+  kelpie: "Kelpie",
+  tawny: "Tawny",
+  brolga: "Brolga",
+};
+
+function productLabel(product: McpConnectorProduct): string {
+  return PRODUCT_LABEL[product];
+}
+
+async function findProductIntegration(
+  db: Database,
+  organisationId: string,
+  product: McpConnectorProduct,
+) {
+  // An organisation may have reconfigured or rotated instances over time;
+  // deterministically prefer the most recently touched, unarchived one
+  // rather than an arbitrary row.
   const [integration] = await db
     .select({
       id: schema.integrationRecords.id,
@@ -42,7 +59,7 @@ async function findKelpieIntegration(db: Database, organisationId: string) {
     .where(
       and(
         eq(schema.integrationRecords.organisationId, organisationId),
-        eq(schema.integrationRecords.product, "kelpie"),
+        eq(schema.integrationRecords.product, product),
         isNull(schema.integrationRecords.archivedAt),
       ),
     )
@@ -51,20 +68,21 @@ async function findKelpieIntegration(db: Database, organisationId: string) {
   if (!integration || !["configured", "healthy"].includes(integration.status))
     throw new McpToolError(
       "not_configured",
-      "Kelpie is not configured for this organisation.",
+      `${productLabel(product)} is not configured for this organisation.`,
     );
   return integration;
 }
 
 /**
- * Queues a Kelpie read through the existing governed connector path
+ * Queues a product read through the existing governed connector path
  * (integration_query_runs -> outbox -> the unmodified worker's
  * processConnectorQuery), rather than opening a second execution path.
  */
-export async function queueKelpieQuery(
+export async function queueConnectorQuery(
   db: Database,
   subject: AuthorisationSubject,
   request: {
+    product: McpConnectorProduct;
     templateKey: string;
     input: Record<string, unknown>;
     idempotencyKey: string;
@@ -72,7 +90,12 @@ export async function queueKelpieQuery(
     requestedByActorType: z.infer<typeof ActorTypeSchema>;
   },
 ): Promise<{ id: string; duplicate: boolean }> {
-  const integration = await findKelpieIntegration(db, subject.organisationId);
+  const label = productLabel(request.product);
+  const integration = await findProductIntegration(
+    db,
+    subject.organisationId,
+    request.product,
+  );
   const limits = ConnectorConfigurationSchema.shape.limits.parse(
     (integration.configuration as Record<string, unknown>).limits,
   );
@@ -95,7 +118,7 @@ export async function queueKelpieQuery(
   if (!template)
     throw new McpToolError(
       "not_configured",
-      "Kelpie query template is not enabled for this organisation.",
+      `${label} query template is not enabled for this organisation.`,
     );
   const definition = QueryTemplateSchema.parse(template.definition);
   requireCapability(subject, definition.requiredCapability);
@@ -143,7 +166,7 @@ export async function queueKelpieQuery(
     if ((recent?.value ?? 0) >= limits.requestsPerMinute)
       throw new McpToolError(
         "rate_limited",
-        "Kelpie connector request rate limit reached.",
+        `${label} connector request rate limit reached.`,
       );
     const id = newId();
     await tx.insert(schema.integrationQueryRuns).values({
@@ -161,6 +184,7 @@ export async function queueKelpieQuery(
         templateKey: definition.key,
         templateVersion: definition.version,
         via: "mcp",
+        product: request.product,
       },
     });
     await appendAuditEvent(tx, {
@@ -175,6 +199,7 @@ export async function queueKelpieQuery(
         templateKey: definition.key,
         templateVersion: definition.version,
         via: "mcp",
+        product: request.product,
       },
       traceId: request.traceId,
     });
@@ -192,12 +217,15 @@ export async function queueKelpieQuery(
   });
 }
 
-export interface KelpieRunResult {
+export interface ConnectorRunResult {
   status: string;
   result: unknown;
   errorCode: string | null;
   errorMessage: string | null;
 }
+
+/** @deprecated Prefer ConnectorRunResult — alias kept for existing imports. */
+export type KelpieRunResult = ConnectorRunResult;
 
 /**
  * Polls the authoritative run row for a bounded window. The MCP tool call
@@ -205,12 +233,14 @@ export interface KelpieRunResult {
  * window, the caller learns the run id is still processing instead of
  * blocking indefinitely.
  */
-export async function pollKelpieQuery(
+export async function pollConnectorQuery(
   db: Database,
   subject: AuthorisationSubject,
   runId: string,
   options: { timeoutMs: number; intervalMs: number },
-): Promise<KelpieRunResult> {
+  product: McpConnectorProduct = "kelpie",
+): Promise<ConnectorRunResult> {
+  const label = productLabel(product);
   const deadline = Date.now() + options.timeoutMs;
   for (;;) {
     const [run] = await db
@@ -232,7 +262,10 @@ export async function pollKelpieQuery(
       )
       .limit(1);
     if (!run)
-      throw new McpToolError("not_found", "Kelpie query run does not exist.");
+      throw new McpToolError(
+        "not_found",
+        `${label} query run does not exist.`,
+      );
     if (run.status === "succeeded" || run.status === "failed")
       return {
         status: run.status,
@@ -243,8 +276,32 @@ export async function pollKelpieQuery(
     if (Date.now() >= deadline)
       throw new McpToolError(
         "timeout",
-        "Kelpie query is still processing; retry shortly.",
+        `${label} query is still processing; retry shortly.`,
       );
     await new Promise((resolve) => setTimeout(resolve, options.intervalMs));
   }
+}
+
+/** Kelpie-shaped wrapper: same governed path, product fixed to kelpie. */
+export async function queueKelpieQuery(
+  db: Database,
+  subject: AuthorisationSubject,
+  request: {
+    templateKey: string;
+    input: Record<string, unknown>;
+    idempotencyKey: string;
+    traceId: string;
+    requestedByActorType: z.infer<typeof ActorTypeSchema>;
+  },
+): Promise<{ id: string; duplicate: boolean }> {
+  return queueConnectorQuery(db, subject, { ...request, product: "kelpie" });
+}
+
+export async function pollKelpieQuery(
+  db: Database,
+  subject: AuthorisationSubject,
+  runId: string,
+  options: { timeoutMs: number; intervalMs: number },
+): Promise<ConnectorRunResult> {
+  return pollConnectorQuery(db, subject, runId, options, "kelpie");
 }

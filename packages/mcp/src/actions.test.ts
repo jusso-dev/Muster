@@ -10,6 +10,11 @@ describe("MCP write/proposal surface", () => {
   it("keeps write tools opt-in and separate from default read scopes", () => {
     expect(MCP_READ_TOOL_NAMES).toContain("muster_get_status");
     expect(MCP_READ_TOOL_NAMES).toContain("muster_list_missions");
+    expect(MCP_READ_TOOL_NAMES).toContain("muster_search_kelpie_cases");
+    expect(MCP_READ_TOOL_NAMES).toContain("muster_list_tawny_endpoints");
+    expect(MCP_READ_TOOL_NAMES).toContain("muster_list_tawny_alerts");
+    expect(MCP_READ_TOOL_NAMES).toContain("muster_run_tawny_hunt");
+    expect(MCP_READ_TOOL_NAMES).toContain("muster_get_brolga_context");
     expect(MCP_WRITE_TOOL_NAMES).toContain("muster_propose_kelpie_action");
     expect(MCP_WRITE_TOOL_NAMES).toContain("muster_accept_mission_run");
     expect(MCP_TOOL_NAMES).toEqual([

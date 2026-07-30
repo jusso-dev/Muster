@@ -296,6 +296,22 @@ function buildIntegrations(
         : "No sync recorded",
     },
     {
+      id: "tawny",
+      name: controlPlane.tawny.displayName ?? "Tawny",
+      health: toHealthState(controlPlane.tawny.status),
+      detail: controlPlane.tawny.lastSyncAt
+        ? `Synced ${relativeTime(controlPlane.tawny.lastSyncAt)}`
+        : "No sync recorded",
+    },
+    {
+      id: "brolga",
+      name: controlPlane.brolga.displayName ?? "Brolga",
+      health: toHealthState(controlPlane.brolga.status),
+      detail: controlPlane.brolga.lastSyncAt
+        ? `Synced ${relativeTime(controlPlane.brolga.lastSyncAt)}`
+        : "No sync recorded",
+    },
+    {
       id: "slack",
       name: "Slack",
       health: toHealthState(controlPlane.slack.status),
@@ -691,6 +707,8 @@ export async function getCommandSummary(
   const degradedIntegrations = controlPlane
     ? [
         controlPlane.kelpie.status,
+        controlPlane.tawny.status,
+        controlPlane.brolga.status,
         controlPlane.slack.status,
         controlPlane.mcp.status,
         controlPlane.codex.status,
@@ -918,6 +936,8 @@ export async function getCommandSummary(
   if (controlPlane) {
     for (const [name, status] of [
       ["Kelpie", controlPlane.kelpie.status],
+      ["Tawny", controlPlane.tawny.status],
+      ["Brolga", controlPlane.brolga.status],
       ["Slack", controlPlane.slack.status],
       ["MCP", controlPlane.mcp.status],
       ["Codex runtime", controlPlane.codex.status],

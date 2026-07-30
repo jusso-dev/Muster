@@ -19,11 +19,17 @@ export {
   type InstallationContext,
 } from "./installation.ts";
 export {
+  pollConnectorQuery,
   pollKelpieQuery,
+  queueConnectorQuery,
   queueKelpieQuery,
+  type ConnectorRunResult,
   type KelpieRunResult,
+  type McpConnectorProduct,
 } from "./kelpie-gateway.ts";
 export {
+  classifyEvidenceCase,
+  classifyEvidenceRecords,
   classifyKelpieCase,
   classifyKelpieRecords,
   type ClassifiedCase,
@@ -31,10 +37,16 @@ export {
 } from "./redact.ts";
 export { createMusterMcpServer, type McpServerDeps } from "./server.ts";
 export {
+  getBrolgaContext,
   getKelpieCase,
   getStatus,
   listCapabilities,
+  listTawnyAlerts,
+  listTawnyEndpoints,
+  runTawnyHunt,
   searchKelpieCases,
+  type BrolgaPurpose,
+  type BrolgaSubjectKind,
   type ToolResult,
 } from "./tools.ts";
 export {

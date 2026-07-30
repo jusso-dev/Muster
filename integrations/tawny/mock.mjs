@@ -30,6 +30,20 @@ const server = createServer(async (request, response) => {
         mock: true,
       },
     ]);
+  if (request.method === "GET" && url.pathname === "/api/alerts")
+    return json(response, 200, [
+      {
+        id: "alert-synthetic-1",
+        agent_id: agentId,
+        hostname: "synthetic-tawny-endpoint",
+        severity: "high",
+        status: "open",
+        title: "Synthetic suspicious process",
+        event_type: "process_launch",
+        occurred_at: "2026-07-26T06:21:08Z",
+        mock: true,
+      },
+    ]);
   if (request.method === "POST" && url.pathname === "/api/hunts/run")
     return json(response, 200, {
       match_count: 1,

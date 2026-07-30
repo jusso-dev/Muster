@@ -18,6 +18,8 @@ type ControlPlaneSlice = {
   generatedAt: string;
   overall: string;
   kelpie: { status: string; displayName: string | null; lastSyncAt: string | null };
+  tawny: { status: string; displayName: string | null; lastSyncAt: string | null };
+  brolga: { status: string; displayName: string | null; lastSyncAt: string | null };
   slack: { status: string };
   mcp: { status: string; activeInstallations: number };
   codex: { status: string; runtime: string | null; detail: string | null };
@@ -46,7 +48,40 @@ function controlPlaneCards(cp: ControlPlaneSlice): IntegrationCard[] {
       lastFailureAt: null,
       lastExecutionAt: cp.kelpie.lastSyncAt,
       authState: cp.kelpie.status === "ready" ? "configured" : cp.kelpie.status,
-      capabilities: ["case coordination"],
+      capabilities: ["case coordination", "MCP query"],
+      recentError: null,
+      owner: null,
+      source: "api",
+    },
+    {
+      id: "cp:tawny",
+      name: cp.tawny?.displayName || "Tawny",
+      product: "tawny",
+      enabled: true,
+      health: toHealthState(cp.tawny?.status),
+      lastSuccessAt: cp.tawny?.lastSyncAt ?? null,
+      lastFailureAt: null,
+      lastExecutionAt: cp.tawny?.lastSyncAt ?? null,
+      authState: cp.tawny?.status === "ready" ? "configured" : (cp.tawny?.status ?? "unavailable"),
+      capabilities: ["endpoint inventory", "hunts", "MCP query"],
+      recentError: null,
+      owner: null,
+      source: "api",
+    },
+    {
+      id: "cp:brolga",
+      name: cp.brolga?.displayName || "Brolga",
+      product: "brolga",
+      enabled: true,
+      health: toHealthState(cp.brolga?.status),
+      lastSuccessAt: cp.brolga?.lastSyncAt ?? null,
+      lastFailureAt: null,
+      lastExecutionAt: cp.brolga?.lastSyncAt ?? null,
+      authState:
+        cp.brolga?.status === "ready"
+          ? "configured"
+          : (cp.brolga?.status ?? "unavailable"),
+      capabilities: ["normalised TI", "context pack", "MCP query"],
       recentError: null,
       owner: null,
       source: "api",

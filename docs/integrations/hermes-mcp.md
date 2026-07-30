@@ -86,14 +86,23 @@ token as a bearer credential. Placeholders only — never commit a real token:
 
 ### Read-only (default installation scopes)
 
-- `muster_get_status` — organisation-scoped Muster and Kelpie connector
-  status.
+- `muster_get_status` — organisation-scoped Muster plus Kelpie, Tawny, and
+  Brolga connector status.
 - `muster_list_capabilities` — capabilities and tools authorised for this
   installation.
 - `muster_search_kelpie_cases` — bounded, classified Kelpie case search
   through the governed connector path.
 - `muster_get_kelpie_case` — one Kelpie case by id, same bounding and
   classification.
+- `muster_list_tawny_endpoints` — Tawny endpoint inventory through the
+  governed connector path.
+- `muster_list_tawny_alerts` — Tawny endpoint alerts through the governed
+  connector path.
+- `muster_run_tawny_hunt` — bounded Tawny hunt (`query` + `limit`); requires
+  `tawny.hunts.execute` on the bound actor.
+- `muster_get_brolga_context` — normalised Brolga TI context pack for one
+  observable (`kind` + `value`; optional `purpose`, `caseId`). Requires
+  `brolga.context.read`. Disposition `unknown` means not seen — never benign.
 - `muster_search_knowledge` / `muster_get_knowledge` — organisation-scoped
   operational knowledge. Results are never proof of authorisation, approval,
   or external-action completion.

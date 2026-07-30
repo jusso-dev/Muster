@@ -107,9 +107,21 @@ export function ConnectorAdminView() {
             tawny: "tawny.inventory.list",
             tawny_response: "tawny.inventory.list",
             kelpie: "kelpie.cases.list",
+            brolga: "brolga.context.pack",
             unifi: "unifi.sites.list",
           }[connector.product] ?? "generic.alerts.list",
-        input: connector.product === "unifi" ? { offset: 0, limit: 25 } : {},
+        input:
+          connector.product === "unifi"
+            ? { offset: 0, limit: 25 }
+            : connector.product === "brolga"
+              ? {
+                  subject: {
+                    kind: "ip",
+                    value: "203.0.113.42",
+                  },
+                  purpose: "raw_research",
+                }
+              : {},
         idempotencyKey: `connector-test-${browserUuid()}`,
       }),
     });
@@ -175,6 +187,7 @@ export function ConnectorAdminView() {
                 <option value="tawny">Tawny read-only</option>
                 <option value="tawny_response">Tawny approved response</option>
                 <option value="kelpie">Kelpie case management</option>
+                <option value="brolga">Brolga threat intelligence</option>
                 <option value="unifi">UniFi Network read-only</option>
               </select>
             </label>

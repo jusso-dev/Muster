@@ -811,6 +811,16 @@ export const connectorPresets: Record<string, readonly QueryTemplate[]> = {
       outputSchema: { type: "array" },
     },
     {
+      key: "tawny.alerts.list",
+      version: 1,
+      displayName: "Tawny endpoint alerts",
+      method: "GET",
+      pathTemplate: "/api/alerts",
+      requiredCapability: "tawny.telemetry.read",
+      inputSchema: { type: "object", additionalProperties: false },
+      outputSchema: { type: "array" },
+    },
+    {
       key: "tawny.hunt.run",
       version: 1,
       displayName: "Tawny bounded hunt",

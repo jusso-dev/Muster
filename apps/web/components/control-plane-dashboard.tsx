@@ -215,6 +215,70 @@ export function ControlPlaneDashboard() {
                 <CardHeader>
                   <div className="flex items-center justify-between gap-2">
                     <CardTitle className="flex items-center gap-2">
+                      <Cable className="size-4" aria-hidden />
+                      Tawny
+                    </CardTitle>
+                    <StatusBadge status={data.tawny.status} />
+                  </div>
+                  <CardDescription>
+                    {data.tawny.displayName ?? "No live connector"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-1 text-sm text-muted-foreground">
+                  <p className="truncate font-mono text-xs">
+                    {data.tawny.baseUrl ?? "—"}
+                  </p>
+                  <p>
+                    Last sync:{" "}
+                    {data.tawny.lastSyncAt
+                      ? relativeTime(data.tawny.lastSyncAt)
+                      : "never"}
+                  </p>
+                  <Link
+                    href="/integrations/connectors"
+                    className="text-xs font-medium text-foreground underline-offset-2 hover:underline"
+                  >
+                    Connectors
+                  </Link>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="flex items-center gap-2">
+                      <Cable className="size-4" aria-hidden />
+                      Brolga
+                    </CardTitle>
+                    <StatusBadge status={data.brolga.status} />
+                  </div>
+                  <CardDescription>
+                    {data.brolga.displayName ?? "No live connector"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-1 text-sm text-muted-foreground">
+                  <p className="truncate font-mono text-xs">
+                    {data.brolga.baseUrl ?? "—"}
+                  </p>
+                  <p>
+                    Last sync:{" "}
+                    {data.brolga.lastSyncAt
+                      ? relativeTime(data.brolga.lastSyncAt)
+                      : "never"}
+                  </p>
+                  <Link
+                    href="/integrations/connectors"
+                    className="text-xs font-medium text-foreground underline-offset-2 hover:underline"
+                  >
+                    Connectors
+                  </Link>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="flex items-center gap-2">
                       <MessageSquare className="size-4" aria-hidden />
                       Slack
                     </CardTitle>

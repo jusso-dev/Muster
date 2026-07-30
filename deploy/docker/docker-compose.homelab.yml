@@ -25,6 +25,8 @@ x-muster-environment: &muster-environment
   KELPIE_API_TOKEN: ${KELPIE_API_TOKEN}
   TAWNY_BASE_URL: ${TAWNY_BASE_URL:-http://api:5080}
   TAWNY_API_TOKEN: ${TAWNY_API_TOKEN}
+  BROLGA_BASE_URL: ${BROLGA_BASE_URL:-}
+  BROLGA_API_TOKEN: ${BROLGA_API_TOKEN:-}
   BOWER_BASE_URL: ${BOWER_BASE_URL:-}
   BOWER_API_TOKEN: ${BOWER_API_TOKEN:-}
   MUSTER_MOCK_INTEGRATIONS: ${MUSTER_MOCK_INTEGRATIONS:-false}
@@ -146,6 +148,7 @@ services:
       - default
       - tawny
       - kelpie
+      - brolga
     environment:
       <<: *muster-environment
       MUSTER_HEALTHCHECK_URL: http://localhost:3001/ready
@@ -170,6 +173,7 @@ services:
       - default
       - tawny
       - kelpie
+      - brolga
     environment:
       <<: *muster-environment
       MUSTER_HEALTHCHECK_URL: http://localhost:3002/ready
@@ -192,6 +196,7 @@ services:
     networks:
       - default
       - kelpie
+      - brolga
     environment:
       <<: *muster-environment
       # Internal listen port inside the container; keep 3003 in-container.
@@ -283,3 +288,6 @@ networks:
   kelpie:
     external: true
     name: kelpie_default
+  brolga:
+    external: true
+    name: brolga_default
