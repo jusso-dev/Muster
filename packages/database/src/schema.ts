@@ -2121,6 +2121,7 @@ export const governedMissions = pgTable(
       killSwitchBlocksNew: true,
     }),
     hermesProfile: text("hermes_profile"),
+    revision: integer("revision").notNull().default(1),
     createdByActorId: uuid("created_by_actor_id")
       .notNull()
       .references(() => actors.id),
@@ -2146,6 +2147,40 @@ export const governedMissions = pgTable(
       columns: [table.createdByActorId, table.organisationId],
       foreignColumns: [actors.id, actors.organisationId],
     }),
+  ],
+);
+
+/** Append-only mission snapshots for UI/MCP versioning. */
+export const governedMissionRevisions = pgTable(
+  "governed_mission_revisions",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    missionId: uuid("mission_id")
+      .notNull()
+      .references(() => governedMissions.id),
+    revision: integer("revision").notNull(),
+    snapshot: jsonb("snapshot").notNull(),
+    changeSummary: text("change_summary").notNull().default(""),
+    createdByActorId: uuid("created_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("governed_mission_revisions_mission_rev_unique").on(
+      table.missionId,
+      table.revision,
+    ),
+    index("governed_mission_revisions_mission_idx").on(
+      table.organisationId,
+      table.missionId,
+      table.createdAt,
+    ),
   ],
 );
 

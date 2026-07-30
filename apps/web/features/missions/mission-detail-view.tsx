@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { CompanyOsShell } from "@/components/os/company-os-shell";
 import { PackHandoffTimeline } from "@/components/os/pack-handoff-timeline";
 import { EmptyState } from "@/components/os/empty-state";
@@ -12,9 +13,47 @@ import { Badge } from "@/components/ui/badge";
 import { useMission, useMissionRuns } from "@/lib/queries/hooks";
 import { relativeTime } from "@/lib/utils";
 
+type Revision = {
+  id: string;
+  revision: number;
+  changeSummary: string;
+  createdAt: string;
+  snapshot: unknown;
+};
+
 export function MissionDetailView({ missionId }: { missionId: string }) {
   const mission = useMission(missionId);
   const runs = useMissionRuns(missionId);
+  const [revisions, setRevisions] = useState<Revision[]>([]);
+  const [revError, setRevError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/v1/missions/${missionId}/revisions`,
+          { credentials: "include" },
+        );
+        const body = (await response.json()) as {
+          data?: Revision[];
+          detail?: string;
+        };
+        if (!response.ok)
+          throw new Error(body.detail ?? `HTTP ${response.status}`);
+        if (!cancelled) setRevisions(body.data ?? []);
+      } catch (error) {
+        if (!cancelled)
+          setRevError(
+            error instanceof Error ? error.message : "Failed to load revisions",
+          );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [missionId]);
+
 
   return (
     <CompanyOsShell>
@@ -80,12 +119,54 @@ export function MissionDetailView({ missionId }: { missionId: string }) {
                 <dd>{mission.data.scheduleHint ?? "—"}</dd>
               </div>
               <div>
+                <dt className="text-xs uppercase text-muted-foreground">
+                  Revision
+                </dt>
+                <dd className="font-mono text-xs">
+                  v{mission.data.revision ?? 1}
+                </dd>
+              </div>
+              <div>
                 <dt className="text-xs uppercase text-muted-foreground">Id</dt>
                 <dd className="break-all font-mono text-xs">{mission.data.id}</dd>
               </div>
             </dl>
           </section>
         ) : null}
+
+        <section className="rounded-md border border-border bg-card">
+          <div className="border-b border-border px-4 py-2">
+            <h2 className="text-sm font-semibold">Version history</h2>
+          </div>
+          {revError ? (
+            <p className="p-4 text-sm text-[var(--color-error)]">{revError}</p>
+          ) : null}
+          {revisions.length === 0 && !revError ? (
+            <div className="p-4">
+              <EmptyState
+                title="No revisions stored yet"
+                description="Edits from the Missions UI write a revision snapshot. Older rows created before versioning may only show the current definition."
+              />
+            </div>
+          ) : null}
+          {revisions.length > 0 ? (
+            <ul className="divide-y divide-border">
+              {revisions.map((rev) => (
+                <li key={rev.id} className="px-4 py-3 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="bg-muted text-muted-foreground">
+                      v{rev.revision}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {relativeTime(rev.createdAt)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs">{rev.changeSummary || "—"}</p>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
 
         <section className="rounded-md border border-border bg-card">
           <div className="border-b border-border px-4 py-2">

@@ -151,11 +151,13 @@ export function useAgentManifests() {
   });
 }
 
-export function useMissions() {
+export function useMissions(includeArchived = false) {
   return useQuery({
-    queryKey: queryKeys.missions,
+    queryKey: [...queryKeys.missions, includeArchived] as const,
     queryFn: async () => {
-      const res = await apiGet<MissionSummary[]>("/api/v1/missions");
+      const res = await apiGet<MissionSummary[]>("/api/v1/missions", {
+        includeArchived: includeArchived ? "true" : undefined,
+      });
       return res.data;
     },
   });

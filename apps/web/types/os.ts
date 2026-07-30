@@ -191,6 +191,7 @@ export type MissionSummary = {
   scheduleHint: string | null;
   hermesProfile: string | null;
   killSwitch: boolean;
+  revision?: number;
   createdAt: string;
   updatedAt: string;
 };

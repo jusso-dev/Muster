@@ -3,19 +3,19 @@ import { describe, expect, it } from "vitest";
 
 const viewUrl = new URL("./missions-view.tsx", import.meta.url);
 
-describe("Missions empty state", () => {
-  it("names the governed tool and the prerequisites for calling it", async () => {
+describe("Missions UI control", () => {
+  it("offers create/edit/archive with revision notes", async () => {
     const source = await readFile(viewUrl, "utf8");
-    expect(source).toContain("muster_upsert_mission");
+    expect(source).toContain("New mission");
+    expect(source).toContain("Save new revision");
+    expect(source).toContain("Archive");
+    expect(source).toContain("changeSummary");
     expect(source).toContain("workflows.manage");
-    expect(source).toContain("create-installation");
-    expect(source).toContain('href="/guides"');
   });
 
-  it("does not offer a UI create path", async () => {
+  it("still documents Hermes MCP as an alternate write path", async () => {
     const source = await readFile(viewUrl, "utf8");
-    expect(source).toContain("no create path by design");
-    expect(source).not.toContain("New mission");
-    expect(source).not.toContain("useUpsertMission");
+    expect(source).toContain("muster_accept_mission_run");
+    expect(source).toContain("muster_upsert_mission");
   });
 });

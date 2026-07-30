@@ -29,10 +29,12 @@ describe("Teams directory", () => {
 
   it("describes what it renders instead of promising team structure", async () => {
     const view = await source();
-    expect(view).toContain("by actor type where it does not");
-    expect(view).toContain("No directory entry carries a team");
-    expect(view).toContain("nothing here invents one");
+    expect(view).toContain("Invite humans, onboard pack agents");
     expect(view).toContain("No directory members visible");
+    expect(view).toContain("Add human");
+    expect(view).toContain("Onboard agent");
+    expect(view).toContain("Remove demo members");
+    expect(view).toContain("Grouped by actor type");
   });
 
   it("reads the governed directory and counts actor types exactly", async () => {

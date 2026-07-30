@@ -169,6 +169,13 @@
       "when": 1785382372386,
       "tag": "0023_blue_whirlwind",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785412800000,
+      "tag": "0024_mission_revisions_org_ops",
+      "breakpoints": true
     }
   ]
 }
