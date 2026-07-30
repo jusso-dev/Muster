@@ -18,7 +18,7 @@ import {
   IntegrationActionRequestSchema,
   type IntegrationActionRequest,
 } from "@muster/integrations";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import { z } from "zod";
 import { ApiProblem } from "./api-context.ts";
 
@@ -348,8 +348,50 @@ export class IntegrationActionDomainService {
 export class ApprovalDomainService {
   constructor(private readonly db = database()) {}
 
-  async list(subject: AuthorisationSubject) {
+  /**
+   * Move overdue pending approvals to `expired` before anyone reads them.
+   *
+   * Nothing else transitions them, so without this they stay `pending`
+   * forever: the inbox keeps offering Approve on a request that can no longer
+   * be approved, and the attention queue keeps counting dead rows. Lazy
+   * expiry runs on read so a workspace self-heals without a scheduler.
+   */
+  async expireOverdue(organisationId: string, traceId: string) {
+    return this.db.transaction(async (tx) => {
+      const overdue = await tx
+        .update(schema.approvals)
+        .set({ status: "expired", decisionAt: new Date() })
+        .where(
+          and(
+            eq(schema.approvals.organisationId, organisationId),
+            eq(schema.approvals.status, "pending"),
+            lte(schema.approvals.expiresAt, new Date()),
+          ),
+        )
+        .returning({
+          id: schema.approvals.id,
+          actionType: schema.approvals.actionType,
+          requestingActorId: schema.approvals.requestingActorId,
+        });
+      for (const approval of overdue) {
+        await appendAuditEvent(tx, {
+          organisationId,
+          actorId: approval.requestingActorId,
+          actorType: "system",
+          action: "workflow.approval.expired",
+          targetType: "approval",
+          targetId: approval.id,
+          metadata: { actionType: approval.actionType },
+          traceId,
+        });
+      }
+      return overdue.length;
+    });
+  }
+
+  async list(subject: AuthorisationSubject, traceId = "approval-list") {
     requireCapability(subject, "workflows.approve");
+    await this.expireOverdue(subject.organisationId, traceId);
     const rows = await this.db
       .select()
       .from(schema.approvals)
@@ -385,10 +427,23 @@ export class ApprovalDomainService {
           "Approval not found",
           "Approval does not exist.",
         );
-      if (approval.status !== "pending")
+      // A row lands on `expired` as soon as anything lists the inbox, so
+      // rejection has to survive that state too — otherwise the very act of
+      // opening Approvals removes the only way to close the row.
+      const closingExpired =
+        approval.status === "expired" && decision.status === "rejected";
+      if (approval.status !== "pending" && !closingExpired)
         return { id: approval.id, status: approval.status, duplicate: true };
-      if (approval.expiresAt <= new Date())
-        throw new ApiProblem(409, "Approval expired", "Approval has expired.");
+      // Approving an expired dangerous action is exactly what expiry exists to
+      // prevent. Rejecting one is strictly de-escalating, so it stays open —
+      // otherwise the row can never be closed and clutters the queue forever.
+      if (approval.expiresAt <= new Date() && decision.status !== "rejected") {
+        throw new ApiProblem(
+          409,
+          "Approval expired",
+          "This approval expired and can no longer be approved. Reject it to close it out.",
+        );
+      }
       if (!capabilities.includes(approval.requiredCapability as Capability))
         throw new Error("Approval requires an unknown capability");
       requireCapability(subject, approval.requiredCapability as Capability);

@@ -29,7 +29,7 @@ describe("Operations board", () => {
     expect(view).toContain("dispatchBlockedReason");
     // Every refusal path returns operator-readable text.
     expect(view).toContain("Assign this task to an agent to dispatch it.");
-    expect(view).toContain("already has an active agent run");
+    expect(view).toContain("A run is already in flight.");
     expect(view).toContain("assigneeReadinessReason");
   });
 
@@ -101,5 +101,31 @@ describe("Task composer", () => {
     const composer = await source("./task-composer.tsx");
     expect(composer).toContain("assignees: Assignee[]");
     expect(composer).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/);
+  });
+});
+
+describe("Stuck and failed agent work", () => {
+  it("offers cancel while a run is in flight", async () => {
+    const view = await source("./operations-view.tsx");
+    expect(view).toContain("useCancelTaskRun");
+    expect(view).toContain("Cancel run");
+    // Every status the server treats as in-flight must be escapable, not just
+    // queued/running — awaiting_approval wedges a task just as hard.
+    expect(view).toContain('"awaiting_approval"');
+    expect(view).toContain('"waiting_sources"');
+  });
+
+  it("labels a re-dispatch as a retry and says why", async () => {
+    const view = await source("./operations-view.tsx");
+    expect(view).toContain("function isRetry");
+    expect(view).toContain("Retry dispatch");
+    expect(view).toContain("Previous run");
+  });
+
+  it("points a blocked dispatch at the way out", async () => {
+    const view = await source("./operations-view.tsx");
+    expect(view).toContain(
+      "A run is already in flight. Cancel it before dispatching again.",
+    );
   });
 });

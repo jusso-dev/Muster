@@ -5,7 +5,10 @@ export async function GET(request: Request) {
   const traceId = requestTraceId(request);
   try {
     return Response.json({
-      data: await new ApprovalDomainService().list(await apiSubject(request)),
+      data: await new ApprovalDomainService().list(
+        await apiSubject(request),
+        traceId,
+      ),
       traceId,
     });
   } catch (error) {
