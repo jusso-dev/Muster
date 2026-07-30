@@ -122,7 +122,7 @@ export function SettingsView() {
 
         <section className="rounded-md border border-border bg-card p-4">
           <h2 className="text-sm font-semibold">Workspace</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-sm text-muted-foreground">
             Identity, region, timezone, and status. Read-only: workspace
             identity is set at bootstrap and has no governed write API.
           </p>
@@ -146,7 +146,7 @@ export function SettingsView() {
             <div className="mt-4 flex items-center justify-between gap-2 rounded-md border border-border p-3">
               <div>
                 <p className="text-sm font-semibold">Organisation status</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   Active workspaces accept events and agent runs.
                 </p>
               </div>
@@ -173,7 +173,7 @@ export function SettingsView() {
                 className="rounded-md border border-border bg-card p-3 hover:border-[var(--color-accent)]"
               >
                 <p className="text-sm font-medium">{section.label}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
+                <p className="mt-0.5 text-sm text-muted-foreground">
                   {section.detail}
                 </p>
               </Link>
@@ -181,7 +181,7 @@ export function SettingsView() {
           </div>
         </section>
 
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Capability grants, retention, and connector credentials are
           server-controlled. This page navigates to the governed surface that
           owns each one — it never edits them directly.

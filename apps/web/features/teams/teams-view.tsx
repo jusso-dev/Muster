@@ -152,7 +152,7 @@ export function TeamsView() {
             placeholder="Search people and agents"
             className="h-8 min-w-56 flex-1 rounded-md border border-border bg-background px-2 text-sm"
           />
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             {total} members · {counts.humans} humans · {counts.agents} agents
           </span>
         </div>
@@ -182,7 +182,7 @@ export function TeamsView() {
           >
             <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
               <h2 className="text-sm font-semibold">{group.label}</h2>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-sm text-muted-foreground">
                 {group.members.length}{" "}
                 {group.members.length === 1 ? "member" : "members"}
               </span>
@@ -195,7 +195,7 @@ export function TeamsView() {
           </section>
         ))}
 
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {groupedBy === "actorType" && total > 0
             ? "No directory entry carries a team, so this is grouped by actor type. Team names are read straight off the directory record; nothing here invents one."
             : "Team names are read straight off the directory record; nothing here invents one."}{" "}

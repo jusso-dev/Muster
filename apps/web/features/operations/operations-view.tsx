@@ -266,7 +266,7 @@ export function OperationsView() {
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs text-muted-foreground" htmlFor="ops-status">
+          <label className="text-sm text-muted-foreground" htmlFor="ops-status">
             Status
           </label>
           <select
@@ -289,7 +289,7 @@ export function OperationsView() {
             Source: live tasks API
           </Badge>
           {updateTask.isPending ? (
-            <span className="text-xs text-muted-foreground">Saving…</span>
+            <span className="text-sm text-muted-foreground">Saving…</span>
           ) : null}
         </div>
 
@@ -354,7 +354,7 @@ export function OperationsView() {
                         <h2 className="text-xs font-semibold uppercase tracking-[0.06em]">
                           {column.label}
                         </h2>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-sm text-muted-foreground">
                           {column.hint}
                         </p>
                       </div>
@@ -504,7 +504,7 @@ function DetailDrawer({ item }: { item: BoardItem | null }) {
   return (
     <aside className="rounded-md border border-border bg-card p-4">
       <h2 className="text-sm font-semibold">{item.title}</h2>
-      <p className="mt-1 text-xs text-muted-foreground">
+      <p className="mt-1 text-sm text-muted-foreground">
         {item.description || "No description."}
       </p>
 

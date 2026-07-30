@@ -109,7 +109,7 @@ export function CommandView() {
                                 {item.type.replaceAll("_", " ")}
                               </Badge>
                             </div>
-                            <p className="mt-1 text-xs text-muted-foreground">
+                            <p className="mt-1 text-sm text-muted-foreground">
                               {item.sourceSystem}
                               {item.owner ? ` · ${item.owner}` : ""} · {item.age}
                             </p>
@@ -132,7 +132,7 @@ export function CommandView() {
                   <h2 id="radar-heading" className="text-sm font-semibold">
                     Operational risk radar
                   </h2>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm text-muted-foreground">
                     Heuristic summaries from live counts — not a composite score.
                   </p>
                 </div>
@@ -146,7 +146,7 @@ export function CommandView() {
                         <span className="text-xs font-semibold">{cell.label}</span>
                         <HealthBadge health={cell.health} />
                       </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
+                      <p className="mt-1 text-sm text-muted-foreground">
                         {cell.summary}
                       </p>
                     </li>
@@ -194,7 +194,7 @@ export function CommandView() {
                         <span className="font-mono text-xs text-muted-foreground">
                           {agent.runtime}
                         </span>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-sm text-muted-foreground">
                           {agent.lastRunStatus
                             ? `${agent.lastRunStatus}${
                                 agent.lastRunAt

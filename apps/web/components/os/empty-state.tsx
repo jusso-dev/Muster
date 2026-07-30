@@ -20,9 +20,9 @@ export function EmptyState({
       <div className="text-muted-foreground" aria-hidden>
         {icon ?? <Inbox className="size-8" />}
       </div>
-      <h2 className="font-display text-sm font-semibold">{title}</h2>
+      <h2 className="font-display text-base font-semibold">{title}</h2>
       {description ? (
-        <p className="max-w-md text-xs text-muted-foreground">{description}</p>
+        <p className="max-w-md text-sm text-muted-foreground">{description}</p>
       ) : null}
       {action ? <div className="mt-2">{action}</div> : null}
     </div>
