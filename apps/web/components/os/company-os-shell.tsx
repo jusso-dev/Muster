@@ -11,6 +11,7 @@ import {
 } from "react";
 import {
   Activity,
+  Bell,
   BookOpen,
   Bot,
   Cable,
@@ -31,6 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { authClient } from "@muster/auth/client";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { OsCommandPalette } from "@/components/os/os-command-palette";
@@ -92,6 +94,15 @@ const navGroups: Array<{ heading: string; items: NavItem[] }> = [
 
 const navItems: NavItem[] = navGroups.flatMap((group) => group.items);
 
+/** Two letters is enough to tell operators apart without a photo service. */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "??";
+  const first = parts[0]?.[0] ?? "";
+  const second = parts.length > 1 ? (parts.at(-1)?.[0] ?? "") : (parts[0]?.[1] ?? "");
+  return `${first}${second}`.toUpperCase();
+}
+
 function NavLink({
   href,
   label,
@@ -120,14 +131,26 @@ function NavLink({
       aria-current={active ? "page" : undefined}
       title={collapsed ? label : undefined}
       className={cn(
-        "flex min-h-9 items-center gap-2 rounded-md px-2.5 text-sm font-medium transition-colors",
+        "relative flex min-h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-colors",
         active
-          ? "bg-muted text-foreground"
-          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+          ? "bg-[var(--color-accent-soft)] text-foreground"
+          : "text-muted-foreground hover:bg-[var(--color-paper-3)] hover:text-foreground",
         collapsed && "justify-center px-2",
       )}
     >
-      <Icon className="size-4 shrink-0" aria-hidden />
+      {active ? (
+        <span
+          aria-hidden
+          className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-[var(--color-accent)]"
+        />
+      ) : null}
+      <Icon
+        className={cn(
+          "size-4 shrink-0",
+          active && "text-[var(--color-accent)]",
+        )}
+        aria-hidden
+      />
       {!collapsed ? <span className="min-w-0 flex-1 truncate">{label}</span> : null}
       {!collapsed && badge && badge > 0 ? (
         <Badge className="min-w-5 justify-center bg-[var(--color-accent)] px-1 text-xs text-primary-foreground">
@@ -154,60 +177,45 @@ function Sidebar({
     <aside
       className={cn(
         "flex h-full flex-col border-r border-border bg-[var(--color-paper)]",
-        collapsed ? "w-[3.5rem]" : "w-56",
+        collapsed ? "w-[3.75rem]" : "w-60",
       )}
     >
       <div
         className={cn(
-          "flex h-14 items-center gap-2 border-b border-border px-3",
+          "flex h-14 items-center gap-2.5 px-4",
           collapsed && "justify-center px-2",
         )}
       >
         <Image
           src="/icons/muster-32.png"
           alt="Muster shield and tree logo"
-          width={24}
-          height={24}
-          className="size-6 shrink-0"
+          width={28}
+          height={28}
+          className="size-7 shrink-0"
           // Master brand asset: docs/images/muster-logo-master.png
         />
         {!collapsed ? (
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">Muster</p>
+            <p className="truncate font-display text-sm font-semibold tracking-tight">
+              Muster
+            </p>
             <p className="truncate text-xs text-muted-foreground">
               Security Company OS
             </p>
           </div>
         ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="hidden size-7 desktop:inline-flex"
-          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
-          onClick={onToggle}
-        >
-          {collapsed ? (
-            <ChevronRight className="size-4" />
-          ) : (
-            <ChevronLeft className="size-4" />
-          )}
-        </Button>
       </div>
 
       <nav
-        className="flex flex-1 flex-col gap-3 overflow-y-auto p-2"
+        className="flex flex-1 flex-col gap-5 overflow-y-auto px-2.5 py-3"
         aria-label="Primary"
       >
         {navGroups.map((group) => (
-          <div key={group.heading} className="flex flex-col gap-0.5">
+          <div key={group.heading} className="flex flex-col gap-1">
             {collapsed ? (
-              <div
-                className="mx-2 my-1 border-t border-border"
-                aria-hidden
-              />
+              <div className="mx-2 mb-1 border-t border-border" aria-hidden />
             ) : (
-              <p className="px-2.5 pb-0.5 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+              <p className="px-2.5 pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
                 {group.heading}
               </p>
             )}
@@ -228,11 +236,32 @@ function Sidebar({
         ))}
       </nav>
 
-      {!collapsed ? (
-        <div className="border-t border-border p-3 text-xs leading-relaxed text-muted-foreground">
-          Governed control plane. Chat stays in Slack. Kelpie remains case SoR.
-        </div>
-      ) : null}
+      <div
+        className={cn(
+          "flex items-center gap-2 border-t border-border p-3",
+          collapsed && "justify-center p-2",
+        )}
+      >
+        {!collapsed ? (
+          <p className="min-w-0 flex-1 text-xs leading-relaxed text-muted-foreground">
+            Governed control plane. Chat stays in Slack.
+          </p>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="hidden size-8 shrink-0 desktop:inline-flex"
+          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+          onClick={onToggle}
+        >
+          {collapsed ? (
+            <ChevronRight className="size-4" />
+          ) : (
+            <ChevronLeft className="size-4" />
+          )}
+        </Button>
+      </div>
     </aside>
   );
 }
@@ -286,7 +315,7 @@ export function CompanyOsShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-[var(--color-paper-2)] text-foreground">
+    <div className="flex min-h-screen bg-[var(--color-paper)] text-foreground">
       <div className="hidden desktop:block">
         <Sidebar
           collapsed={collapsed}
@@ -315,7 +344,7 @@ export function CompanyOsShell({ children }: { children: ReactNode }) {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="topbar z-40 flex min-h-12 items-center gap-2 border-b border-border bg-[var(--color-paper)] px-2 tablet:px-3">
+        <header className="topbar sticky top-0 z-40 flex min-h-14 items-center gap-2 border-b border-border bg-[var(--color-paper)] px-3 tablet:px-4">
           <Button
             type="button"
             variant="ghost"
@@ -336,7 +365,7 @@ export function CompanyOsShell({ children }: { children: ReactNode }) {
                   </label>
                   <select
                     id="org-switcher"
-                    className="max-w-[12rem] truncate rounded-md border border-border bg-background px-2 py-1 text-xs font-medium"
+                    className="max-w-[12rem] truncate rounded-md border border-border bg-[var(--color-paper-2)] px-2 py-1 text-xs font-medium"
                     value={selectedOrganisationId}
                     onChange={(event) =>
                       setChosenOrganisationId(event.target.value)
@@ -350,52 +379,68 @@ export function CompanyOsShell({ children }: { children: ReactNode }) {
                   </select>
                 </>
               ) : (
-                <p className="max-w-[12rem] truncate text-xs font-medium">
+                <p className="max-w-[12rem] truncate text-sm font-semibold">
                   <span className="sr-only">Organisation: </span>
                   {org?.name ??
                     (session.isLoading ? "Loading…" : "Organisation")}
                 </p>
               )}
               {session.data?.customer ? (
-                <Badge className="bg-muted text-muted-foreground">
+                <Badge className="hidden bg-muted text-muted-foreground tablet:inline-flex">
                   Customer: {session.data.customer.name}
                 </Badge>
-              ) : (
-                <Badge className="bg-muted text-muted-foreground">
-                  No customer context
-                </Badge>
-              )}
-              <Badge className="bg-muted font-mono text-xs text-muted-foreground">
+              ) : null}
+              <Badge className="hidden bg-muted font-mono text-xs text-muted-foreground tablet:inline-flex">
                 {environment}
               </Badge>
-              <HealthBadge health={overallHealth} />
+              <span className="hidden tablet:inline-flex">
+                <HealthBadge health={overallHealth} />
+              </span>
             </div>
           </div>
 
-          <Button
+          <button
             type="button"
-            variant="outline"
-            size="sm"
-            className="hidden gap-1 tablet:inline-flex"
             onClick={() => setPaletteOpen(true)}
+            className="hidden h-9 w-64 items-center gap-2 rounded-md border border-border bg-[var(--color-paper-2)] px-2.5 text-sm text-muted-foreground transition-colors hover:border-[var(--color-rule-strong)] desktop:inline-flex"
           >
-            <Search className="size-3.5" />
-            Search
-            <kbd className="ml-1 rounded border border-border px-1 font-mono text-xs text-muted-foreground">
+            <Search className="size-4 shrink-0" aria-hidden />
+            <span className="flex-1 text-left">Search Muster…</span>
+            <kbd className="rounded border border-border px-1 font-mono text-xs">
               ⌘K
             </kbd>
+          </button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="desktop:hidden"
+            aria-label="Search"
+            onClick={() => setPaletteOpen(true)}
+          >
+            <Search className="size-4" />
           </Button>
 
-          {pendingApprovals > 0 ? (
-            <Link
-              href="/approvals"
-              className="inline-flex items-center gap-1 rounded-md border border-[var(--color-warning)]/40 bg-[var(--color-warning-soft)] px-2 py-1 text-xs font-semibold text-[var(--color-warning)]"
-            >
-              <CircleCheck className="size-3.5" aria-hidden />
-              {pendingApprovals}
-              <span className="sr-only">pending approvals</span>
-            </Link>
-          ) : null}
+          <Link
+            href="/approvals"
+            aria-label={
+              pendingApprovals > 0
+                ? `${pendingApprovals} pending approvals`
+                : "Approvals"
+            }
+            className="relative inline-grid size-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--color-paper-3)] hover:text-foreground"
+          >
+            <Bell className="size-4" aria-hidden />
+            {pendingApprovals > 0 ? (
+              <span
+                aria-hidden
+                className="absolute right-1.5 top-1.5 min-w-4 rounded-full bg-[var(--color-accent)] px-1 text-center font-mono text-xs font-bold leading-4 text-[var(--color-accent-ink)]"
+              >
+                {pendingApprovals > 99 ? "99+" : pendingApprovals}
+              </span>
+            ) : null}
+          </Link>
 
           <Button
             type="button"
@@ -411,9 +456,13 @@ export function CompanyOsShell({ children }: { children: ReactNode }) {
             )}
           </Button>
 
-          <div className="hidden items-center gap-2 border-l border-border pl-2 tablet:flex">
-            <div className="text-right">
-              <p className="max-w-[10rem] truncate text-xs font-medium">
+          <div className="hidden items-center gap-2.5 border-l border-border pl-3 tablet:flex">
+            <Avatar
+              initials={initialsOf(actor?.displayName ?? "Operator")}
+              size="sm"
+            />
+            <div className="min-w-0">
+              <p className="max-w-[10rem] truncate text-sm font-medium">
                 {actor?.displayName ?? "Operator"}
               </p>
               <p className="max-w-[10rem] truncate text-xs text-muted-foreground">
