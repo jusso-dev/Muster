@@ -48,7 +48,7 @@ export function AgentRunView({ runId }: { runId: string }) {
   return (
     <OpsShell>
       <PageHeader
-        eyebrow="Agent harness"
+        eyebrow="Workforce"
         title={run ? `${run.agentKey} run` : "Agent run"}
         description="Authoritative governed run status and typed result"
       />

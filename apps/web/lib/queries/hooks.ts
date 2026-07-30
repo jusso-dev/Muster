@@ -260,6 +260,25 @@ export function useControlPlane() {
   });
 }
 
+export type AgentReadinessSummary = {
+  state: "ready" | "degraded" | "unavailable" | string;
+  reason: string;
+};
+
+export type Assignee = {
+  id: string;
+  displayName: string;
+  actorType: "human" | "agent";
+  description: string | null;
+  readiness: AgentReadinessSummary | null;
+};
+
+export type TaskRoom = { id: string; slug: string; displayName: string };
+
+/**
+ * Tasks plus the assignee and room options the server is willing to accept.
+ * Keeping meta here means the composer never invents an actor id.
+ */
 export function useTasks() {
   return useQuery({
     queryKey: queryKeys.tasks,
@@ -268,11 +287,71 @@ export function useTasks() {
         "/api/v1/tasks",
       );
       const data = res.data;
-      if (Array.isArray(data)) return data;
-      if (data && typeof data === "object" && Array.isArray((data as { tasks?: unknown[] }).tasks)) {
-        return (data as { tasks: unknown[] }).tasks;
-      }
-      return [];
+      const tasks = Array.isArray(data)
+        ? data
+        : data &&
+            typeof data === "object" &&
+            Array.isArray((data as { tasks?: unknown[] }).tasks)
+          ? (data as { tasks: unknown[] }).tasks
+          : [];
+      const meta = (res.meta ?? {}) as {
+        assignees?: Assignee[];
+        rooms?: TaskRoom[];
+      };
+      return {
+        tasks,
+        assignees: meta.assignees ?? [],
+        rooms: meta.rooms ?? [],
+      };
+    },
+  });
+}
+
+export type CreateTaskInput = {
+  title: string;
+  description: string;
+  priority: string;
+  status?: string;
+  assignedActorId: string | null;
+  roomId: string | null;
+};
+
+export function useCreateTask() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CreateTaskInput) => {
+      const res = await apiPost<{ id: string }>("/api/v1/tasks", input);
+      return res.data;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.tasks }),
+        client.invalidateQueries({ queryKey: queryKeys.commandSummary }),
+      ]);
+    },
+  });
+}
+
+/**
+ * Hand a task to its assigned agent. The server re-checks capability,
+ * readiness, and kill switch — this only asks.
+ */
+export function useDelegateTask() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (taskId: string) => {
+      const res = await apiPost<{ runId: string; status: string }>(
+        `/api/v1/tasks/${taskId}/delegate`,
+        {},
+      );
+      return res.data;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.tasks }),
+        client.invalidateQueries({ queryKey: queryKeys.commandSummary }),
+        client.invalidateQueries({ queryKey: ["audit"] }),
+      ]);
     },
   });
 }

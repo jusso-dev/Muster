@@ -6,6 +6,7 @@ import { PackHandoffTimeline } from "@/components/os/pack-handoff-timeline";
 import { EmptyState } from "@/components/os/empty-state";
 import { ErrorState } from "@/components/os/error-state";
 import { SkeletonRows } from "@/components/os/skeleton";
+import { PageBody } from "@/components/os/page-body";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { useMission, useMissionRuns } from "@/lib/queries/hooks";
@@ -18,7 +19,7 @@ export function MissionDetailView({ missionId }: { missionId: string }) {
   return (
     <CompanyOsShell>
       <PageHeader
-        eyebrow="Mission"
+        eyebrow="Operate"
         title={mission.data?.name ?? "Mission detail"}
         description={
           mission.data?.description ||
@@ -33,7 +34,7 @@ export function MissionDetailView({ missionId }: { missionId: string }) {
           </Link>
         }
       />
-      <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 tablet:p-5">
+      <PageBody>
         {mission.isError ? (
           <ErrorState error={mission.error} onRetry={() => void mission.refetch()} />
         ) : null}
@@ -138,7 +139,7 @@ export function MissionDetailView({ missionId }: { missionId: string }) {
         </section>
 
         <PackHandoffTimeline missionId={missionId} />
-      </div>
+      </PageBody>
     </CompanyOsShell>
   );
 }

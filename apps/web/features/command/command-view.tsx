@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/os/empty-state";
 import { ErrorState } from "@/components/os/error-state";
 import { MetricTile } from "@/components/os/metric-tile";
 import { SkeletonRows } from "@/components/os/skeleton";
+import { PageBody } from "@/components/os/page-body";
 import { PageHeader } from "@/components/page-header";
 import { HealthBadge, SeverityBadge } from "@/components/status/status-badges";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +21,7 @@ export function CommandView() {
   return (
     <CompanyOsShell>
       <PageHeader
-        eyebrow="Security Company OS"
+        eyebrow="Operate"
         title="Command"
         description="What needs attention now across operations, agents, approvals, and integrations."
         actions={
@@ -38,7 +39,7 @@ export function CommandView() {
           </Button>
         }
       />
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 p-4 tablet:p-5">
+      <PageBody width="full">
         {query.isError ? (
           <ErrorState error={query.error} onRetry={() => void query.refetch()} />
         ) : null}
@@ -251,7 +252,7 @@ export function CommandView() {
             </div>
           </>
         ) : null}
-      </div>
+      </PageBody>
     </CompanyOsShell>
   );
 }

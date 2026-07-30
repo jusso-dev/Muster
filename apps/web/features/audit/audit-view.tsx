@@ -5,6 +5,7 @@ import { CompanyOsShell } from "@/components/os/company-os-shell";
 import { EmptyState } from "@/components/os/empty-state";
 import { ErrorState } from "@/components/os/error-state";
 import { SkeletonRows } from "@/components/os/skeleton";
+import { PageBody } from "@/components/os/page-body";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,11 +35,11 @@ export function AuditView() {
   return (
     <CompanyOsShell>
       <PageHeader
-        eyebrow="Governance"
+        eyebrow="Govern"
         title="Audit & evidence"
         description="Organisation-scoped activity feed. Metadata is redacted and collapsed by default."
       />
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 p-4 tablet:p-5">
+      <PageBody>
         <form
           className="grid gap-2 rounded-md border border-border bg-card p-3 tablet:grid-cols-4"
           onSubmit={(event) => event.preventDefault()}
@@ -223,7 +224,7 @@ export function AuditView() {
             </aside>
           </div>
         ) : null}
-      </div>
+      </PageBody>
     </CompanyOsShell>
   );
 }

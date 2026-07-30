@@ -5,6 +5,7 @@ import { CompanyOsShell } from "@/components/os/company-os-shell";
 import { EmptyState } from "@/components/os/empty-state";
 import { ErrorState } from "@/components/os/error-state";
 import { SkeletonRows } from "@/components/os/skeleton";
+import { PageBody } from "@/components/os/page-body";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -127,11 +128,11 @@ export function CapabilitiesView() {
   return (
     <CompanyOsShell>
       <PageHeader
-        eyebrow="Governance"
+        eyebrow="Workforce"
         title="Capabilities"
         description="Published capability packs and the live grant inventory. Installation and agent assignment stay server-controlled."
       />
-      <div className="mx-auto max-w-6xl space-y-5 p-4 tablet:p-5">
+      <PageBody>
         {manifests.isError && directory.isError ? (
           <ErrorState
             error={manifests.error}
@@ -206,7 +207,7 @@ export function CapabilitiesView() {
           Capability grants are enforced server-side on every request. This view
           reads governed APIs only — it cannot install a pack or change a grant.
         </p>
-      </div>
+      </PageBody>
     </CompanyOsShell>
   );
 }

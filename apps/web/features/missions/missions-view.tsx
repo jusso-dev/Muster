@@ -5,6 +5,7 @@ import { CompanyOsShell } from "@/components/os/company-os-shell";
 import { EmptyState } from "@/components/os/empty-state";
 import { ErrorState } from "@/components/os/error-state";
 import { SkeletonRows } from "@/components/os/skeleton";
+import { PageBody } from "@/components/os/page-body";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { useMissions } from "@/lib/queries/hooks";
@@ -16,11 +17,11 @@ export function MissionsView() {
   return (
     <CompanyOsShell>
       <PageHeader
-        eyebrow="Execution"
+        eyebrow="Operate"
         title="Missions"
         description="Governed mission definitions and run history. Start/cancel remain policy-gated on the server."
       />
-      <div className="mx-auto max-w-6xl p-4 tablet:p-5">
+      <PageBody>
         {missions.isError ? (
           <ErrorState
             error={missions.error}
@@ -89,7 +90,7 @@ export function MissionsView() {
             </table>
           </div>
         ) : null}
-      </div>
+      </PageBody>
     </CompanyOsShell>
   );
 }

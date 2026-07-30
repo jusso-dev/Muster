@@ -325,7 +325,7 @@ export function SlackSettingsView() {
   return (
     <OpsShell>
       <PageHeader
-        eyebrow="Integrations"
+        eyebrow="Configure"
         title="Slack agent harness"
         description="Organisation-scoped Slack identities, agent exposure, delivery health, and reconnect controls."
         actions={

@@ -167,7 +167,7 @@ export function ReactionPackSettings() {
   return (
     <OpsShell>
       <PageHeader
-        eyebrow="Organisation administration"
+        eyebrow="Configure"
         title="Visual reaction packs"
         description="Curate small decorative packs. They never acknowledge alerts, approve actions, complete tasks, or become authoritative evidence."
         actions={

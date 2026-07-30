@@ -108,7 +108,7 @@ export function SearchView() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Security memory"
+        eyebrow="Operate"
         title="Search"
         description="Organisation-scoped, permission-filtered search"
       />

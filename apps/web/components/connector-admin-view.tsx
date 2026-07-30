@@ -152,7 +152,7 @@ export function ConnectorAdminView() {
   return (
     <OpsShell>
       <PageHeader
-        eyebrow="Administration"
+        eyebrow="Configure"
         title="Governed connectors"
         description="Secrets stay server-side. Queries use versioned templates, fixed egress and hard limits."
       />

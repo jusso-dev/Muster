@@ -5,6 +5,7 @@ import { CompanyOsShell } from "@/components/os/company-os-shell";
 import { EmptyState } from "@/components/os/empty-state";
 import { ErrorState } from "@/components/os/error-state";
 import { SkeletonRows } from "@/components/os/skeleton";
+import { PageBody } from "@/components/os/page-body";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { useDirectory, type DirectoryEntry } from "@/lib/queries/hooks";
@@ -96,7 +97,7 @@ export function TeamsView() {
         title="Teams"
         description="Organisation-scoped humans and pack agents from the governed directory. No demo roster is seeded."
       />
-      <div className="mx-auto max-w-5xl space-y-4 p-4 tablet:p-5">
+      <PageBody>
         <div className="flex flex-wrap items-center gap-2">
           <label className="sr-only" htmlFor="team-search">
             Search directory
@@ -155,7 +156,7 @@ export function TeamsView() {
           Team names come from the directory record. Capability grants stay
           server-enforced — this view never assigns or revokes anything.
         </p>
-      </div>
+      </PageBody>
     </CompanyOsShell>
   );
 }

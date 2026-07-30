@@ -22,7 +22,7 @@ export function IntegrationView({
   return (
     <OpsShell>
       <PageHeader
-        eyebrow="Integration"
+        eyebrow="Configure"
         title={data.name}
         description={data.subtitle}
         actions={
@@ -157,7 +157,7 @@ function SentinelView() {
   return (
     <OpsShell>
       <PageHeader
-        eyebrow="Integration"
+        eyebrow="Configure"
         title="Microsoft Sentinel"
         description="Incidents, bounded Log Analytics query, and analytics-rule read"
         actions={

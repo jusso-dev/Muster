@@ -39,29 +39,58 @@ import { useCommandSummary, useSession } from "@/lib/queries/hooks";
 import { cn } from "@/lib/utils";
 import { toHealthState } from "@/types/status";
 
-const navItems: Array<{
+type NavItem = {
   href: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
   match?: (path: string) => boolean;
-}> = [
+};
+
+/**
+ * Grouped so the sidebar answers "what kind of thing is this?" before "what
+ * page is this?". Each group heading is also the page's eyebrow, so the two
+ * never disagree.
+ */
+const navGroups: Array<{ heading: string; items: NavItem[] }> = [
   {
-    href: "/",
-    label: "Command",
-    icon: Crosshair,
-    match: (path) => path === "/",
+    heading: "Operate",
+    items: [
+      {
+        href: "/",
+        label: "Command",
+        icon: Crosshair,
+        match: (path) => path === "/",
+      },
+      { href: "/operations", label: "Operations", icon: ClipboardList },
+      { href: "/missions", label: "Missions", icon: Activity },
+    ],
   },
-  { href: "/operations", label: "Operations", icon: ClipboardList },
-  { href: "/missions", label: "Missions", icon: Activity },
-  { href: "/teams", label: "Teams", icon: Users },
-  { href: "/agents", label: "Agents", icon: Bot },
-  { href: "/capabilities", label: "Capabilities", icon: Puzzle },
-  { href: "/approvals", label: "Approvals", icon: CircleCheck },
-  { href: "/audit", label: "Audit", icon: ShieldCheck },
-  { href: "/integrations", label: "Integrations", icon: Cable },
-  { href: "/guides", label: "Guides", icon: BookOpen },
-  { href: "/settings", label: "Settings", icon: Settings },
+  {
+    heading: "Workforce",
+    items: [
+      { href: "/teams", label: "Teams", icon: Users },
+      { href: "/agents", label: "Agents", icon: Bot },
+      { href: "/capabilities", label: "Capabilities", icon: Puzzle },
+    ],
+  },
+  {
+    heading: "Govern",
+    items: [
+      { href: "/approvals", label: "Approvals", icon: CircleCheck },
+      { href: "/audit", label: "Audit", icon: ShieldCheck },
+    ],
+  },
+  {
+    heading: "Configure",
+    items: [
+      { href: "/integrations", label: "Integrations", icon: Cable },
+      { href: "/settings", label: "Settings", icon: Settings },
+      { href: "/guides", label: "Guides", icon: BookOpen },
+    ],
+  },
 ];
+
+const navItems: NavItem[] = navGroups.flatMap((group) => group.items);
 
 function NavLink({
   href,
@@ -167,21 +196,35 @@ function Sidebar({
       </div>
 
       <nav
-        className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2"
+        className="flex flex-1 flex-col gap-3 overflow-y-auto p-2"
         aria-label="Primary"
       >
-        {navItems.map((item) => (
-          <NavLink
-            key={item.href}
-            href={item.href}
-            label={item.label}
-            icon={item.icon}
-            collapsed={collapsed}
-            {...(onNavigate ? { onNavigate } : {})}
-            {...(item.href === "/approvals" && pendingApprovals > 0
-              ? { badge: pendingApprovals }
-              : {})}
-          />
+        {navGroups.map((group) => (
+          <div key={group.heading} className="flex flex-col gap-0.5">
+            {collapsed ? (
+              <div
+                className="mx-2 my-1 border-t border-border"
+                aria-hidden
+              />
+            ) : (
+              <p className="px-2.5 pb-0.5 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                {group.heading}
+              </p>
+            )}
+            {group.items.map((item) => (
+              <NavLink
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                collapsed={collapsed}
+                {...(onNavigate ? { onNavigate } : {})}
+                {...(item.href === "/approvals" && pendingApprovals > 0
+                  ? { badge: pendingApprovals }
+                  : {})}
+              />
+            ))}
+          </div>
         ))}
       </nav>
 

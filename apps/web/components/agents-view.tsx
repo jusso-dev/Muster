@@ -128,7 +128,7 @@ export function AgentsView() {
   return (
     <OpsShell>
       <PageHeader
-        eyebrow="Tools"
+        eyebrow="Workforce"
         title="Agent directory"
         description="Permission-scoped human collaborators with governed learning"
         actions={
@@ -283,7 +283,7 @@ export function AgentDetailView({
     return (
       <OpsShell>
         <PageHeader
-          eyebrow="Agent"
+          eyebrow="Workforce"
           title="Agent readiness"
           description="Loading authorised runtime evidence"
         />
@@ -296,7 +296,7 @@ export function AgentDetailView({
   return (
     <OpsShell>
       <PageHeader
-        eyebrow="Agent"
+        eyebrow="Workforce"
         title={agent.name}
         description={`${agent.configuredRuntime} · ${agent.configuredModel} · owned by ${agent.owner}`}
         actions={

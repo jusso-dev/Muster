@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { BookOpen } from "lucide-react";
 import { CompanyOsShell } from "@/components/os/company-os-shell";
+import { PageBody } from "@/components/os/page-body";
 import { PageHeader } from "@/components/page-header";
 import { cn } from "@/lib/utils";
 
@@ -110,11 +111,11 @@ export function GuidesView() {
   return (
     <CompanyOsShell>
       <PageHeader
-        eyebrow="Help"
+        eyebrow="Configure"
         title="Guides"
         description="How to operate Muster as the Security Company OS. Product documentation — not live operational records."
       />
-      <div className="mx-auto grid max-w-6xl gap-4 p-4 tablet:p-5 xl:grid-cols-[16rem_1fr]">
+      <PageBody className="grid xl:grid-cols-[16rem_1fr]">
         <nav
           aria-label="Guides"
           className="rounded-md border border-border bg-card p-2"
@@ -173,7 +174,7 @@ export function GuidesView() {
             </div>
           </article>
         ) : null}
-      </div>
+      </PageBody>
     </CompanyOsShell>
   );
 }

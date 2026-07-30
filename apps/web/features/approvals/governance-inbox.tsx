@@ -7,6 +7,7 @@ import { CompanyOsShell } from "@/components/os/company-os-shell";
 import { EmptyState } from "@/components/os/empty-state";
 import { ErrorState } from "@/components/os/error-state";
 import { SkeletonRows } from "@/components/os/skeleton";
+import { PageBody } from "@/components/os/page-body";
 import { PageHeader } from "@/components/page-header";
 import { ApprovalStateBadge, SeverityBadge } from "@/components/status/status-badges";
 import { Badge } from "@/components/ui/badge";
@@ -92,11 +93,11 @@ export function GovernanceInbox() {
   return (
     <CompanyOsShell>
       <PageHeader
-        eyebrow="Governance"
+        eyebrow="Govern"
         title="Approvals"
         description="Governed inbox for dangerous actions. Decisions are written to the backend and audited."
       />
-      <div className="mx-auto grid max-w-7xl gap-4 p-4 tablet:p-5 xl:grid-cols-[22rem_1fr]">
+      <PageBody className="grid xl:grid-cols-[22rem_1fr]">
         {approvals.isError ? (
           <div className="xl:col-span-2">
             <ErrorState
@@ -180,7 +181,7 @@ export function GovernanceInbox() {
             />
           )}
         </section>
-      </div>
+      </PageBody>
     </CompanyOsShell>
   );
 }

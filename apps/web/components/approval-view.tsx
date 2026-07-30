@@ -67,7 +67,7 @@ export function ApprovalView() {
   return (
     <OpsShell>
       <PageHeader
-        eyebrow="Operations"
+        eyebrow="Govern"
         title="Approvals"
         description="State-changing security actions requiring accountable human decisions"
       />

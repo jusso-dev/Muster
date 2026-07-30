@@ -4,6 +4,7 @@ import Link from "next/link";
 import { CompanyOsShell } from "@/components/os/company-os-shell";
 import { ErrorState } from "@/components/os/error-state";
 import { SkeletonRows } from "@/components/os/skeleton";
+import { PageBody } from "@/components/os/page-body";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -94,7 +95,7 @@ export function SettingsView() {
   return (
     <CompanyOsShell>
       <PageHeader
-        eyebrow="Organisation"
+        eyebrow="Configure"
         title="Settings"
         description={
           organisation?.name ??
@@ -109,7 +110,7 @@ export function SettingsView() {
           </Link>
         }
       />
-      <div className="mx-auto max-w-5xl space-y-5 p-4 tablet:p-5">
+      <PageBody>
         {session.isError ? (
           <ErrorState
             error={session.error}
@@ -185,7 +186,7 @@ export function SettingsView() {
           server-controlled. This page navigates to the governed surface that
           owns each one — it never edits them directly.
         </p>
-      </div>
+      </PageBody>
     </CompanyOsShell>
   );
 }

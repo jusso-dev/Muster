@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { GripVertical } from "lucide-react";
+import { Bot, GripVertical, Plus, User } from "lucide-react";
 import { CompanyOsShell } from "@/components/os/company-os-shell";
 import { PackHandoffTimeline } from "@/components/os/pack-handoff-timeline";
 import { EmptyState } from "@/components/os/empty-state";
 import { ErrorState } from "@/components/os/error-state";
+import { PageBody } from "@/components/os/page-body";
 import { SkeletonRows } from "@/components/os/skeleton";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -15,7 +16,17 @@ import {
 } from "@/components/status/status-badges";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useTasks, useUpdateTask } from "@/lib/queries/hooks";
+import {
+  AgentBriefCards,
+  TaskComposer,
+  type ComposerSeed,
+} from "@/features/operations/task-composer";
+import {
+  useDelegateTask,
+  useTasks,
+  useUpdateTask,
+  type Assignee,
+} from "@/lib/queries/hooks";
 import { cn, relativeTime } from "@/lib/utils";
 import type { WorkItem } from "@/types/os";
 import {
@@ -42,8 +53,13 @@ type RawTask = {
   status: string;
   priority: string;
   organisationId?: string;
-  assignedActorName?: string | null;
-  assignee?: { displayName?: string | null } | null;
+  assignedActorId?: string | null;
+  assignee?: {
+    displayName?: string | null;
+    actorType?: string | null;
+    description?: string | null;
+    readiness?: { state?: string; reason?: string } | null;
+  } | null;
   relatedCaseId?: string | null;
   approvalRequired?: boolean;
   dueAt?: string | null;
@@ -52,7 +68,13 @@ type RawTask = {
   agentRunStatus?: string | null;
 };
 
-type BoardItem = WorkItem & { rawStatus: TaskStatusId };
+type BoardItem = WorkItem & {
+  rawStatus: TaskStatusId;
+  assigneeIsAgent: boolean;
+  assigneeReadiness: string | null;
+  assigneeReadinessReason: string | null;
+  agentRunStatus: string | null;
+};
 
 function priorityToSeverity(priority: string): Severity {
   if (priority === "urgent") return "critical";
@@ -84,6 +106,7 @@ function taskToBoardItem(task: RawTask): BoardItem {
       ? task.updatedAt
       : task.updatedAt.toISOString();
   const rawStatus = asTaskStatus(task.status);
+  const isAgent = task.assignee?.actorType === "agent";
   return {
     id: task.id,
     title: task.title,
@@ -94,8 +117,12 @@ function taskToBoardItem(task: RawTask): BoardItem {
     priority: task.priority,
     status: toOperationalState(rawStatus),
     rawStatus,
-    ownerName: task.assignee?.displayName ?? task.assignedActorName ?? null,
-    assignedAgentName: null,
+    ownerName: task.assignee?.displayName ?? null,
+    assignedAgentName: isAgent ? (task.assignee?.displayName ?? null) : null,
+    assigneeIsAgent: Boolean(isAgent),
+    assigneeReadiness: task.assignee?.readiness?.state ?? null,
+    assigneeReadinessReason: task.assignee?.readiness?.reason ?? null,
+    agentRunStatus: task.agentRunStatus ?? null,
     sourceSystem: "Muster tasks",
     externalRecordId: task.relatedCaseId ?? null,
     externalRecordUrl: null,
@@ -111,6 +138,19 @@ function taskToBoardItem(task: RawTask): BoardItem {
   };
 }
 
+/** A run that is already queued or running must not be dispatched again. */
+function dispatchBlockedReason(item: BoardItem): string | null {
+  if (!item.assigneeIsAgent)
+    return "Assign this task to an agent to dispatch it.";
+  if (item.agentRunStatus === "queued" || item.agentRunStatus === "running")
+    return "This task already has an active agent run.";
+  if (item.assigneeReadiness !== "ready")
+    return (
+      item.assigneeReadinessReason ?? "Assigned agent is not ready for work."
+    );
+  return null;
+}
+
 export function OperationsView() {
   const tasks = useTasks();
   const updateTask = useUpdateTask();
@@ -119,9 +159,13 @@ export function OperationsView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [composer, setComposer] = useState<ComposerSeed | null>(null);
+
+  const assignees: Assignee[] = tasks.data?.assignees ?? [];
+  const rooms = tasks.data?.rooms ?? [];
 
   const items = useMemo(() => {
-    const raw = (tasks.data ?? []) as RawTask[];
+    const raw = (tasks.data?.tasks ?? []) as RawTask[];
     return raw.map(taskToBoardItem);
   }, [tasks.data]);
 
@@ -147,9 +191,9 @@ export function OperationsView() {
   return (
     <CompanyOsShell>
       <PageHeader
-        eyebrow="Operations"
+        eyebrow="Operate"
         title="Work queue"
-        description="Coordination only. Kelpie/Tawny and other platforms stay systems of record. Drag cards on the board to change task status (server-enforced)."
+        description="Create work, hand it to an agent, and track the run. Kelpie, Tawny, and other platforms stay systems of record."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -168,10 +212,35 @@ export function OperationsView() {
             >
               List
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="gap-1"
+              onClick={() => setComposer({})}
+            >
+              <Plus className="size-3.5" aria-hidden />
+              New task
+            </Button>
           </div>
         }
       />
-      <div className="mx-auto flex max-w-[100rem] flex-col gap-4 p-4 tablet:p-5">
+      <PageBody width="full">
+        {composer ? (
+          <TaskComposer
+            assignees={assignees}
+            rooms={rooms}
+            seed={composer}
+            onClose={() => setComposer(null)}
+          />
+        ) : (
+          <AgentBriefCards
+            assignees={assignees}
+            onPick={(agentId, example) =>
+              setComposer({ assignedActorId: agentId, title: example })
+            }
+          />
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs text-muted-foreground" htmlFor="ops-status">
             Status
@@ -214,7 +283,12 @@ export function OperationsView() {
         {!tasks.isLoading && filtered.length === 0 ? (
           <EmptyState
             title="No work items"
-            description="Empty by design until real tasks exist for this organisation. No demo or fixture tasks are injected."
+            description="Nothing is queued for this organisation. Create a task, or pick one of the pack examples above to hand straight to an agent. No demo or fixture tasks are injected."
+            action={
+              <Button type="button" size="sm" onClick={() => setComposer({})}>
+                New task
+              </Button>
+            }
           />
         ) : null}
 
@@ -288,13 +362,22 @@ export function OperationsView() {
                                 <p className="text-xs font-semibold leading-snug">
                                   {item.title}
                                 </p>
-                                <div className="mt-1 flex flex-wrap gap-1">
+                                <div className="mt-1 flex flex-wrap items-center gap-1">
                                   <SeverityBadge severity={item.severity} compact />
-                                  <span className="text-xs text-muted-foreground">
-                                    {item.systemOfRecord}
-                                  </span>
+                                  {item.agentRunStatus ? (
+                                    <Badge className="bg-muted text-muted-foreground">
+                                      run {item.agentRunStatus}
+                                    </Badge>
+                                  ) : null}
                                 </div>
-                                <p className="mt-1 text-xs text-muted-foreground">
+                                <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                                  {item.ownerName ? (
+                                    item.assigneeIsAgent ? (
+                                      <Bot className="size-3 shrink-0" aria-hidden />
+                                    ) : (
+                                      <User className="size-3 shrink-0" aria-hidden />
+                                    )
+                                  ) : null}
                                   {item.ownerName ?? "Unassigned"} ·{" "}
                                   {relativeTime(item.updatedAt)}
                                 </p>
@@ -322,7 +405,7 @@ export function OperationsView() {
                     <th className="px-3 py-2">Severity</th>
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2">Owner</th>
-                    <th className="px-3 py-2">SoR</th>
+                    <th className="px-3 py-2">Run</th>
                     <th className="px-3 py-2">Updated</th>
                   </tr>
                 </thead>
@@ -343,7 +426,9 @@ export function OperationsView() {
                       <td className="px-3 py-2.5 text-xs text-muted-foreground">
                         {item.ownerName ?? "Unassigned"}
                       </td>
-                      <td className="px-3 py-2.5 text-xs">{item.systemOfRecord}</td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                        {item.agentRunStatus ?? "—"}
+                      </td>
                       <td className="px-3 py-2.5 text-xs text-muted-foreground">
                         {relativeTime(item.updatedAt)}
                       </td>
@@ -357,26 +442,82 @@ export function OperationsView() {
         ) : null}
 
         {mode === "board" && selected ? <DetailDrawer item={selected} /> : null}
-      </div>
+      </PageBody>
     </CompanyOsShell>
   );
 }
 
-function DetailDrawer({ item }: { item: BoardItem | WorkItem | null }) {
+function DetailDrawer({ item }: { item: BoardItem | null }) {
+  const delegateTask = useDelegateTask();
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
   if (!item) {
     return (
       <aside className="rounded-md border border-border bg-card p-4 text-xs text-muted-foreground">
         Select a work item for coordination detail. Drag cards between columns to
-        update status.
+        change status.
       </aside>
     );
   }
+
+  const blocked = dispatchBlockedReason(item);
+
+  async function dispatch() {
+    if (!item) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const run = await delegateTask.mutateAsync(item.id);
+      setNotice(`Run ${run.runId.slice(0, 8)} ${run.status}.`);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not dispatch the task.",
+      );
+    }
+  }
+
   return (
     <aside className="rounded-md border border-border bg-card p-4">
       <h2 className="text-sm font-semibold">{item.title}</h2>
       <p className="mt-1 text-xs text-muted-foreground">
         {item.description || "No description."}
       </p>
+
+      <div className="mt-3 rounded-md border border-border p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="flex items-center gap-1.5 text-xs font-medium">
+            {item.assigneeIsAgent ? (
+              <Bot className="size-3.5" aria-hidden />
+            ) : (
+              <User className="size-3.5" aria-hidden />
+            )}
+            {item.ownerName ?? "Unassigned"}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            disabled={Boolean(blocked) || delegateTask.isPending}
+            title={blocked ?? undefined}
+            onClick={() => void dispatch()}
+          >
+            {delegateTask.isPending ? "Dispatching…" : "Dispatch to agent"}
+          </Button>
+        </div>
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          {blocked ??
+            "Runs under the agent's governed capability envelope. External writes stay approval-gated."}
+        </p>
+        {error ? (
+          <p role="alert" className="mt-1.5 text-xs text-[var(--color-error)]">
+            {error}
+          </p>
+        ) : null}
+        {notice ? (
+          <p className="mt-1.5 text-xs text-[var(--color-success)]">{notice}</p>
+        ) : null}
+      </div>
+
       <dl className="mt-3 space-y-2 text-xs">
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">Status</dt>
@@ -397,6 +538,10 @@ function DetailDrawer({ item }: { item: BoardItem | WorkItem | null }) {
           </dd>
         </div>
         <div className="flex justify-between gap-2">
+          <dt className="text-muted-foreground">Agent run</dt>
+          <dd>{item.agentRunStatus ?? "Not dispatched"}</dd>
+        </div>
+        <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">System of record</dt>
           <dd className="font-medium">{item.systemOfRecord}</dd>
         </div>
@@ -409,6 +554,7 @@ function DetailDrawer({ item }: { item: BoardItem | WorkItem | null }) {
           <dd className="break-all font-mono text-xs">{item.id}</dd>
         </div>
       </dl>
+
       <div className="mt-3">
         <PackHandoffTimeline taskId={item.id} />
       </div>

@@ -117,7 +117,7 @@ export function AlfieResearchSettings() {
   return (
     <OpsShell>
       <PageHeader
-        eyebrow="Organisation administration"
+        eyebrow="Configure"
         title="Alfie research watchlists"
         description="Bounded, allowlisted public and vendor research. Feed content remains untrusted evidence."
         actions={

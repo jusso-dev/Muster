@@ -439,7 +439,7 @@ export function TasksView() {
   return (
     <OpsShell>
       <PageHeader
-        eyebrow="Work"
+        eyebrow="Operate"
         title="Tasks"
         description="Delegate bounded security work to people and permission-scoped agents"
         actions={

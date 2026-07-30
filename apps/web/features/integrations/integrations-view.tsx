@@ -5,6 +5,7 @@ import { CompanyOsShell } from "@/components/os/company-os-shell";
 import { EmptyState } from "@/components/os/empty-state";
 import { ErrorState } from "@/components/os/error-state";
 import { SkeletonRows } from "@/components/os/skeleton";
+import { PageBody } from "@/components/os/page-body";
 import { PageHeader } from "@/components/page-header";
 import { HealthBadge } from "@/components/status/status-badges";
 import { Badge } from "@/components/ui/badge";
@@ -145,7 +146,7 @@ export function IntegrationsView() {
   return (
     <CompanyOsShell>
       <PageHeader
-        eyebrow="Platform"
+        eyebrow="Configure"
         title="Integrations"
         description="Connector and platform health. Secrets never leave the backend."
         actions={
@@ -157,7 +158,7 @@ export function IntegrationsView() {
           </Link>
         }
       />
-      <div className="mx-auto max-w-6xl p-4 tablet:p-5">
+      <PageBody>
         {controlPlane.isError && connectors.isError ? (
           <ErrorState
             error={controlPlane.error}
@@ -242,7 +243,7 @@ export function IntegrationsView() {
           </Link>
           . External products remain authoritative for their own records.
         </p>
-      </div>
+      </PageBody>
     </CompanyOsShell>
   );
 }

@@ -55,7 +55,7 @@ export function ParkerReportSchedules() {
   return (
     <OpsShell>
       <PageHeader
-        eyebrow="Reports"
+        eyebrow="Configure"
         title="Parker schedules"
         description="Weekly and monthly governed Parker report tasks."
       />

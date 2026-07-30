@@ -310,7 +310,7 @@ export function RoomsBrowser() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Workspace governance"
+        eyebrow="Configure"
         title="Rooms"
         description="Discover, join and govern organisation rooms without exposing private work."
         actions={

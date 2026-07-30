@@ -92,7 +92,7 @@ export function RoomAdminView() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Organisation administration"
+        eyebrow="Configure"
         title="Room governance"
         description="Organisation-wide invitations, users, guests, agents, ownership and room audit."
         actions={
