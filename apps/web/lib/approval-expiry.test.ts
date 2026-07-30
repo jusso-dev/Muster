@@ -39,9 +39,7 @@ describe("approval inbox controls", () => {
   it("drops Approve and offers a closing Reject once overdue", async () => {
     const view = await source("../features/approvals/governance-inbox.tsx");
     expect(view).toContain("const overdue = new Date(approval.expiresAt)");
-    expect(view).toContain(
-      'const closable = approval.status === "pending" && overdue',
-    );
+    expect(view).toContain('(approval.status === "pending" && overdue)');
     expect(view).toContain("{closable ? null : (");
     expect(view).toContain('{closable ? "Reject and close" : "Reject"}');
     expect(view).toContain("can no longer be");
@@ -51,5 +49,28 @@ describe("approval inbox controls", () => {
     const view = await source("../features/approvals/governance-inbox.tsx");
     expect(view).toContain('approval.status === "expired"');
     expect(view).toContain("Nothing was executed.");
+  });
+});
+
+/**
+ * The lazy sweep and the decision path have to agree. If listing the inbox
+ * moves a row to `expired` and `decide` then treats `expired` as terminal,
+ * opening Approvals is what destroys the only way to close the row.
+ */
+describe("expired rows stay closable after the lazy sweep", () => {
+  it("does not short-circuit a rejection on a stored expired row", async () => {
+    const domain = await source("./integration-action-domain.ts");
+    expect(domain).toContain("const closingExpired =");
+    expect(domain).toContain(
+      'approval.status === "expired" && decision.status === "rejected"',
+    );
+    expect(domain).toContain(
+      'if (approval.status !== "pending" && !closingExpired)',
+    );
+  });
+
+  it("still offers the closing control once the row reads expired", async () => {
+    const view = await source("../features/approvals/governance-inbox.tsx");
+    expect(view).toContain('approval.status === "expired" ||');
   });
 });

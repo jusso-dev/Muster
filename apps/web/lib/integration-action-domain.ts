@@ -427,7 +427,12 @@ export class ApprovalDomainService {
           "Approval not found",
           "Approval does not exist.",
         );
-      if (approval.status !== "pending")
+      // A row lands on `expired` as soon as anything lists the inbox, so
+      // rejection has to survive that state too — otherwise the very act of
+      // opening Approvals removes the only way to close the row.
+      const closingExpired =
+        approval.status === "expired" && decision.status === "rejected";
+      if (approval.status !== "pending" && !closingExpired)
         return { id: approval.id, status: approval.status, duplicate: true };
       // Approving an expired dangerous action is exactly what expiry exists to
       // prevent. Rejecting one is strictly de-escalating, so it stays open —

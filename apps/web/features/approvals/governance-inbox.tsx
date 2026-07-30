@@ -213,7 +213,10 @@ function ApprovalDetail({
   // trust the deadline rather than the stored status for what is offerable.
   const overdue = new Date(approval.expiresAt) <= new Date();
   const pending = approval.status === "pending" && !overdue;
-  const closable = approval.status === "pending" && overdue;
+  // Includes rows already stored as `expired` by the inbox's lazy sweep, not
+  // just ones that are still nominally pending.
+  const closable =
+    approval.status === "expired" || (approval.status === "pending" && overdue);
 
   return (
     <div>
