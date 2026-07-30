@@ -15,6 +15,7 @@ import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { AgentProfilePanel } from "@/components/agent-profile-panels";
 import { Button, buttonVariants } from "@/components/ui/button";
 
 type EvidenceState = "reported" | "unavailable" | "unknown";
@@ -228,14 +229,12 @@ export function AgentsView() {
 }
 
 /**
- * Only tabs that render distinct content. Instructions, Tools, Permissions,
- * Rooms, Runs, Evaluations, Versions, and Audit all fell through to the
- * Overview panel, so eight links looked navigable and silently showed the
- * same page. Overview already carries the permission, runtime, and tool
- * evidence the readiness payload actually provides; the rest need APIs that
- * do not exist yet. Add a tab back when it has something of its own to show.
+ * Only tabs that render distinct content. Instructions, Runs, Evaluations,
+ * Versions, and Audit remain unbuilt and are deliberately absent rather than
+ * silently falling through to Overview. Add a tab back when it has something
+ * of its own to show.
  */
-const agentTabs = ["Overview", "Learning"];
+const agentTabs = ["Overview", "Tools", "Rooms", "Permissions", "Learning"];
 
 export function AgentDetailView({
   agentId,
@@ -338,6 +337,8 @@ export function AgentDetailView({
         <div className="mx-auto max-w-6xl">
           {tab === "learning" ? (
             <GovernedLearningPanel agentId={agentId} />
+          ) : tab === "tools" || tab === "rooms" || tab === "permissions" ? (
+            <AgentProfilePanel agentId={agentId} tab={tab} />
           ) : (
             <AgentOverview agent={agent} />
           )}
