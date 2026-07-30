@@ -93,26 +93,92 @@ export function AgentsView() {
   const [directory, setDirectory] = useState<DirectoryAgent[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [showOnboard, setShowOnboard] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    name: "",
+    slug: "",
+    description: "",
+    model: "configured",
+    capabilityRequirements:
+      "alerts.read, investigations.read, agents.read, agents.handoff",
+  });
+
+  async function loadDirectory() {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/v1/agents", {
+        cache: "no-store",
+        credentials: "include",
+      });
+      const payload = (await response.json()) as {
+        data?: DirectoryAgent[];
+        detail?: string;
+      };
+      if (!response.ok || !payload.data) {
+        throw new Error(payload.detail ?? "Agent directory unavailable");
+      }
+      setDirectory(payload.data);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Agent directory failed",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    void fetch("/api/v1/agents", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = (await response.json()) as {
-          data?: DirectoryAgent[];
-          detail?: string;
-        };
-        if (!response.ok || !payload.data) {
-          throw new Error(payload.detail ?? "Agent directory unavailable");
-        }
-        setDirectory(payload.data);
-      })
-      .catch((reason) =>
-        setError(
-          reason instanceof Error ? reason.message : "Agent directory failed",
-        ),
-      )
-      .finally(() => setLoading(false));
+    void loadDirectory();
   }, []);
+
+  async function onboardAgent() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const caps = form.capabilityRequirements
+        .split(/[,\n]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const response = await fetch("/api/v1/agents", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          slug: form.slug.trim() || undefined,
+          description: form.description.trim(),
+          model: form.model.trim() || "configured",
+          capabilityRequirements: caps,
+        }),
+      });
+      const body = (await response.json()) as {
+        data?: { id: string; name: string; nextSteps?: string[] };
+        detail?: string;
+      };
+      if (!response.ok)
+        throw new Error(body.detail ?? `Onboard failed (${response.status})`);
+      setMessage(
+        `Created ${body.data?.name}. ${(body.data?.nextSteps ?? []).join(" ")}`,
+      );
+      setForm({
+        name: "",
+        slug: "",
+        description: "",
+        model: "configured",
+        capabilityRequirements:
+          "alerts.read, investigations.read, agents.read, agents.handoff",
+      });
+      setShowOnboard(false);
+      await loadDirectory();
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Onboard failed");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const agents = directory.filter((agent) =>
     agent.name.toLowerCase().includes(query.toLowerCase()),
@@ -131,7 +197,18 @@ export function AgentsView() {
       <PageHeader
         eyebrow="Workforce"
         title="Agent directory"
-        description="Permission-scoped agents with governed learning"
+        description="Permission-scoped pack agents. Onboard new agents here; chat stays in Slack / Hermes."
+        actions={
+          <Button
+            type="button"
+            onClick={() => {
+              setShowOnboard(true);
+              setMessage(null);
+            }}
+          >
+            Onboard agent
+          </Button>
+        }
       />
       <div className="flex items-center gap-2 border-b bg-[var(--color-paper-2)] p-3">
         <label className="flex h-9 min-w-0 max-w-md flex-1 items-center gap-2 rounded-md border bg-background px-3">
@@ -157,7 +234,132 @@ export function AgentsView() {
         </Badge>
       </div>
       <div className="scroll-region min-h-0 flex-1 overflow-y-auto p-3 tablet:p-5">
-        <div className="mx-auto grid max-w-7xl gap-3 tablet:grid-cols-2 wide:grid-cols-3">
+        <div className="mx-auto max-w-7xl space-y-3">
+          <div className="rounded-md border border-border bg-card p-3 text-xs text-muted-foreground">
+            <p className="font-semibold text-foreground">
+              How pack agents get external data
+            </p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              <li>
+                <strong>Jessie</strong> hunts Tawny (and UniFi/Sentinel when
+                wired) via governed connector queries — assign work from
+                Operations or Slack.
+              </li>
+              <li>
+                <strong>Parker / Alfie</strong> read Kelpie cases and (when
+                granted) Brolga TI packs through the same connector path or
+                Hermes MCP tools.
+              </li>
+              <li>
+                <strong>You</strong> inspect connector health on{" "}
+                <Link href="/integrations" className="underline">
+                  Integrations
+                </Link>
+                ; secrets stay server-side. Hermes uses MCP tools like{" "}
+                <code>muster_search_kelpie_cases</code>,{" "}
+                <code>muster_list_tawny_endpoints</code>,{" "}
+                <code>muster_get_brolga_context</code>.
+              </li>
+            </ul>
+          </div>
+
+          {message ? (
+            <p className="rounded-md border border-border bg-card px-3 py-2 text-sm">
+              {message}
+            </p>
+          ) : null}
+
+          {showOnboard ? (
+            <div className="space-y-3 rounded-md border border-border bg-card p-4">
+              <h2 className="font-display text-base font-bold">
+                Onboard a new pack agent
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Needs capability <code>agents.manage</code>. Creates a directory
+                actor + agent definition. After create: open the profile, grant
+                product capabilities (e.g. <code>tawny.hunts.execute</code>,{" "}
+                <code>kelpie.cases.read</code>, <code>brolga.context.read</code>
+                ), expose in Slack if chat is required, then assign work.
+              </p>
+              <div className="grid gap-3 tablet:grid-cols-2">
+                <label className="block text-xs font-semibold">
+                  Display name
+                  <input
+                    className="mt-1 h-10 w-full border bg-background px-3 text-sm"
+                    value={form.name}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, name: e.target.value }))
+                    }
+                    placeholder="River"
+                  />
+                </label>
+                <label className="block text-xs font-semibold">
+                  Slug (optional)
+                  <input
+                    className="mt-1 h-10 w-full border bg-background px-3 font-mono text-sm"
+                    value={form.slug}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, slug: e.target.value }))
+                    }
+                    placeholder="river"
+                  />
+                </label>
+                <label className="block text-xs font-semibold tablet:col-span-2">
+                  Description
+                  <textarea
+                    className="mt-1 min-h-16 w-full border bg-background px-3 py-2 text-sm"
+                    value={form.description}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, description: e.target.value }))
+                    }
+                    placeholder="What this agent does"
+                  />
+                </label>
+                <label className="block text-xs font-semibold">
+                  Model label
+                  <input
+                    className="mt-1 h-10 w-full border bg-background px-3 text-sm"
+                    value={form.model}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, model: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="block text-xs font-semibold">
+                  Capabilities (comma-separated)
+                  <input
+                    className="mt-1 h-10 w-full border bg-background px-3 font-mono text-sm"
+                    value={form.capabilityRequirements}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        capabilityRequirements: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void onboardAgent()}
+                >
+                  Create agent
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => setShowOnboard(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 tablet:grid-cols-2 wide:grid-cols-3">
           {loading && (
             <p className="text-xs text-muted-foreground">
               Loading authorised agent readiness…
@@ -166,6 +368,14 @@ export function AgentsView() {
           {error && (
             <p className="text-xs text-[var(--color-error)]">{error}</p>
           )}
+          {!loading && !error && agents.length === 0 ? (
+            <div className="tablet:col-span-2 wide:col-span-3">
+              <p className="text-sm text-muted-foreground">
+                No agents match. Use <strong>Onboard agent</strong> to create
+                one, or clear the search.
+              </p>
+            </div>
+          ) : null}
           {agents.map((agent) => (
             <Link
               key={agent.id}
@@ -222,6 +432,7 @@ export function AgentsView() {
               </div>
             </Link>
           ))}
+          </div>
         </div>
       </div>
     </OpsShell>

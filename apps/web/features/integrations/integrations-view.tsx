@@ -183,7 +183,7 @@ export function IntegrationsView() {
       <PageHeader
         eyebrow="Configure"
         title="Integrations"
-        description="Connector and platform health. Secrets never leave the backend."
+        description="Connector and platform health. Secrets never leave the backend. This is the map of how Kelpie, Tawny, and Brolga data enters Muster."
         actions={
           <Link
             href="/integrations/connectors"
@@ -194,6 +194,105 @@ export function IntegrationsView() {
         }
       />
       <PageBody>
+        <section className="mb-4 rounded-md border border-border bg-[var(--color-paper)] p-4 text-sm">
+          <h2 className="font-display text-base font-bold">
+            How product data is accessible
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Muster does not replace Kelpie, Tawny, or Brolga. It pulls{" "}
+            <strong>bounded, untrusted evidence</strong> through governed
+            connectors (worker + encrypted credentials). Agents and Hermes only
+            see what their capabilities allow.
+          </p>
+          <div className="mt-3 grid gap-3 text-xs tablet:grid-cols-3">
+            <article className="rounded-md border border-border bg-card p-3">
+              <h3 className="font-semibold">Kelpie (cases)</h3>
+              <p className="mt-1 text-muted-foreground">
+                SoR for formal cases. Muster stores IDs and selected fields only.
+              </p>
+              <ul className="mt-2 list-disc space-y-1 pl-4">
+                <li>
+                  <strong>Web:</strong> case links on Operations / investigations;
+                  connector status on this page
+                </li>
+                <li>
+                  <strong>Agents:</strong> Parker / Jessie with{" "}
+                  <code>kelpie.cases.read</code>
+                </li>
+                <li>
+                  <strong>Hermes MCP:</strong>{" "}
+                  <code>muster_search_kelpie_cases</code>,{" "}
+                  <code>muster_get_kelpie_case</code>, optional propose writes
+                </li>
+                <li>
+                  <strong>Admin:</strong>{" "}
+                  <Link href="/integrations/connectors" className="underline">
+                    Connector admin
+                  </Link>{" "}
+                  test query <code>kelpie.cases.list</code>
+                </li>
+              </ul>
+            </article>
+            <article className="rounded-md border border-border bg-card p-3">
+              <h3 className="font-semibold">Tawny (endpoints / hunts)</h3>
+              <p className="mt-1 text-muted-foreground">
+                Authoritative EDR telemetry. Response actions stay approval-gated.
+              </p>
+              <ul className="mt-2 list-disc space-y-1 pl-4">
+                <li>
+                  <strong>Web:</strong> connector health here; hunts run via agent
+                  work, not a raw Tawny console in Muster
+                </li>
+                <li>
+                  <strong>Agents:</strong> Jessie with{" "}
+                  <code>tawny.telemetry.read</code> /{" "}
+                  <code>tawny.hunts.execute</code>
+                </li>
+                <li>
+                  <strong>Hermes MCP:</strong>{" "}
+                  <code>muster_list_tawny_endpoints</code>,{" "}
+                  <code>muster_list_tawny_alerts</code>,{" "}
+                  <code>muster_run_tawny_hunt</code>
+                </li>
+                <li>
+                  <strong>Admin:</strong> connector test{" "}
+                  <code>tawny.inventory.list</code>
+                </li>
+              </ul>
+            </article>
+            <article className="rounded-md border border-border bg-card p-3">
+              <h3 className="font-semibold">Brolga (normalised TI)</h3>
+              <p className="mt-1 text-muted-foreground">
+                Context packs for observables. Disposition{" "}
+                <code>unknown</code> means not seen — never benign.
+              </p>
+              <ul className="mt-2 list-disc space-y-1 pl-4">
+                <li>
+                  <strong>Web:</strong> health card here; no separate Brolga UI in
+                  Muster
+                </li>
+                <li>
+                  <strong>Agents:</strong> any pack agent granted{" "}
+                  <code>brolga.context.read</code> (Alfie/research profiles
+                  typically)
+                </li>
+                <li>
+                  <strong>Hermes MCP:</strong>{" "}
+                  <code>muster_get_brolga_context</code> (kind + value)
+                </li>
+                <li>
+                  <strong>Admin:</strong> connector test{" "}
+                  <code>brolga.context.pack</code>
+                </li>
+              </ul>
+            </article>
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Common path: Hermes or Slack agent → capability check → queue connector
+            query → worker → product API → redacted evidence back. Configure hosts
+            under Connector admin; never paste tokens into chat.
+          </p>
+        </section>
         {controlPlane.isError && connectors.isError ? (
           <ErrorState
             error={controlPlane.error}

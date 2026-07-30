@@ -6,15 +6,23 @@ const viewUrl = new URL("./agents-view.tsx", import.meta.url);
 describe("Agent directory", () => {
   it("describes agents, not humans", async () => {
     const source = await readFile(viewUrl, "utf8");
-    expect(source).toContain(
-      'description="Permission-scoped agents with governed learning"',
-    );
+    expect(source).toContain("Permission-scoped pack agents");
     expect(source).not.toContain("human collaborators");
   });
 
-  it("offers no affordance for agent creation, which has no API", async () => {
+  it("offers onboard agent via the governed API", async () => {
     const source = await readFile(viewUrl, "utf8");
-    expect(source).not.toContain("New agent");
+    expect(source).toContain("Onboard agent");
+    expect(source).toContain('method: "POST"');
+    expect(source).toContain("/api/v1/agents");
+    expect(source).toContain("agents.manage");
+  });
+
+  it("explains how Kelpie, Tawny, and Brolga data is reached", async () => {
+    const source = await readFile(viewUrl, "utf8");
+    expect(source).toContain("muster_search_kelpie_cases");
+    expect(source).toContain("muster_list_tawny_endpoints");
+    expect(source).toContain("muster_get_brolga_context");
   });
 });
 
