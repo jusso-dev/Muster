@@ -1,4 +1,14 @@
-import { and, count, desc, eq, gt, gte, inArray, isNull } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  or,
+} from "drizzle-orm";
 import {
   hasCapability,
   type AuthorisationSubject,
@@ -116,6 +126,201 @@ const TASK_PRIORITY_SEVERITY = {
   low: "low",
 } as const;
 
+const OPEN_TASK_STATUSES = ["backlog", "ready", "in_progress", "review"] as const;
+
+const PRIORITY_RANK: Record<string, number> = {
+  urgent: 0,
+  high: 1,
+  normal: 2,
+  low: 3,
+};
+
+type AgentRunRow = {
+  agentId: string;
+  status: string;
+  startedAt: Date | null;
+  completedAt: Date | null;
+};
+
+type AgentRunTally = {
+  runs: number;
+  succeeded: number;
+  settled: number;
+  lastRunAt: Date | null;
+};
+
+type QueueTaskRow = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  assignedActorId: string | null;
+  dueAt: Date | null;
+  updatedAt: Date;
+};
+
+type AgentPanelRow = {
+  id: string;
+  name: string;
+  status: string;
+  killSwitch: boolean;
+  runtime: string;
+  lastRun: {
+    status: string;
+    startedAt: string | null;
+    completedAt: string | null;
+  } | null;
+};
+
+/** 24 hourly buckets ending with the hour in progress. */
+function buildRunActivity(
+  now: number,
+  recentAgentRuns: AgentRunRow[],
+): { runActivity: RunActivityPoint[]; runsByAgent: Map<string, AgentRunTally> } {
+  const firstBucket = Math.floor(now / HOUR_MS) * HOUR_MS - 23 * HOUR_MS;
+  const runActivity: RunActivityPoint[] = Array.from({ length: 24 }, (_, i) => {
+    const start = new Date(firstBucket + i * HOUR_MS);
+    return {
+      bucket: start.toISOString(),
+      completed: 0,
+      failed: 0,
+      running: 0,
+      cancelled: 0,
+    };
+  });
+
+  const runsByAgent = new Map<string, AgentRunTally>();
+
+  for (const run of recentAgentRuns) {
+    const startedAt = run.startedAt;
+    if (!startedAt) continue;
+    const state = toOperationalState(run.status);
+
+    const index = Math.floor((startedAt.getTime() - firstBucket) / HOUR_MS);
+    const point = index >= 0 && index < 24 ? runActivity[index] : undefined;
+    if (point) {
+      if (state === "completed") point.completed += 1;
+      else if (state === "failed") point.failed += 1;
+      else if (state === "cancelled") point.cancelled += 1;
+      else point.running += 1;
+    }
+
+    const tally = runsByAgent.get(run.agentId) ?? {
+      runs: 0,
+      succeeded: 0,
+      settled: 0,
+      lastRunAt: null,
+    };
+    tally.runs += 1;
+    if (state === "completed") {
+      tally.succeeded += 1;
+      tally.settled += 1;
+    } else if (state === "failed") {
+      tally.settled += 1;
+    }
+    const seenAt = run.completedAt ?? startedAt;
+    if (!tally.lastRunAt || seenAt > tally.lastRunAt) tally.lastRunAt = seenAt;
+    runsByAgent.set(run.agentId, tally);
+  }
+
+  return { runActivity, runsByAgent };
+}
+
+function buildAgentActivity(
+  agentRows: AgentPanelRow[],
+  runsByAgent: Map<string, AgentRunTally>,
+): AgentActivityRow[] {
+  return agentRows
+    .map((agent) => {
+      const tally = runsByAgent.get(agent.id);
+      return {
+        id: agent.id,
+        name: agent.name,
+        status: agent.killSwitch ? "isolated" : agent.status,
+        runtime: agent.runtime,
+        runs: tally?.runs ?? 0,
+        succeeded: tally?.succeeded ?? 0,
+        // A rate over zero settled runs would be an invented 100%.
+        successRate:
+          tally && tally.settled > 0 ? tally.succeeded / tally.settled : null,
+        lastRunAt:
+          tally?.lastRunAt?.toISOString() ??
+          agent.lastRun?.completedAt ??
+          agent.lastRun?.startedAt ??
+          null,
+      };
+    })
+    .sort((a, b) => b.runs - a.runs || a.name.localeCompare(b.name))
+    .slice(0, 6);
+}
+
+function buildMyTasks(
+  queueTasks: QueueTaskRow[],
+  actorId: string,
+): MyTaskRow[] {
+  return queueTasks
+    .sort(
+      (a, b) =>
+        (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9) ||
+        b.updatedAt.getTime() - a.updatedAt.getTime(),
+    )
+    .slice(0, 20)
+    .map((task) => ({
+      id: task.id,
+      title: task.title,
+      status: toOperationalState(task.status),
+      rawStatus: task.status,
+      priority: task.priority,
+      severity:
+        TASK_PRIORITY_SEVERITY[
+          task.priority as keyof typeof TASK_PRIORITY_SEVERITY
+        ] ?? "medium",
+      sourceSystem: "Muster",
+      updatedAt: task.updatedAt.toISOString(),
+      dueAt: task.dueAt?.toISOString() ?? null,
+      assignedToMe: task.assignedActorId === actorId,
+    }));
+}
+
+function buildIntegrations(
+  controlPlane: Awaited<ReturnType<typeof getControlPlaneStatus>> | null,
+): IntegrationHealthChip[] {
+  if (!controlPlane) return [];
+  return [
+    {
+      id: "kelpie",
+      name: controlPlane.kelpie.displayName ?? "Kelpie",
+      health: toHealthState(controlPlane.kelpie.status),
+      detail: controlPlane.kelpie.lastSyncAt
+        ? `Synced ${relativeTime(controlPlane.kelpie.lastSyncAt)}`
+        : "No sync recorded",
+    },
+    {
+      id: "slack",
+      name: "Slack",
+      health: toHealthState(controlPlane.slack.status),
+      detail: `Workspace ${controlPlane.slack.status}`,
+    },
+    {
+      id: "mcp",
+      name: "MCP",
+      health: toHealthState(controlPlane.mcp.status),
+      detail: `${controlPlane.mcp.activeInstallations} active installation${
+        controlPlane.mcp.activeInstallations === 1 ? "" : "s"
+      }`,
+    },
+    {
+      id: "codex",
+      name: "Codex runtime",
+      health: toHealthState(controlPlane.codex.status),
+      detail:
+        controlPlane.codex.detail ??
+        controlPlane.codex.runtime ??
+        `Runtime ${controlPlane.codex.status}`,
+    },
+  ];
+}
+
 export async function getCommandSummary(
   subject: AuthorisationSubject,
 ): Promise<CommandSummary> {
@@ -223,85 +428,117 @@ export async function getCommandSummary(
           and(
             eq(schema.tasks.organisationId, subject.organisationId),
             isNull(schema.tasks.archivedAt),
-            inArray(schema.tasks.status, [
-              "backlog",
-              "ready",
-              "in_progress",
-              "review",
-            ]),
+            inArray(schema.tasks.status, [...OPEN_TASK_STATUSES]),
           ),
         )
         .orderBy(desc(schema.tasks.updatedAt))
         .limit(50)
     : [];
 
+  // Dedicated queue source: mine + unassigned open tasks, not filtered from the
+  // attention-capped openTasks list (which can omit eligible rows past 50).
+  const queueTasks = canReadTasks
+    ? await db
+        .select({
+          id: schema.tasks.id,
+          title: schema.tasks.title,
+          status: schema.tasks.status,
+          priority: schema.tasks.priority,
+          assignedActorId: schema.tasks.assignedActorId,
+          dueAt: schema.tasks.dueAt,
+          updatedAt: schema.tasks.updatedAt,
+        })
+        .from(schema.tasks)
+        .where(
+          and(
+            eq(schema.tasks.organisationId, subject.organisationId),
+            isNull(schema.tasks.archivedAt),
+            inArray(schema.tasks.status, [...OPEN_TASK_STATUSES]),
+            or(
+              eq(schema.tasks.assignedActorId, subject.actorId),
+              isNull(schema.tasks.assignedActorId),
+            ),
+          ),
+        )
+        .orderBy(desc(schema.tasks.updatedAt))
+    : [];
+
   const now = Date.now();
   const windowStart = new Date(now - TREND_WINDOW_DAYS * DAY_MS);
 
-  // Counted in SQL rather than from the capped list above: the donut claims to
-  // describe the whole backlog, so it must not silently stop at 50 rows.
-  const taskStatusCounts = canReadTasks
-    ? await db
-        .select({ status: schema.tasks.status, total: count() })
-        .from(schema.tasks)
-        .where(
-          and(
-            eq(schema.tasks.organisationId, subject.organisationId),
-            isNull(schema.tasks.archivedAt),
-          ),
-        )
-        .groupBy(schema.tasks.status)
-    : [];
-
-  const recentTasks = canReadTasks
-    ? await db
-        .select({ createdAt: schema.tasks.createdAt })
-        .from(schema.tasks)
-        .where(
-          and(
-            eq(schema.tasks.organisationId, subject.organisationId),
-            isNull(schema.tasks.archivedAt),
-            gte(schema.tasks.createdAt, windowStart),
-          ),
-        )
-        .limit(2_000)
-    : [];
-
-  const recentApprovals = canApprove
-    ? await db
-        .select({ requestedAt: schema.approvals.requestedAt })
-        .from(schema.approvals)
-        .where(
-          and(
-            eq(schema.approvals.organisationId, subject.organisationId),
-            gte(schema.approvals.requestedAt, windowStart),
-          ),
-        )
-        .limit(2_000)
-    : [];
-
-  const recentMissionRuns = canReadWorkflows
-    ? await db
-        .select({
-          status: schema.governedMissionRuns.status,
-          createdAt: schema.governedMissionRuns.createdAt,
-        })
-        .from(schema.governedMissionRuns)
-        .where(
-          and(
-            eq(
-              schema.governedMissionRuns.organisationId,
-              subject.organisationId,
+  // Independent reads — run concurrently on the request path.
+  // recentTasks/recentApprovals: desc + limit keeps the newest 2k rows so the
+  // series reflects recent activity (truncation drops the oldest).
+  const [
+    taskStatusCounts,
+    recentTasks,
+    recentApprovals,
+    recentMissionRuns,
+    recentAgentRuns,
+  ] = await Promise.all([
+    canReadTasks
+      ? db
+          .select({ status: schema.tasks.status, total: count() })
+          .from(schema.tasks)
+          .where(
+            and(
+              eq(schema.tasks.organisationId, subject.organisationId),
+              isNull(schema.tasks.archivedAt),
             ),
-            gte(schema.governedMissionRuns.createdAt, windowStart),
-          ),
-        )
-        .limit(2_000)
-    : [];
-
-  const recentAgentRuns =
+          )
+          .groupBy(schema.tasks.status)
+      : Promise.resolve(
+          [] as Array<{ status: string; total: number | string }>,
+        ),
+    canReadTasks
+      ? db
+          .select({ createdAt: schema.tasks.createdAt })
+          .from(schema.tasks)
+          .where(
+            and(
+              eq(schema.tasks.organisationId, subject.organisationId),
+              isNull(schema.tasks.archivedAt),
+              gte(schema.tasks.createdAt, windowStart),
+            ),
+          )
+          .orderBy(desc(schema.tasks.createdAt))
+          .limit(2_000)
+      : Promise.resolve([] as Array<{ createdAt: Date | null }>),
+    canApprove
+      ? db
+          .select({ requestedAt: schema.approvals.requestedAt })
+          .from(schema.approvals)
+          .where(
+            and(
+              eq(schema.approvals.organisationId, subject.organisationId),
+              gte(schema.approvals.requestedAt, windowStart),
+            ),
+          )
+          .orderBy(desc(schema.approvals.requestedAt))
+          .limit(2_000)
+      : Promise.resolve([] as Array<{ requestedAt: Date | null }>),
+    canReadWorkflows
+      ? db
+          .select({
+            status: schema.governedMissionRuns.status,
+            createdAt: schema.governedMissionRuns.createdAt,
+          })
+          .from(schema.governedMissionRuns)
+          .where(
+            and(
+              eq(
+                schema.governedMissionRuns.organisationId,
+                subject.organisationId,
+              ),
+              gte(schema.governedMissionRuns.createdAt, windowStart),
+            ),
+          )
+          .limit(2_000)
+      : Promise.resolve(
+          [] as Array<{ status: string; createdAt: Date | null }>,
+        ),
     canReadAgents || canAdmin
-      ? await db
+      ? db
           .select({
             agentId: schema.agentRuns.agentId,
             status: schema.agentRuns.status,
@@ -317,7 +554,8 @@ export async function getCommandSummary(
           )
           .orderBy(desc(schema.agentRuns.startedAt))
           .limit(5_000)
-      : [];
+      : Promise.resolve([] as AgentRunRow[]),
+  ]);
 
   // Blocked and approval-stalled pack handoffs are operational debt: an agent
   // asked for help and nothing is moving. Surface them, do not bury them.
@@ -493,153 +731,10 @@ export async function getCommandSummary(
         (statusOrder.indexOf(b.status) + 1 || 99),
     );
 
-  // 24 hourly buckets ending with the hour in progress. Bucket starts are
-  // absolute instants; the browser decides how to label them locally.
-  const firstBucket = Math.floor(now / HOUR_MS) * HOUR_MS - 23 * HOUR_MS;
-  const runActivity: RunActivityPoint[] = Array.from({ length: 24 }, (_, i) => {
-    const start = new Date(firstBucket + i * HOUR_MS);
-    return {
-      bucket: start.toISOString(),
-      label: `${String(start.getUTCHours()).padStart(2, "0")}:00`,
-      completed: 0,
-      failed: 0,
-      running: 0,
-      cancelled: 0,
-    };
-  });
-
-  type AgentRunTally = {
-    runs: number;
-    succeeded: number;
-    settled: number;
-    lastRunAt: Date | null;
-  };
-  const runsByAgent = new Map<string, AgentRunTally>();
-
-  for (const run of recentAgentRuns) {
-    const startedAt = run.startedAt;
-    if (!startedAt) continue;
-    const state = toOperationalState(run.status);
-
-    const index = Math.floor((startedAt.getTime() - firstBucket) / HOUR_MS);
-    const point = index >= 0 && index < 24 ? runActivity[index] : undefined;
-    if (point) {
-      if (state === "completed") point.completed += 1;
-      else if (state === "failed") point.failed += 1;
-      else if (state === "cancelled") point.cancelled += 1;
-      else point.running += 1;
-    }
-
-    const tally = runsByAgent.get(run.agentId) ?? {
-      runs: 0,
-      succeeded: 0,
-      settled: 0,
-      lastRunAt: null,
-    };
-    tally.runs += 1;
-    if (state === "completed") {
-      tally.succeeded += 1;
-      tally.settled += 1;
-    } else if (state === "failed") {
-      tally.settled += 1;
-    }
-    const seenAt = run.completedAt ?? startedAt;
-    if (!tally.lastRunAt || seenAt > tally.lastRunAt) tally.lastRunAt = seenAt;
-    runsByAgent.set(run.agentId, tally);
-  }
-
-  const agentActivity: AgentActivityRow[] = agentRows
-    .map((agent) => {
-      const tally = runsByAgent.get(agent.id);
-      return {
-        id: agent.id,
-        name: agent.name,
-        status: agent.killSwitch ? "isolated" : agent.status,
-        runtime: agent.runtime,
-        runs: tally?.runs ?? 0,
-        succeeded: tally?.succeeded ?? 0,
-        // A rate over zero settled runs would be an invented 100%.
-        successRate:
-          tally && tally.settled > 0 ? tally.succeeded / tally.settled : null,
-        lastRunAt:
-          tally?.lastRunAt?.toISOString() ??
-          agent.lastRun?.completedAt ??
-          agent.lastRun?.startedAt ??
-          null,
-      };
-    })
-    .sort((a, b) => b.runs - a.runs || a.name.localeCompare(b.name))
-    .slice(0, 6);
-
-  const priorityRank: Record<string, number> = {
-    urgent: 0,
-    high: 1,
-    normal: 2,
-    low: 3,
-  };
-  const myTasks: MyTaskRow[] = openTasks
-    .filter(
-      (task) =>
-        task.assignedActorId === subject.actorId ||
-        task.assignedActorId === null,
-    )
-    .sort(
-      (a, b) =>
-        (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9) ||
-        b.updatedAt.getTime() - a.updatedAt.getTime(),
-    )
-    .slice(0, 20)
-    .map((task) => ({
-      id: task.id,
-      title: task.title,
-      status: toOperationalState(task.status),
-      rawStatus: task.status,
-      priority: task.priority,
-      severity:
-        TASK_PRIORITY_SEVERITY[
-          task.priority as keyof typeof TASK_PRIORITY_SEVERITY
-        ] ?? "medium",
-      sourceSystem: "Muster",
-      updatedAt: task.updatedAt.toISOString(),
-      dueAt: task.dueAt?.toISOString() ?? null,
-      assignedToMe: task.assignedActorId === subject.actorId,
-    }));
-
-  const integrations: IntegrationHealthChip[] = controlPlane
-    ? [
-        {
-          id: "kelpie",
-          name: controlPlane.kelpie.displayName ?? "Kelpie",
-          health: toHealthState(controlPlane.kelpie.status),
-          detail: controlPlane.kelpie.lastSyncAt
-            ? `Synced ${relativeTime(controlPlane.kelpie.lastSyncAt)}`
-            : "No sync recorded",
-        },
-        {
-          id: "slack",
-          name: "Slack",
-          health: toHealthState(controlPlane.slack.status),
-          detail: `Workspace ${controlPlane.slack.status}`,
-        },
-        {
-          id: "mcp",
-          name: "MCP",
-          health: toHealthState(controlPlane.mcp.status),
-          detail: `${controlPlane.mcp.activeInstallations} active installation${
-            controlPlane.mcp.activeInstallations === 1 ? "" : "s"
-          }`,
-        },
-        {
-          id: "codex",
-          name: "Codex runtime",
-          health: toHealthState(controlPlane.codex.status),
-          detail:
-            controlPlane.codex.detail ??
-            controlPlane.codex.runtime ??
-            `Runtime ${controlPlane.codex.status}`,
-        },
-      ]
-    : [];
+  const { runActivity, runsByAgent } = buildRunActivity(now, recentAgentRuns);
+  const agentActivity = buildAgentActivity(agentRows, runsByAgent);
+  const myTasks = buildMyTasks(queueTasks, subject.actorId);
+  const integrations = buildIntegrations(controlPlane);
 
   const metrics: CommandMetric[] = [
     {

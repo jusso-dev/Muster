@@ -437,7 +437,7 @@ export function CompanyOsShell({ children }: { children: ReactNode }) {
                 aria-hidden
                 className="absolute right-1.5 top-1.5 min-w-4 rounded-full bg-[var(--color-accent)] px-1 text-center font-mono text-xs font-bold leading-4 text-[var(--color-accent-ink)]"
               >
-                {pendingApprovals > 9 ? "9+" : pendingApprovals}
+                {pendingApprovals > 99 ? "99+" : pendingApprovals}
               </span>
             ) : null}
           </Link>

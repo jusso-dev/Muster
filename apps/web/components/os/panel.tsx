@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -23,7 +23,7 @@ export function Panel({
   className?: string;
   bodyClassName?: string;
 }) {
-  const headingId = `panel-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const headingId = useId();
   return (
     <section
       aria-labelledby={headingId}

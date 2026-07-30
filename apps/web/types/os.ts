@@ -70,8 +70,6 @@ export type TaskStatusSlice = {
 export type RunActivityPoint = {
   /** ISO timestamp for the start of the bucket. */
   bucket: string;
-  /** Short axis label, local time. */
-  label: string;
   completed: number;
   failed: number;
   running: number;
@@ -85,7 +83,10 @@ export type AgentActivityRow = {
   runtime: string;
   runs: number;
   succeeded: number;
-  /** Null when the agent has no completed runs in the window. */
+  /**
+   * Null when the agent has no settled runs in the window (completed or
+   * failed). Matches the producer's denominator — not merely completed runs.
+   */
   successRate: number | null;
   lastRunAt: string | null;
 };

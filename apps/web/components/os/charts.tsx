@@ -139,7 +139,6 @@ export const RUN_ACTIVITY_SERIES: Array<{
 
 type ActivityDatum = {
   bucket: string;
-  label: string;
   completed: number;
   running: number;
   failed: number;
@@ -154,6 +153,9 @@ export function RunActivityChart({
   data: ActivityDatum[];
   visible: RunActivitySeriesKey[];
 }) {
+  const seriesKeys = RUN_ACTIVITY_SERIES.filter((series) =>
+    visible.includes(series.key),
+  );
   const points = data.map((point) => ({
     ...point,
     axis: new Date(point.bucket).toLocaleTimeString(undefined, {
@@ -165,7 +167,30 @@ export function RunActivityChart({
 
   return (
     <div className="h-64 w-full">
-      <ResponsiveContainer width="100%" height="100%">
+      <table className="sr-only">
+        <caption>Agent run activity by hour</caption>
+        <thead>
+          <tr>
+            <th scope="col">Time</th>
+            {seriesKeys.map((series) => (
+              <th key={series.key} scope="col">
+                {series.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {points.map((point) => (
+            <tr key={point.bucket}>
+              <th scope="row">{point.axis}</th>
+              {seriesKeys.map((series) => (
+                <td key={series.key}>{point[series.key]}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <ResponsiveContainer width="100%" height="100%" aria-hidden>
         <LineChart
           data={points}
           margin={{ top: 8, right: 8, bottom: 0, left: -18 }}
@@ -205,9 +230,7 @@ export function RunActivityChart({
               );
             }}
           />
-          {RUN_ACTIVITY_SERIES.filter((series) =>
-            visible.includes(series.key),
-          ).map((series) => (
+          {seriesKeys.map((series) => (
             <Line
               key={series.key}
               type="monotone"

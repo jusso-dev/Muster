@@ -337,7 +337,7 @@ export function CommandView() {
                 action={<PanelLink href="/operations">View all</PanelLink>}
               >
                 <div
-                  role="tablist"
+                  role="group"
                   aria-label="Work queue filter"
                   className="mx-4 mb-1 flex gap-1 border-b border-border"
                 >
@@ -350,8 +350,7 @@ export function CommandView() {
                     <button
                       key={key}
                       type="button"
-                      role="tab"
-                      aria-selected={taskTab === key}
+                      aria-pressed={taskTab === key}
                       onClick={() => setTaskTab(key)}
                       className={cn(
                         "-mb-px inline-flex items-center gap-1.5 border-b-2 px-2 py-2 text-sm font-medium transition-colors",
