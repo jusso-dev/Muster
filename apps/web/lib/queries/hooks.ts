@@ -337,6 +337,29 @@ export function useCreateTask() {
 }
 
 /**
+ * Soft-delete a work item. The row stays for audit correspondence; every
+ * list already filters on archivedAt.
+ */
+export function useArchiveTask() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string; archived: boolean }) => {
+      const res = await apiPatch<{ id: string; archived: boolean }>(
+        `/api/v1/tasks/${input.id}`,
+        { archived: input.archived },
+      );
+      return res.data;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.tasks }),
+        client.invalidateQueries({ queryKey: queryKeys.commandSummary }),
+      ]);
+    },
+  });
+}
+
+/**
  * Cancel a task's in-flight agent run. Without this a run wedged at
  * queued/running (gateway crash, expired lease) blocks re-dispatch forever
  * with no operator escape.

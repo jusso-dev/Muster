@@ -2,7 +2,7 @@ import { requireCapability } from "@muster/authz";
 import { TaskPrioritySchema, TaskStatusSchema } from "@muster/contracts";
 import { z } from "zod";
 import { apiSubject, problemResponse, requestTraceId } from "@/lib/api-context";
-import { updateTask, type TaskChanges } from "@/lib/task-domain";
+import { archiveTask, updateTask, type TaskChanges } from "@/lib/task-domain";
 
 const UpdateTaskSchema = z
   .object({
@@ -16,6 +16,8 @@ const UpdateTaskSchema = z
     relatedCaseId: z.string().trim().max(160).nullable().optional(),
     approvalRequired: z.boolean().optional(),
     dueAt: z.iso.datetime({ offset: true }).nullable().optional(),
+    /** Soft delete. Rows stay for audit correspondence. */
+    archived: z.boolean().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, "No task changes supplied");
 
@@ -31,7 +33,22 @@ export async function PATCH(
     const input = UpdateTaskSchema.parse(await request.json());
     if (input.assignedActorId !== undefined)
       requireCapability(subject, "tasks.assign");
-    const { dueAt, ...unfilteredChanges } = input;
+    const { dueAt, archived, ...unfilteredChanges } = input;
+    if (archived !== undefined) {
+      const result = await archiveTask(
+        {
+          organisationId: subject.organisationId,
+          actorId: subject.actorId,
+          traceId,
+        },
+        id,
+        archived,
+      );
+      // Archive is its own operation; it does not combine with field edits.
+      if (Object.keys(unfilteredChanges).length === 0 && dueAt === undefined) {
+        return Response.json({ data: result, traceId });
+      }
+    }
     const changes = Object.fromEntries(
       Object.entries(unfilteredChanges).filter(
         ([, value]) => value !== undefined,

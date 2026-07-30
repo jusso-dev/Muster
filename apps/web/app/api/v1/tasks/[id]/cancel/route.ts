@@ -47,20 +47,61 @@ export async function POST(
         "Task does not have an active agent run.",
       );
     }
-    const gateway = await fetch(
-      `${process.env.AGENT_GATEWAY_URL ?? "http://agent-gateway:3002"}/v1/runs/${encodeURIComponent(task.agentRunId)}/cancel`,
-      {
-        headers: agentGatewayHeaders(subject.organisationId),
-        method: "POST",
-        signal: AbortSignal.timeout(5_000),
-      },
-    );
-    const result = (await gateway.json()) as {
-      status?: string;
-      error?: string;
-    };
-    if (!gateway.ok)
-      throw new Error(result.error ?? "Agent cancellation failed");
+    // A run whose lease and deadline have both passed cannot still be
+    // executing, so the gateway's opinion is not required to release it.
+    // Without this a wedged run — worker died, lease expired, gateway lost
+    // the record — leaves the task permanently undeletable and undispatchable.
+    const [run] = await database()
+      .select({
+        leaseExpiresAt: schema.agentRuns.leaseExpiresAt,
+        deadlineAt: schema.agentRuns.deadlineAt,
+      })
+      .from(schema.agentRuns)
+      .where(
+        and(
+          eq(schema.agentRuns.id, task.agentRunId),
+          eq(schema.agentRuns.organisationId, subject.organisationId),
+        ),
+      )
+      .limit(1);
+    const now = Date.now();
+    const stale =
+      !run ||
+      ((run.leaseExpiresAt === null || run.leaseExpiresAt.getTime() < now) &&
+        (run.deadlineAt === null || run.deadlineAt.getTime() < now));
+
+    let result: { status?: string; error?: string } = {};
+    let gatewayConfirmed = false;
+    let gatewayError: string | null = null;
+    try {
+      const gateway = await fetch(
+        `${process.env.AGENT_GATEWAY_URL ?? "http://agent-gateway:3002"}/v1/runs/${encodeURIComponent(task.agentRunId)}/cancel`,
+        {
+          headers: agentGatewayHeaders(subject.organisationId),
+          method: "POST",
+          signal: AbortSignal.timeout(5_000),
+        },
+      );
+      result = (await gateway.json().catch(() => ({}))) as typeof result;
+      gatewayConfirmed = gateway.ok;
+      if (!gateway.ok)
+        gatewayError = result.error ?? `Agent gateway returned ${gateway.status}`;
+    } catch (cause) {
+      gatewayError =
+        cause instanceof Error ? cause.message : "Agent gateway is unreachable";
+    }
+
+    // Only force the release when the run provably cannot still be alive.
+    // Otherwise refuse, so Muster never reports a run cancelled while the
+    // gateway is still executing it.
+    if (!gatewayConfirmed && !stale) {
+      throw new ApiProblem(
+        502,
+        "Cancellation not confirmed",
+        `The agent gateway did not confirm cancellation and this run may still be executing. ${gatewayError ?? ""}`.trim(),
+      );
+    }
+
     await settleAgentRun(
       {
         organisationId: subject.organisationId,
@@ -71,10 +112,15 @@ export async function POST(
       task.agentRunId,
       {
         status: "cancelled",
-        error: "Cancelled by operator",
+        error: gatewayConfirmed
+          ? "Cancelled by operator"
+          : `Force-released by operator; agent gateway did not confirm (${gatewayError ?? "no response"}). Lease and deadline had already passed.`,
       },
     );
-    return Response.json({ data: result, traceId }, { status: 202 });
+    return Response.json(
+      { data: { ...result, gatewayConfirmed, forced: !gatewayConfirmed }, traceId },
+      { status: 202 },
+    );
   } catch (error) {
     return problemResponse(error, traceId);
   }

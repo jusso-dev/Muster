@@ -26,6 +26,7 @@ import {
   type ComposerSeed,
 } from "@/features/operations/task-composer";
 import {
+  useArchiveTask,
   useCancelTaskRun,
   useDelegateTask,
   useTasks,
@@ -494,6 +495,7 @@ export function OperationsView() {
 function DetailDrawer({ item }: { item: BoardItem | null }) {
   const delegateTask = useDelegateTask();
   const cancelRun = useCancelTaskRun();
+  const archiveTask = useArchiveTask();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -536,6 +538,22 @@ function DetailDrawer({ item }: { item: BoardItem | null }) {
     }
   }
 
+  async function archive() {
+    if (!item) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await archiveTask.mutateAsync({ id: item.id, archived: true });
+      setNotice("Archived. The row is kept so its audit trail stays intact.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not archive the task.",
+      );
+    }
+  }
+
   return (
     <aside className="rounded-md border border-border bg-card p-4">
       <h2 className="text-sm font-semibold">{item.title}</h2>
@@ -565,6 +583,20 @@ function DetailDrawer({ item }: { item: BoardItem | null }) {
                 {cancelRun.isPending ? "Cancelling…" : "Cancel run"}
               </Button>
             ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={hasActiveRun(item) || archiveTask.isPending}
+              title={
+                hasActiveRun(item)
+                  ? "Cancel the active run before archiving"
+                  : "Remove from the board; the row and its audit trail are kept"
+              }
+              onClick={() => void archive()}
+            >
+              {archiveTask.isPending ? "Archiving…" : "Archive"}
+            </Button>
             <Button
               type="button"
               size="sm"
