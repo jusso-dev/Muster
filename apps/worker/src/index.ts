@@ -60,6 +60,7 @@ import {
 } from "./research-scheduler.ts";
 import { appendResearchTerminalMessage } from "./research-status.ts";
 import { queueDueParkerReports } from "./parker-scheduler.ts";
+import { spawnAllDueRecurringTasks } from "./task-recurrence-scheduler.ts";
 import { processParkerReport } from "./parker-report.ts";
 import {
   AgentDirectMessageDomainService,
@@ -2122,6 +2123,17 @@ const parkerScheduler = setInterval(
   60_000,
 );
 parkerScheduler.unref();
+
+const taskRecurrenceScheduler = setInterval(
+  () =>
+    void spawnAllDueRecurringTasks().catch((error) =>
+      jsonLog("error", "task.recurrence.failed", {
+        error: error instanceof Error ? error.message : "unknown",
+      }),
+    ),
+  60_000,
+);
+taskRecurrenceScheduler.unref();
 
 for (const name of queueNames.filter((queue) => queue !== "muster-outbox")) {
   const policy = queuePolicies[name];

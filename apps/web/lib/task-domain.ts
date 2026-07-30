@@ -17,6 +17,8 @@ export type TaskMutationContext = {
   traceId: string;
 };
 
+export type RecurrenceCadence = "daily" | "weekly" | "weekdays";
+
 export type TaskInput = {
   idempotencyKey: string;
   title: string;
@@ -29,9 +31,108 @@ export type TaskInput = {
   relatedCaseId: string | null;
   approvalRequired: boolean;
   dueAt: Date | null;
+  recurrenceCadence?: RecurrenceCadence | null;
+  recurrenceTimezone?: string;
+  recurrenceHour?: number;
 };
 
 export type TaskChanges = Partial<Omit<TaskInput, "idempotencyKey">>;
+
+/** Next occurrence after `from` in the given timezone at recurrenceHour local. */
+export function computeNextOccurrence(
+  cadence: RecurrenceCadence,
+  timezone: string,
+  hour: number,
+  from = new Date(),
+): Date {
+  // Use Intl to find local Y/M/D in timezone, then walk forward.
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(from);
+  const get = (type: string) =>
+    Number(parts.find((p) => p.type === type)?.value ?? "0");
+  let year = get("year");
+  let month = get("month");
+  let day = get("day");
+  const localHour = get("hour");
+
+  const asUtcGuess = (y: number, m: number, d: number, h: number) => {
+    // Approximate next local hour by binary-searching UTC so that
+    // formatted local hour matches. Coarse: step days in UTC first.
+    const probe = new Date(Date.UTC(y, m - 1, d, h, 0, 0));
+    // Adjust for timezone offset by comparing formatted hour.
+    for (let i = 0; i < 48; i += 1) {
+      const fmt = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        hour: "numeric",
+        hour12: false,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(probe);
+      const fh = Number(fmt.find((p) => p.type === "hour")?.value ?? "0");
+      const fd = Number(fmt.find((p) => p.type === "day")?.value ?? "0");
+      const fm = Number(fmt.find((p) => p.type === "month")?.value ?? "0");
+      const fy = Number(fmt.find((p) => p.type === "year")?.value ?? "0");
+      if (fy === y && fm === m && fd === d && fh === h) return new Date(probe);
+      probe.setUTCHours(probe.getUTCHours() + (fh < h ? 1 : fh > h ? -1 : 0));
+      if (fh === h) {
+        // day mismatch — shift a day
+        probe.setUTCDate(probe.getUTCDate() + (fd < d ? 1 : -1));
+      }
+    }
+    return new Date(Date.UTC(y, m - 1, d, h, 0, 0));
+  };
+
+  let candidate = asUtcGuess(year, month, day, hour);
+  if (candidate <= from || localHour >= hour) {
+    // Move to next calendar day in local zone, then apply cadence rules.
+    const tomorrow = new Date(from.getTime() + 24 * 60 * 60 * 1000);
+    const tParts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(tomorrow);
+    year = Number(tParts.find((p) => p.type === "year")?.value ?? year);
+    month = Number(tParts.find((p) => p.type === "month")?.value ?? month);
+    day = Number(tParts.find((p) => p.type === "day")?.value ?? day);
+    candidate = asUtcGuess(year, month, day, hour);
+  }
+
+  // Walk forward for weekdays/weekly.
+  for (let i = 0; i < 14; i += 1) {
+    const weekday = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "short",
+    }).format(candidate);
+    if (cadence === "daily") return candidate;
+    if (cadence === "weekdays" && !["Sat", "Sun"].includes(weekday))
+      return candidate;
+    if (cadence === "weekly" && weekday === "Mon") return candidate;
+    // advance one local day
+    candidate = new Date(candidate.getTime() + 24 * 60 * 60 * 1000);
+    // re-snap hour
+    const p = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(candidate);
+    candidate = asUtcGuess(
+      Number(p.find((x) => x.type === "year")?.value),
+      Number(p.find((x) => x.type === "month")?.value),
+      Number(p.find((x) => x.type === "day")?.value),
+      hour,
+    );
+  }
+  return candidate;
+}
 
 type Database = ReturnType<typeof database>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -138,13 +239,29 @@ export async function createTask(
 
     const id = newId();
     await assertReferences(tx, context.organisationId, input);
+    const cadence = input.recurrenceCadence ?? null;
+    const timezone = input.recurrenceTimezone?.trim() || "Australia/Sydney";
+    const hour = Math.min(23, Math.max(0, input.recurrenceHour ?? 7));
+    const nextOccurrenceAt = cadence
+      ? computeNextOccurrence(cadence, timezone, hour)
+      : null;
+    const {
+      recurrenceCadence: _c,
+      recurrenceTimezone: _tz,
+      recurrenceHour: _h,
+      ...base
+    } = input;
     const [created] = await tx
       .insert(schema.tasks)
       .values({
         id,
         organisationId: context.organisationId,
         createdByActorId: context.actorId,
-        ...input,
+        ...base,
+        recurrenceCadence: cadence,
+        recurrenceTimezone: timezone,
+        recurrenceHour: hour,
+        nextOccurrenceAt,
       })
       .onConflictDoNothing({
         target: [schema.tasks.organisationId, schema.tasks.idempotencyKey],
@@ -172,6 +289,8 @@ export async function createTask(
       assignedActorId: input.assignedActorId,
       roomId: input.roomId,
       approvalRequired: input.approvalRequired,
+      recurrenceCadence: cadence,
+      nextOccurrenceAt: nextOccurrenceAt?.toISOString() ?? null,
     });
     if (input.assignedActorId) {
       await recordMutation(tx, context, id, "task.assigned", {
@@ -180,6 +299,34 @@ export async function createTask(
       });
     }
     return { id, created: true };
+  });
+}
+
+/** Soft-archive a task so it leaves the work queue without hard-delete. */
+export async function archiveTask(
+  context: TaskMutationContext,
+  taskId: string,
+) {
+  return database().transaction(async (tx) => {
+    const [updated] = await tx
+      .update(schema.tasks)
+      .set({
+        archivedAt: new Date(),
+        status: "done",
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.tasks.id, taskId),
+          eq(schema.tasks.organisationId, context.organisationId),
+        ),
+      )
+      .returning({ id: schema.tasks.id });
+    if (!updated)
+      throw new ApiProblem(404, "Not found", "Task does not exist.");
+    await recordMutation(tx, context, taskId, "task.archived", {});
+    return { id: taskId };
   });
 }
 

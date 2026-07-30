@@ -320,6 +320,9 @@ export type CreateTaskInput = {
   status?: string;
   assignedActorId: string | null;
   roomId: string | null;
+  recurrenceCadence?: "daily" | "weekly" | "weekdays" | null;
+  recurrenceTimezone?: string;
+  recurrenceHour?: number;
 };
 
 export function useCreateTask() {
@@ -338,11 +341,26 @@ export function useCreateTask() {
   });
 }
 
-/**
- * Cancel a task's in-flight agent run. Without this a run wedged at
- * queued/running (gateway crash, expired lease) blocks re-dispatch forever
- * with no operator escape.
- */
+/** Soft-archive a task (status done + archivedAt). Leaves the work queue. */
+export function useArchiveTask() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (taskId: string) => {
+      const res = await apiPost<{ id: string }>(
+        `/api/v1/tasks/${taskId}/archive`,
+        {},
+      );
+      return res.data;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.tasks }),
+        client.invalidateQueries({ queryKey: queryKeys.commandSummary }),
+      ]);
+    },
+  });
+}
+
 export function useCancelTaskRun() {
   const client = useQueryClient();
   return useMutation({

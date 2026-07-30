@@ -151,6 +151,10 @@ export function TaskComposer({
     seed?.assignedActorId ?? "",
   );
   const [roomId, setRoomId] = useState("");
+  const [recurrenceCadence, setRecurrenceCadence] = useState<
+    "" | "daily" | "weekly" | "weekdays"
+  >("");
+  const [recurrenceHour, setRecurrenceHour] = useState(7);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -160,12 +164,21 @@ export function TaskComposer({
   const isAgent = assignee?.actorType === "agent";
   const agentReady = assignee?.readiness?.state === "ready";
   const busy = createTask.isPending || delegateTask.isPending;
+  const isRecurring = Boolean(recurrenceCadence);
 
   async function submit(dispatch: boolean) {
     setError(null);
     setNotice(null);
     if (!title.trim()) {
       setError("Give the task a title.");
+      return;
+    }
+    // Recurring templates stay on the board as the schedule definition.
+    // Worker spawns ready child instances — never dispatch the template itself.
+    if (dispatch && isRecurring) {
+      setError(
+        "Recurring tasks are templates. Create without dispatch; each occurrence is spawned ready for work.",
+      );
       return;
     }
     try {
@@ -176,11 +189,18 @@ export function TaskComposer({
         status: dispatch ? "ready" : "backlog",
         assignedActorId: assignedActorId || null,
         roomId: roomId || null,
+        recurrenceCadence: recurrenceCadence || null,
+        recurrenceTimezone: "Australia/Sydney",
+        recurrenceHour,
       });
       if (dispatch) {
         const run = await delegateTask.mutateAsync(created.id);
         setNotice(
           `Dispatched to ${assignee?.displayName ?? "agent"} — run ${run.runId.slice(0, 8)} ${run.status}.`,
+        );
+      } else if (isRecurring) {
+        setNotice(
+          `Recurring ${recurrenceCadence} task created. Occurrences spawn automatically around ${recurrenceHour}:00 Australia/Sydney.`,
         );
       }
       onClose();
@@ -300,7 +320,51 @@ export function TaskComposer({
             ))}
           </select>
         </label>
+
+        <label>
+          <span className="mb-1 block text-xs font-medium">Repeat</span>
+          <select
+            value={recurrenceCadence}
+            onChange={(event) =>
+              setRecurrenceCadence(
+                event.target.value as "" | "daily" | "weekly" | "weekdays",
+              )
+            }
+            className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+          >
+            <option value="">Does not repeat</option>
+            <option value="daily">Daily</option>
+            <option value="weekdays">Weekdays (Mon–Fri)</option>
+            <option value="weekly">Weekly (Mondays)</option>
+          </select>
+        </label>
+
+        {isRecurring ? (
+          <label>
+            <span className="mb-1 block text-xs font-medium">
+              Local hour (Australia/Sydney)
+            </span>
+            <select
+              value={recurrenceHour}
+              onChange={(event) => setRecurrenceHour(Number(event.target.value))}
+              className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+            >
+              {Array.from({ length: 24 }, (_, hour) => (
+                <option key={hour} value={hour}>
+                  {String(hour).padStart(2, "0")}:00
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
+
+      {isRecurring ? (
+        <p className="mt-3 text-xs text-muted-foreground">
+          This task is the schedule template. The worker spawns a ready child
+          each occurrence; archive the template to stop future spawns.
+        </p>
+      ) : null}
 
       {assignee ? (
         <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
@@ -343,15 +407,19 @@ export function TaskComposer({
         <Button
           type="button"
           size="sm"
-          disabled={busy || !isAgent || !agentReady}
+          disabled={busy || isRecurring || !isAgent || !agentReady}
           title={
-            !isAgent
-              ? "Assign an agent to dispatch"
-              : !agentReady
-                ? "Agent is not ready"
-                : undefined
+            isRecurring
+              ? "Recurring templates cannot be dispatched"
+              : !isAgent
+                ? "Assign an agent to dispatch"
+                : !agentReady
+                  ? "Agent is not ready"
+                  : undefined
           }
-          className={cn(!isAgent || !agentReady ? "opacity-60" : "")}
+          className={cn(
+            isRecurring || !isAgent || !agentReady ? "opacity-60" : "",
+          )}
           onClick={() => void submit(true)}
         >
           {busy ? "Working…" : "Create and dispatch"}

@@ -1835,6 +1835,17 @@ export const tasks = pgTable(
     agentRunStatus: text("agent_run_status"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    /**
+     * Recurring task template. When set, the worker spawns ordinary child
+     * tasks on cadence and advances nextOccurrenceAt. Null = one-shot.
+     */
+    recurrenceCadence: text("recurrence_cadence"),
+    recurrenceTimezone: text("recurrence_timezone")
+      .notNull()
+      .default("Australia/Sydney"),
+    recurrenceHour: integer("recurrence_hour").notNull().default(7),
+    nextOccurrenceAt: timestamp("next_occurrence_at", { withTimezone: true }),
+    recurrenceSourceTaskId: uuid("recurrence_source_task_id"),
     ...timestamps,
   },
   (table) => [
@@ -1851,6 +1862,14 @@ export const tasks = pgTable(
     uniqueIndex("tasks_org_idempotency_unique").on(
       table.organisationId,
       table.idempotencyKey,
+    ),
+    index("tasks_org_next_occurrence_idx").on(
+      table.organisationId,
+      table.nextOccurrenceAt,
+    ),
+    check(
+      "tasks_recurrence_cadence_check",
+      sql`${table.recurrenceCadence} is null or ${table.recurrenceCadence} in ('daily','weekly','weekdays')`,
     ),
   ],
 );

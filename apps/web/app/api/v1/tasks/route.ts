@@ -21,6 +21,12 @@ const CreateTaskSchema = z.object({
   relatedCaseId: z.string().trim().max(160).nullable().default(null),
   approvalRequired: z.boolean().default(false),
   dueAt: z.iso.datetime({ offset: true }).nullable().default(null),
+  recurrenceCadence: z
+    .enum(["daily", "weekly", "weekdays"])
+    .nullable()
+    .default(null),
+  recurrenceTimezone: z.string().trim().max(80).default("Australia/Sydney"),
+  recurrenceHour: z.number().int().min(0).max(23).default(7),
 });
 
 async function taskView(organisationId: string, includeEvidence: boolean) {

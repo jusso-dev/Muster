@@ -26,6 +26,7 @@ import {
   type ComposerSeed,
 } from "@/features/operations/task-composer";
 import {
+  useArchiveTask,
   useCancelTaskRun,
   useDelegateTask,
   useTasks,
@@ -71,6 +72,9 @@ type RawTask = {
   createdAt: string | Date;
   updatedAt: string | Date;
   agentRunStatus?: string | null;
+  recurrenceCadence?: string | null;
+  nextOccurrenceAt?: string | Date | null;
+  recurrenceSourceTaskId?: string | null;
   run?: {
     id: string;
     status: string;
@@ -87,6 +91,9 @@ type BoardItem = WorkItem & {
   assigneeReadiness: string | null;
   assigneeReadinessReason: string | null;
   agentRunStatus: string | null;
+  recurrenceCadence: string | null;
+  nextOccurrenceAt: string | null;
+  isRecurrenceInstance: boolean;
   run: AgentRunOutcome | null;
 };
 
@@ -121,6 +128,12 @@ function taskToBoardItem(task: RawTask): BoardItem {
       : task.updatedAt.toISOString();
   const rawStatus = asTaskStatus(task.status);
   const isAgent = task.assignee?.actorType === "agent";
+  const nextOccurrenceAt =
+    typeof task.nextOccurrenceAt === "string"
+      ? task.nextOccurrenceAt
+      : task.nextOccurrenceAt
+        ? task.nextOccurrenceAt.toISOString()
+        : null;
   return {
     id: task.id,
     title: task.title,
@@ -138,6 +151,9 @@ function taskToBoardItem(task: RawTask): BoardItem {
     assigneeReadinessReason: task.assignee?.readiness?.reason ?? null,
     // The run row settles in the gateway, so it leads the task's copy of status.
     agentRunStatus: task.run?.status ?? task.agentRunStatus ?? null,
+    recurrenceCadence: task.recurrenceCadence ?? null,
+    nextOccurrenceAt,
+    isRecurrenceInstance: Boolean(task.recurrenceSourceTaskId),
     run: task.run
       ? {
           runId: task.run.id,
@@ -408,6 +424,16 @@ export function OperationsView() {
                                 </p>
                                 <div className="mt-1 flex flex-wrap items-center gap-1">
                                   <SeverityBadge severity={item.severity} compact />
+                                  {item.recurrenceCadence ? (
+                                    <Badge className="bg-muted text-muted-foreground">
+                                      ↻ {item.recurrenceCadence}
+                                    </Badge>
+                                  ) : null}
+                                  {item.isRecurrenceInstance ? (
+                                    <Badge className="bg-muted text-muted-foreground">
+                                      occurrence
+                                    </Badge>
+                                  ) : null}
                                   {item.agentRunStatus ? (
                                     <Badge className="bg-muted text-muted-foreground">
                                       run {item.agentRunStatus}
@@ -494,6 +520,8 @@ export function OperationsView() {
 function DetailDrawer({ item }: { item: BoardItem | null }) {
   const delegateTask = useDelegateTask();
   const cancelRun = useCancelTaskRun();
+  const updateTask = useUpdateTask();
+  const archiveTask = useArchiveTask();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -501,12 +529,17 @@ function DetailDrawer({ item }: { item: BoardItem | null }) {
     return (
       <aside className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
         Select a work item for coordination detail. Drag cards between columns to
-        change status.
+        change status. Review column = agent finished; human marks done or archives.
       </aside>
     );
   }
 
   const blocked = dispatchBlockedReason(item);
+  const busy =
+    delegateTask.isPending ||
+    cancelRun.isPending ||
+    updateTask.isPending ||
+    archiveTask.isPending;
 
   async function dispatch() {
     if (!item) return;
@@ -536,12 +569,51 @@ function DetailDrawer({ item }: { item: BoardItem | null }) {
     }
   }
 
+  async function markDone() {
+    if (!item) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await updateTask.mutateAsync({ id: item.id, status: "done" });
+      setNotice("Marked done.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not mark task done.",
+      );
+    }
+  }
+
+  async function archive() {
+    if (!item) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await archiveTask.mutateAsync(item.id);
+      setNotice(
+        item.recurrenceCadence
+          ? "Template archived — future occurrences stop."
+          : "Archived — removed from the work queue.",
+      );
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not archive task.",
+      );
+    }
+  }
+
   return (
     <aside className="rounded-md border border-border bg-card p-4">
       <h2 className="text-sm font-semibold">{item.title}</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         {item.description || "No description."}
       </p>
+
+      {item.rawStatus === "review" ? (
+        <p className="mt-2 rounded-md border border-[var(--color-warning)]/40 bg-[var(--color-warning-soft)] px-2 py-1.5 text-xs text-[var(--color-warning)]">
+          Agent finished — review the result, then Mark done or Archive. Tasks
+          stay in Review until a human closes them.
+        </p>
+      ) : null}
 
       <div className="mt-3 rounded-md border border-border p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -559,17 +631,45 @@ function DetailDrawer({ item }: { item: BoardItem | null }) {
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={cancelRun.isPending}
+                disabled={busy}
                 onClick={() => void cancel()}
               >
                 {cancelRun.isPending ? "Cancelling…" : "Cancel run"}
               </Button>
             ) : null}
+            {item.rawStatus !== "done" ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void markDone()}
+              >
+                {updateTask.isPending ? "Saving…" : "Mark done"}
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"
-              disabled={Boolean(blocked) || delegateTask.isPending}
-              title={blocked ?? undefined}
+              variant="outline"
+              disabled={busy}
+              onClick={() => void archive()}
+            >
+              {archiveTask.isPending ? "Archiving…" : "Archive"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={
+                Boolean(blocked) ||
+                busy ||
+                Boolean(item.recurrenceCadence)
+              }
+              title={
+                item.recurrenceCadence
+                  ? "Recurring templates are not dispatched; spawn children instead"
+                  : (blocked ?? undefined)
+              }
               onClick={() => void dispatch()}
             >
               {delegateTask.isPending
@@ -581,10 +681,12 @@ function DetailDrawer({ item }: { item: BoardItem | null }) {
           </div>
         </div>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          {blocked ??
-            (isRetry(item)
-              ? `Previous run ${item.agentRunStatus}. Dispatching again starts a fresh run under the agent's governed capability envelope.`
-              : "Runs under the agent's governed capability envelope. External writes stay approval-gated.")}
+          {item.recurrenceCadence
+            ? `Recurring ${item.recurrenceCadence} template. Archive to stop future spawns.`
+            : (blocked ??
+              (isRetry(item)
+                ? `Previous run ${item.agentRunStatus}. Dispatching again starts a fresh run under the agent's governed capability envelope.`
+                : "Runs under the agent's governed capability envelope. External writes stay approval-gated."))}
         </p>
         {error ? (
           <p role="alert" className="mt-1.5 text-xs text-[var(--color-error)]">
@@ -619,6 +721,23 @@ function DetailDrawer({ item }: { item: BoardItem | null }) {
           <dt className="text-muted-foreground">Agent run</dt>
           <dd>{item.agentRunStatus ?? "Not dispatched"}</dd>
         </div>
+        {item.recurrenceCadence ? (
+          <div className="flex justify-between gap-2">
+            <dt className="text-muted-foreground">Recurrence</dt>
+            <dd>
+              {item.recurrenceCadence}
+              {item.nextOccurrenceAt
+                ? ` · next ${relativeTime(item.nextOccurrenceAt)}`
+                : ""}
+            </dd>
+          </div>
+        ) : null}
+        {item.isRecurrenceInstance ? (
+          <div className="flex justify-between gap-2">
+            <dt className="text-muted-foreground">Origin</dt>
+            <dd>Spawned from recurring template</dd>
+          </div>
+        ) : null}
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">System of record</dt>
           <dd className="font-medium">{item.systemOfRecord}</dd>

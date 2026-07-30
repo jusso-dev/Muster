@@ -94,7 +94,17 @@ describe("Task composer", () => {
   it("only enables dispatch for a ready agent", async () => {
     const composer = await source("./task-composer.tsx");
     expect(composer).toContain('assignee?.readiness?.state === "ready"');
-    expect(composer).toContain("disabled={busy || !isAgent || !agentReady}");
+    expect(composer).toContain(
+      "disabled={busy || isRecurring || !isAgent || !agentReady}",
+    );
+  });
+
+  it("lets operators create recurring templates", async () => {
+    const composer = await source("./task-composer.tsx");
+    expect(composer).toContain("recurrenceCadence");
+    expect(composer).toContain("Does not repeat");
+    expect(composer).toContain("Weekdays (Mon–Fri)");
+    expect(composer).toContain("Weekly (Mondays)");
   });
 
   it("takes assignees from the server, never a hardcoded roster", async () => {
@@ -113,6 +123,14 @@ describe("Stuck and failed agent work", () => {
     // queued/running — awaiting_approval wedges a task just as hard.
     expect(view).toContain('"awaiting_approval"');
     expect(view).toContain('"waiting_sources"');
+  });
+
+  it("lets a human close review work without drag", async () => {
+    const view = await source("./operations-view.tsx");
+    expect(view).toContain("Mark done");
+    expect(view).toContain("useArchiveTask");
+    expect(view).toContain("Archive");
+    expect(view).toContain("stay in Review until a human closes them");
   });
 
   it("labels a re-dispatch as a retry and says why", async () => {

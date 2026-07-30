@@ -176,6 +176,13 @@
       "when": 1785412800000,
       "tag": "0024_mission_revisions_org_ops",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1785416400000,
+      "tag": "0025_task_recurrence",
+      "breakpoints": true
     }
   ]
 }
