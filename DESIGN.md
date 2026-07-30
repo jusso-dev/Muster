@@ -34,8 +34,15 @@ Primitives: `apps/web/components/status/status-badges.tsx` and `apps/web/types/s
 
 ## Components
 
-- `CompanyOsShell` application chrome
-- Metric tiles, empty/error/skeleton states
+- `CompanyOsShell` application chrome: grouped sidebar with an active-row
+  indicator, and a top bar carrying organisation context, search (⌘K),
+  approvals bell, theme, and the signed-in actor
+- `Panel` / `PanelLink` titled dashboard containers
+- Metric tiles (value, measured 24h delta, seven-day sparkline),
+  empty/error/skeleton states
+- `Progress` ratio bar and `components/os/charts.tsx` (sparkline, hourly run
+  activity lines, work-status donut) — chart colour comes from tokens and is
+  always paired with a legend label
 - Approval cards in Governance Inbox
 - Work item tables and board mode
 - Agent roster / dossier (existing agents views)
@@ -54,5 +61,8 @@ never as a chat bubble product.
 ## Data rules
 
 - Server-backed queries and mutations only for authoritative state
+- Trends, sparklines, rates, and chart series are computed from stored rows;
+  a tile with no history shows no trend rather than a decorative arrow, and a
+  count and the series beneath it must measure the same window
 - Theme preference may use localStorage; operational state must not
 - Fixture adapters must be labelled `source: fixture` in UI and types

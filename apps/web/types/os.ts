@@ -31,6 +31,20 @@ export type SessionContext = {
   customer: { id: string; name: string } | null;
 };
 
+/**
+ * Change against the immediately preceding window of the same length. Only
+ * present where the database can answer the comparison — a tile with no
+ * honest history shows no trend rather than a decorative arrow.
+ */
+export type MetricTrend = {
+  delta: number;
+  direction: "up" | "down" | "flat";
+  /** What the comparison was, e.g. "vs previous 24h". */
+  label: string;
+  /** Which direction is the good news, so colour never guesses. */
+  improving: "up" | "down" | "neutral";
+};
+
 export type CommandMetric = {
   id: string;
   label: string;
@@ -38,6 +52,62 @@ export type CommandMetric = {
   hint?: string;
   tone?: "default" | "warning" | "danger" | "success";
   href?: string;
+  trend?: MetricTrend;
+  /** Oldest → newest daily counts behind the tile. Omitted when unknown. */
+  series?: number[];
+  /** What the series counts, for the sparkline's accessible description. */
+  seriesLabel?: string;
+};
+
+/** Live distribution of work items by status — the donut is not a sample. */
+export type TaskStatusSlice = {
+  status: string;
+  label: string;
+  count: number;
+};
+
+/** Hourly agent-run buckets over the last 24 hours. */
+export type RunActivityPoint = {
+  /** ISO timestamp for the start of the bucket. */
+  bucket: string;
+  /** Short axis label, local time. */
+  label: string;
+  completed: number;
+  failed: number;
+  running: number;
+  cancelled: number;
+};
+
+export type AgentActivityRow = {
+  id: string;
+  name: string;
+  status: string;
+  runtime: string;
+  runs: number;
+  succeeded: number;
+  /** Null when the agent has no completed runs in the window. */
+  successRate: number | null;
+  lastRunAt: string | null;
+};
+
+export type MyTaskRow = {
+  id: string;
+  title: string;
+  status: OperationalState;
+  rawStatus: string;
+  priority: string;
+  severity: Severity;
+  sourceSystem: string;
+  updatedAt: string;
+  dueAt: string | null;
+  assignedToMe: boolean;
+};
+
+export type IntegrationHealthChip = {
+  id: string;
+  name: string;
+  health: HealthState;
+  detail: string;
 };
 
 export type AttentionItem = {
