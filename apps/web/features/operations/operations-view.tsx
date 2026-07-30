@@ -499,7 +499,7 @@ function DetailDrawer({ item }: { item: BoardItem | null }) {
 
   if (!item) {
     return (
-      <aside className="rounded-md border border-border bg-card p-4 text-xs text-muted-foreground">
+      <aside className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
         Select a work item for coordination detail. Drag cards between columns to
         change status.
       </aside>
