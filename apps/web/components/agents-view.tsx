@@ -15,7 +15,7 @@ import { OpsShell } from "@/components/ops-shell";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 
 type EvidenceState = "reported" | "unavailable" | "unknown";
 type AgentReadiness = {
@@ -130,13 +130,7 @@ export function AgentsView() {
       <PageHeader
         eyebrow="Workforce"
         title="Agent directory"
-        description="Permission-scoped human collaborators with governed learning"
-        actions={
-          <Button disabled title="Agent creation is not available yet">
-            <Bot />
-            New agent
-          </Button>
-        }
+        description="Permission-scoped agents with governed learning"
       />
       <div className="flex items-center gap-2 border-b bg-[var(--color-paper-2)] p-3">
         <label className="flex h-9 min-w-0 max-w-md flex-1 items-center gap-2 rounded-md border bg-background px-3">
@@ -300,17 +294,18 @@ export function AgentDetailView({
         title={agent.name}
         description={`${agent.configuredRuntime} · ${agent.configuredModel} · owned by ${agent.owner}`}
         actions={
-          <Button
-            disabled
+          <Link
+            href="/operations"
+            className={buttonVariants({ variant: "default" })}
             title={
               agent.readiness.state === "ready"
-                ? "Assign work from Tasks"
+                ? "Create a task on the operations board and dispatch it here"
                 : agent.readiness.reason
             }
           >
             <Bot />
-            Invoke
-          </Button>
+            Assign work
+          </Link>
         }
       />
       <div className="flex items-center gap-3 border-b bg-[var(--color-paper-2)] px-4 py-3">
