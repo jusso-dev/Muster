@@ -94,6 +94,63 @@ export function useAgentsDirectory() {
   });
 }
 
+export type DirectoryEntry = {
+  id: string;
+  displayName: string;
+  avatar: string | null;
+  actorType: "human" | "agent" | "system";
+  status: string;
+  capabilityAssignments: string[];
+  jobTitle: string | null;
+  team: string | null;
+  presenceState: string | null;
+  timezone: string | null;
+  lastActiveAt: string | null;
+};
+
+/** Organisation-scoped humans and agents. Server filters by session capability. */
+export function useDirectory(query = "") {
+  return useQuery({
+    queryKey: queryKeys.directory(query),
+    queryFn: async () => {
+      const res = await apiGet<DirectoryEntry[]>(
+        "/api/v1/directory",
+        query ? { q: query } : undefined,
+      );
+      return res.data;
+    },
+    staleTime: 30_000,
+  });
+}
+
+export type AgentManifest = {
+  key: string;
+  version: string;
+  name: string;
+  description: string;
+  invocationModes: string[];
+  requiredCapabilities: string[];
+  approvalBehavior: string;
+  lifecycle: string;
+};
+
+/**
+ * Governed capability packs published by the agent harness. This is the
+ * authoritative install surface — the UI never grants anything.
+ */
+export function useAgentManifests() {
+  return useQuery({
+    queryKey: queryKeys.agentManifests,
+    queryFn: async () => {
+      const res = await apiGet<AgentManifest[]>(
+        "/api/v1/agent-harness/manifests",
+      );
+      return res.data;
+    },
+    staleTime: 60_000,
+  });
+}
+
 export function useMissions() {
   return useQuery({
     queryKey: queryKeys.missions,
@@ -125,6 +182,47 @@ export function useMissionRuns(id: string | undefined) {
       );
       return res.data;
     },
+  });
+}
+
+export type PackHandoffRow = {
+  id: string;
+  status: string;
+  reason: string;
+  summary: string;
+  fromAgent: string;
+  toAgent: string;
+  requestedCapabilities: string[];
+  evidenceReferences: string[];
+  blockedReason: string | null;
+  approvalId: string | null;
+  targetRunId: string | null;
+  taskId: string | null;
+  missionId: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+  dispatchedAt: string | null;
+};
+
+/** Governed agent-to-agent handoffs for one task, mission, or room. */
+export function usePackHandoffs(filters: {
+  taskId?: string;
+  missionId?: string;
+  roomId?: string;
+}) {
+  const enabled = Boolean(filters.taskId || filters.missionId || filters.roomId);
+  return useQuery({
+    queryKey: queryKeys.packHandoffs(filters),
+    enabled,
+    queryFn: async () => {
+      const res = await apiGet<PackHandoffRow[]>("/api/v1/pack-handoffs", {
+        ...(filters.taskId ? { taskId: filters.taskId } : {}),
+        ...(filters.missionId ? { missionId: filters.missionId } : {}),
+        ...(filters.roomId ? { roomId: filters.roomId } : {}),
+      });
+      return res.data;
+    },
+    refetchInterval: 30_000,
   });
 }
 

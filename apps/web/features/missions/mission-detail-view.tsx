@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { CompanyOsShell } from "@/components/os/company-os-shell";
+import { PackHandoffTimeline } from "@/components/os/pack-handoff-timeline";
 import { EmptyState } from "@/components/os/empty-state";
 import { ErrorState } from "@/components/os/error-state";
 import { SkeletonRows } from "@/components/os/skeleton";
@@ -135,6 +136,8 @@ export function MissionDetailView({ missionId }: { missionId: string }) {
             </ul>
           ) : null}
         </section>
+
+        <PackHandoffTimeline missionId={missionId} />
       </div>
     </CompanyOsShell>
   );

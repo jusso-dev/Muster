@@ -27,6 +27,7 @@ import {
   listMissions,
   upsertMission,
 } from "./missions.ts";
+import { requestAgentHandoff } from "./pack-handoff.ts";
 import {
   getKelpieCase,
   getStatus,
@@ -412,6 +413,36 @@ export function createMusterMcpServer(deps: McpServerDeps) {
     async (args) =>
       invoke("muster_accept_mission_run", () =>
         acceptMissionRun(deps.db, deps.context, args, deps.traceId),
+      ),
+  );
+
+  server.registerTool(
+    "muster_request_agent_handoff",
+    {
+      description:
+        "Request a governed pack handoff from one agent to another (Parker/Jessie/Alfie). Only allow-listed routes are accepted; high-risk handoffs create an approval and never dispatch until a human decides. The brief is carried to the target agent as untrusted evidence, never as instructions.",
+      inputSchema: {
+        fromAgent: z.enum(["Parker", "Jessie", "Alfie"]),
+        toAgent: z.enum(["Parker", "Jessie", "Alfie"]),
+        reason: z.enum(["triage", "hunt", "research", "reporting", "response"]),
+        summary: z.string().trim().min(1).max(4_000),
+        idempotencyKey: z.string().trim().min(8).max(200),
+        requestedCapabilities: z
+          .array(z.string().trim().min(1).max(100))
+          .max(20)
+          .optional(),
+        evidenceReferences: z
+          .array(z.string().trim().min(1).max(500))
+          .max(50)
+          .optional(),
+        taskId: z.string().uuid().optional(),
+        roomId: z.string().uuid().optional(),
+        missionId: z.string().uuid().optional(),
+      },
+    },
+    async (args) =>
+      invoke("muster_request_agent_handoff", () =>
+        requestAgentHandoff(deps.db, deps.context, args, deps.traceId),
       ),
   );
 

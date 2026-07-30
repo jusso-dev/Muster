@@ -26,7 +26,7 @@ import {
   decryptConnectorPayload,
   encryptConnectorPayload,
 } from "@muster/integrations";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 const protocolVersion = "muster.agent-harness/v1" as const;
@@ -2087,7 +2087,95 @@ export async function processSlackNotificationJob(
     await deliverSlackRun(aggregateId);
     return true;
   }
+  if (eventType === "pack_handoff.notice") {
+    await deliverPackHandoffNotice(aggregateId);
+    return true;
+  }
   return false;
+}
+
+/**
+ * Post a pack handoff notice into the Slack thread the source run was already
+ * delivering to. Purely informational: no thread is created and nothing is
+ * posted when the handoff did not originate from a Slack conversation.
+ */
+export async function deliverPackHandoffNotice(handoffId: string) {
+  const db = database();
+  const [handoff] = await db
+    .select({
+      id: schema.packHandoffs.id,
+      organisationId: schema.packHandoffs.organisationId,
+      reason: schema.packHandoffs.reason,
+      summary: schema.packHandoffs.summary,
+      status: schema.packHandoffs.status,
+      sourceRunId: schema.packHandoffs.sourceRunId,
+      fromAgentActorId: schema.packHandoffs.fromAgentActorId,
+      toAgentActorId: schema.packHandoffs.toAgentActorId,
+    })
+    .from(schema.packHandoffs)
+    .where(eq(schema.packHandoffs.id, handoffId))
+    .limit(1);
+  if (!handoff?.sourceRunId) return;
+
+  const names = await db
+    .select({ id: schema.actors.id, displayName: schema.actors.displayName })
+    .from(schema.actors)
+    .where(
+      and(
+        eq(schema.actors.organisationId, handoff.organisationId),
+        inArray(schema.actors.id, [
+          handoff.fromAgentActorId,
+          handoff.toAgentActorId,
+        ]),
+      ),
+    );
+  const nameOf = (id: string) =>
+    names.find((actor) => actor.id === id)?.displayName ?? "an agent";
+  const fromName = nameOf(handoff.fromAgentActorId);
+  const toName = nameOf(handoff.toAgentActorId);
+
+  const rows = await db
+    .select({
+      delivery: schema.slackRunDeliveries,
+      installation: schema.slackInstallations,
+    })
+    .from(schema.slackRunDeliveries)
+    .innerJoin(
+      schema.slackInstallations,
+      and(
+        eq(
+          schema.slackInstallations.id,
+          schema.slackRunDeliveries.installationId,
+        ),
+        eq(
+          schema.slackInstallations.organisationId,
+          schema.slackRunDeliveries.organisationId,
+        ),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.slackRunDeliveries.runId, handoff.sourceRunId),
+        eq(schema.slackRunDeliveries.organisationId, handoff.organisationId),
+      ),
+    );
+
+  for (const row of rows) {
+    if (row.installation.status !== "active") continue;
+    const token = (
+      decryptConnectorPayload(
+        row.installation.encryptedBotToken,
+        encryptionKey(),
+      ) as { token: string }
+    ).token;
+    const presentation = slackAgentMessageIdentity(fromName);
+    await slackApi(token, "chat.postMessage", {
+      channel: row.delivery.channelId,
+      thread_ts: row.delivery.threadTs,
+      ...presentation,
+      text: `Handoff to ${toName} (${handoff.reason}): ${slackText(handoff.summary, 600)}`,
+    });
+  }
 }
 
 export async function deliverSlackRun(runId: string) {

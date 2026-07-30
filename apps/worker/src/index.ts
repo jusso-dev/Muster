@@ -30,6 +30,7 @@ import {
   writeOutbox,
 } from "@muster/database";
 import { processSyntheticCleanupObjectDeletion } from "./synthetic-cleanup-object.ts";
+import { processPackHandoffAccepted } from "./pack-handoff.ts";
 import {
   ConnectorConfigurationSchema,
   GovernedConnectorError,
@@ -156,7 +157,8 @@ const authoritativeProcessor: Processor = async (job) => {
     job.queueName === "muster-notifications" &&
     (job.name === "slack.event.received" ||
       job.name === "agent.run.settled" ||
-      job.name === "agent.run.progress")
+      job.name === "agent.run.progress" ||
+      job.name === "pack_handoff.notice")
   ) {
     await processSlackNotificationJob(job.name, job.data.aggregateId);
   }
@@ -193,8 +195,20 @@ const authoritativeProcessor: Processor = async (job) => {
   }
   if (
     job.queueName === "muster-agents" &&
+    job.name === "pack_handoff.accepted"
+  ) {
+    await processPackHandoffAccepted(
+      job.data.organisationId,
+      job.data.aggregateId,
+      job.data.traceId,
+    );
+  }
+  if (
+    job.queueName === "muster-agents" &&
     job.name !== "report.generate.queued" &&
-    job.name !== "agent.direct_message.evaluate"
+    job.name !== "agent.direct_message.evaluate" &&
+    // Dispatch is handled above; it queues its own agent.run.queued wake-up.
+    job.name !== "pack_handoff.accepted"
   ) {
     const gatewayToken = process.env.MUSTER_AGENT_GATEWAY_TOKEN?.trim();
     if (!gatewayToken) throw new Error("Agent gateway token is not configured");

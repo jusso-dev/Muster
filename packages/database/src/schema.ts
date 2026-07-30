@@ -2189,6 +2189,99 @@ export const governedMissionRuns = pgTable(
   ],
 );
 
+/**
+ * Pack handoff v1 — governed agent-to-agent delegation.
+ *
+ * Composite foreign keys pin every actor reference to the same organisation as
+ * the handoff row, so a cross-organisation handoff cannot be persisted even if
+ * an application-layer check is bypassed.
+ */
+export const packHandoffs = pgTable(
+  "pack_handoffs",
+  {
+    id: uuid("id").primaryKey(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    fromAgentActorId: uuid("from_agent_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    toAgentActorId: uuid("to_agent_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    requestedByActorId: uuid("requested_by_actor_id")
+      .notNull()
+      .references(() => actors.id),
+    reason: text("reason").notNull(),
+    status: text("status").notNull().default("pending"),
+    // Redacted, bounded brief. Persisted as evidence for the target agent —
+    // never replayed as system prompt or instruction.
+    summary: text("summary").notNull(),
+    requestedCapabilities: jsonb("requested_capabilities").notNull().default([]),
+    evidenceReferences: jsonb("evidence_references").notNull().default([]),
+    sourceRunId: uuid("source_run_id").references(() => agentRuns.id),
+    targetRunId: uuid("target_run_id").references(() => agentRuns.id),
+    taskId: uuid("task_id").references(() => tasks.id),
+    missionId: uuid("mission_id").references(() => governedMissions.id),
+    roomId: uuid("room_id").references(() => rooms.id),
+    approvalId: uuid("approval_id").references(() => approvals.id),
+    blockedReason: text("blocked_reason"),
+    decidedByActorId: uuid("decided_by_actor_id").references(() => actors.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("pack_handoffs_org_idempotency_unique").on(
+      table.organisationId,
+      table.idempotencyKey,
+    ),
+    index("pack_handoffs_org_status_idx").on(
+      table.organisationId,
+      table.status,
+      table.updatedAt,
+    ),
+    index("pack_handoffs_org_task_idx").on(
+      table.organisationId,
+      table.taskId,
+      table.createdAt,
+    ),
+    index("pack_handoffs_org_mission_idx").on(
+      table.organisationId,
+      table.missionId,
+      table.createdAt,
+    ),
+    check(
+      "pack_handoffs_status_check",
+      sql`${table.status} in ('pending','awaiting_approval','accepted','rejected','blocked','dispatched','cancelled')`,
+    ),
+    check(
+      "pack_handoffs_reason_check",
+      sql`${table.reason} in ('triage','hunt','research','reporting','response')`,
+    ),
+    check(
+      "pack_handoffs_distinct_agents_check",
+      sql`${table.fromAgentActorId} <> ${table.toAgentActorId}`,
+    ),
+    foreignKey({
+      name: "pack_handoffs_from_agent_org_fk",
+      columns: [table.fromAgentActorId, table.organisationId],
+      foreignColumns: [actors.id, actors.organisationId],
+    }),
+    foreignKey({
+      name: "pack_handoffs_to_agent_org_fk",
+      columns: [table.toAgentActorId, table.organisationId],
+      foreignColumns: [actors.id, actors.organisationId],
+    }),
+    foreignKey({
+      name: "pack_handoffs_requester_org_fk",
+      columns: [table.requestedByActorId, table.organisationId],
+      foreignColumns: [actors.id, actors.organisationId],
+    }),
+  ],
+);
+
 export const integrationQueryTemplates = pgTable(
   "integration_query_templates",
   {

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { GripVertical } from "lucide-react";
 import { CompanyOsShell } from "@/components/os/company-os-shell";
+import { PackHandoffTimeline } from "@/components/os/pack-handoff-timeline";
 import { EmptyState } from "@/components/os/empty-state";
 import { ErrorState } from "@/components/os/error-state";
 import { SkeletonRows } from "@/components/os/skeleton";
@@ -408,6 +409,9 @@ function DetailDrawer({ item }: { item: BoardItem | WorkItem | null }) {
           <dd className="break-all font-mono text-xs">{item.id}</dd>
         </div>
       </dl>
+      <div className="mt-3">
+        <PackHandoffTimeline taskId={item.id} />
+      </div>
     </aside>
   );
 }

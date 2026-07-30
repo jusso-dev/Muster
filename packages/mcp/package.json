@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
+    "@muster/agents": "workspace:*",
     "@muster/audit": "workspace:*",
     "@muster/authz": "workspace:*",
     "@muster/config": "workspace:*",

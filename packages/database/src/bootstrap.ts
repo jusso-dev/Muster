@@ -113,6 +113,7 @@ await db
         "kelpie.cases.read",
         "sentinel.rules.read",
         "research.feeds.read",
+        "agents.handoff",
       ],
     },
     {
@@ -131,6 +132,7 @@ await db
         "tawny.hunts.execute",
         "unifi.network.read",
         "sentinel.query.execute",
+        "agents.handoff",
       ],
     },
     {
@@ -144,6 +146,7 @@ await db
         "investigations.read",
         "kelpie.cases.read",
         "audit.read",
+        "agents.handoff",
       ],
     },
     {

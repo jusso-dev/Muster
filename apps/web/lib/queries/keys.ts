@@ -12,4 +12,8 @@ export const queryKeys = {
   connectors: ["connectors"] as const,
   controlPlane: ["control-plane", "status"] as const,
   tasks: ["tasks"] as const,
+  directory: (query: string) => ["directory", query] as const,
+  agentManifests: ["agent-harness", "manifests"] as const,
+  packHandoffs: (filters: Record<string, string | undefined>) =>
+    ["pack-handoffs", filters] as const,
 };

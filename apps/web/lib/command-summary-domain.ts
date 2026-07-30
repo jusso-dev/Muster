@@ -150,6 +150,31 @@ export async function getCommandSummary(
         .limit(50)
     : [];
 
+  // Blocked and approval-stalled pack handoffs are operational debt: an agent
+  // asked for help and nothing is moving. Surface them, do not bury them.
+  const stalledHandoffs = canReadAgents
+    ? await db
+        .select({
+          id: schema.packHandoffs.id,
+          status: schema.packHandoffs.status,
+          reason: schema.packHandoffs.reason,
+          blockedReason: schema.packHandoffs.blockedReason,
+          taskId: schema.packHandoffs.taskId,
+          fromAgentActorId: schema.packHandoffs.fromAgentActorId,
+          toAgentActorId: schema.packHandoffs.toAgentActorId,
+          createdAt: schema.packHandoffs.createdAt,
+        })
+        .from(schema.packHandoffs)
+        .where(
+          and(
+            eq(schema.packHandoffs.organisationId, subject.organisationId),
+            inArray(schema.packHandoffs.status, ["blocked", "awaiting_approval"]),
+          ),
+        )
+        .orderBy(desc(schema.packHandoffs.updatedAt))
+        .limit(25)
+    : [];
+
   const recentAudit = canAdmin
     ? await db
         .select({
@@ -316,6 +341,14 @@ export async function getCommandSummary(
       href: "/missions",
     },
     {
+      id: "blocked-handoffs",
+      label: "Stalled pack handoffs",
+      value: stalledHandoffs.length,
+      tone: stalledHandoffs.length > 0 ? "warning" : "default",
+      href: "/operations",
+      ...(canReadAgents ? {} : { hint: "Requires agents.read" }),
+    },
+    {
       id: "open-tasks",
       label: "Open work items",
       value: openTasks.length,
@@ -379,6 +412,25 @@ export async function getCommandSummary(
       });
     }
   }
+  for (const handoff of stalledHandoffs) {
+    const blocked = handoff.status === "blocked";
+    attention.push({
+      id: `pack-handoff:${handoff.id}`,
+      title: blocked
+        ? `Handoff blocked (${handoff.reason})`
+        : `Handoff awaiting approval (${handoff.reason})`,
+      type: blocked ? "blocked_pack_handoff" : "pending_pack_handoff",
+      severity: blocked ? "high" : "medium",
+      owner: null,
+      age: relativeTime(handoff.createdAt),
+      sourceSystem: "Muster pack",
+      recommendedAction: blocked
+        ? (handoff.blockedReason?.slice(0, 160) ??
+          "Review the refused handoff route")
+        : "Decide the approval before the handoff expires",
+      href: handoff.taskId ? `/operations?task=${handoff.taskId}` : "/approvals",
+    });
+  }
   if (controlPlane) {
     for (const [name, status] of [
       ["Kelpie", controlPlane.kelpie.status],
@@ -432,6 +484,13 @@ export async function getCommandSummary(
             ? "degraded"
             : "healthy",
       count: failedAgentRuns,
+    },
+    {
+      id: "pack-handoffs",
+      label: "Pack handoffs",
+      summary: `${stalledHandoffs.length} stalled`,
+      health: stalledHandoffs.length > 0 ? "degraded" : "healthy",
+      count: stalledHandoffs.length,
     },
     {
       id: "missions",

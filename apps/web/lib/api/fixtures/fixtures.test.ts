@@ -29,7 +29,12 @@ describe("fixture adapters", () => {
     );
     expect(teamsView).not.toContain("FIXTURE_TEAMS");
     expect(capsView).not.toContain("FIXTURE_CAPABILITY_PACKS");
-    expect(teamsView).toContain("No teams configured");
-    expect(capsView).toContain("No installed capabilities listed");
+    // Both views read governed, organisation-scoped APIs. They render whatever
+    // the server returns — including nothing — and never a seeded roster.
+    expect(teamsView).toContain("useDirectory");
+    expect(capsView).toContain("useAgentManifests");
+    expect(capsView).toContain("useDirectory");
+    expect(teamsView).toContain("No directory members visible");
+    expect(capsView).toContain("No capability packs published");
   });
 });

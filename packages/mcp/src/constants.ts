@@ -21,6 +21,7 @@ export const MCP_WRITE_TOOL_NAMES = [
   "muster_export_audit",
   "muster_upsert_mission",
   "muster_accept_mission_run",
+  "muster_request_agent_handoff",
 ] as const;
 
 export const MCP_TOOL_NAMES = [
@@ -48,7 +49,8 @@ export const MCP_TOOL_VERSIONS: Record<McpToolName, string> = {
   muster_get_mission_run: "1.0.0",
   muster_upsert_mission: "1.0.0",
   muster_accept_mission_run: "1.0.0",
+  muster_request_agent_handoff: "1.0.0",
 };
 
 export const MCP_SERVER_NAME = "muster";
-export const MCP_SERVER_VERSION = "0.5.0";
+export const MCP_SERVER_VERSION = "0.6.0";

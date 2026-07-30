@@ -64,6 +64,16 @@ export function problemResponse(error: unknown, traceId: string) {
       ? error
       : error instanceof Error && error.name === "ForbiddenError"
         ? new ApiProblem(403, "Forbidden", error.message)
+        : // Transport-neutral domain errors carry their own status.
+          error instanceof Error &&
+            error.name === "PackHandoffError" &&
+            "status" in error &&
+            "title" in error
+          ? new ApiProblem(
+              (error as { status: number }).status,
+              (error as { title: string }).title,
+              error.message,
+            )
         : error instanceof Error && error.message === "Room membership required"
           ? new ApiProblem(404, "Not found", "Room not found.")
           : error instanceof Error

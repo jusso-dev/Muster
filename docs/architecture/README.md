@@ -107,6 +107,26 @@ sequenceDiagram
   W->>W: Room event + investigation timeline + audit
 ```
 
+## Pack handoff
+
+Agent-to-agent delegation follows an explicit allow-list, never a free mesh.
+See [ADR 0008](0008-pack-handoff.md).
+
+```mermaid
+flowchart LR
+  S[Source agent] --> R[request_agent_handoff]
+  R --> C[agents.handoff + agents.invoke]
+  C --> G{Allowed route?}
+  G -->|no| B[(blocked row + attention item)]
+  G -->|yes| K{High risk or response?}
+  K -->|yes| A[(approval: pack.handoff.high-risk)]
+  A -->|human accepts| D[Dispatch]
+  A -->|human rejects| J[(rejected row)]
+  K -->|no| D
+  D --> Q[Target run with untrusted handoff evidence]
+  D --> N[Slack notice in originating thread]
+```
+
 ## Approval workflow
 
 ```mermaid
