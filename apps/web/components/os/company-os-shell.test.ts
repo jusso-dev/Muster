@@ -24,10 +24,12 @@ describe("Company OS shell foundation", () => {
     }
   });
 
-  it("keeps organisation switcher non-authoritative and disabled until multi-org exists", async () => {
+  it("states the organisation instead of offering a dead switcher", async () => {
     const source = await readFile(shellUrl, "utf8");
+    expect(source).toContain("organisations.length > 1");
     expect(source).toContain('id="org-switcher"');
-    expect(source).toContain("disabled");
+    expect(source).toContain('<span className="sr-only">Organisation: </span>');
+    expect(source).not.toContain("not available yet");
     expect(source).toContain("localStorage.setItem(\"muster-theme\"");
     expect(source).not.toMatch(/localStorage\.setItem\([^\)]*organisation/i);
     expect(source).not.toMatch(/localStorage\.setItem\([^\)]*approval/i);

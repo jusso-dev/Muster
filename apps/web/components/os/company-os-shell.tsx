@@ -245,6 +245,7 @@ export function CompanyOsShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [chosenOrganisationId, setChosenOrganisationId] = useState("");
 
   useEffect(() => {
     const current =
@@ -266,6 +267,10 @@ export function CompanyOsShell({ children }: { children: ReactNode }) {
   const pendingApprovals = command.data?.pendingApprovalCount ?? 0;
   const overallHealth = toHealthState(command.data?.overallHealth ?? "unknown");
   const org = session.data?.organisation;
+  const organisations = session.data?.organisations ?? [];
+  // The switcher only earns its interactivity once a second membership exists;
+  // with one organisation the top bar states it instead of offering a choice.
+  const selectedOrganisationId = chosenOrganisationId || org?.id || "";
   const actor = session.data?.actor;
   const environment = session.data?.environment ?? "unknown";
 
@@ -324,20 +329,33 @@ export function CompanyOsShell({ children }: { children: ReactNode }) {
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <label className="sr-only" htmlFor="org-switcher">
-                Organisation
-              </label>
-              <select
-                id="org-switcher"
-                className="max-w-[12rem] truncate rounded-md border border-border bg-background px-2 py-1 text-xs font-medium"
-                value={org?.id ?? ""}
-                disabled
-                title="Multi-organisation membership is not available yet"
-              >
-                <option value={org?.id ?? ""}>
-                  {org?.name ?? (session.isLoading ? "Loading…" : "Organisation")}
-                </option>
-              </select>
+              {organisations.length > 1 ? (
+                <>
+                  <label className="sr-only" htmlFor="org-switcher">
+                    Organisation
+                  </label>
+                  <select
+                    id="org-switcher"
+                    className="max-w-[12rem] truncate rounded-md border border-border bg-background px-2 py-1 text-xs font-medium"
+                    value={selectedOrganisationId}
+                    onChange={(event) =>
+                      setChosenOrganisationId(event.target.value)
+                    }
+                  >
+                    {organisations.map((membership) => (
+                      <option key={membership.id} value={membership.id}>
+                        {membership.name}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : (
+                <p className="max-w-[12rem] truncate text-xs font-medium">
+                  <span className="sr-only">Organisation: </span>
+                  {org?.name ??
+                    (session.isLoading ? "Loading…" : "Organisation")}
+                </p>
+              )}
               {session.data?.customer ? (
                 <Badge className="bg-muted text-muted-foreground">
                   Customer: {session.data.customer.name}
