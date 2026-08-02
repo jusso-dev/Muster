@@ -21,7 +21,7 @@
     "@muster/evidence": "workspace:*",
     "@muster/integrations": "workspace:*",
     "@muster/rooms": "workspace:*",
-    "bullmq": "5.81.2",
+    "bullmq": "5.81.3",
     "drizzle-orm": "0.45.2",
     "nodemailer": "9.0.3",
     "zod": "4.4.3"
