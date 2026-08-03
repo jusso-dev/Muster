@@ -1,162 +1,127 @@
 # Muster
 
-> Muster is the shared workspace for human and agent-driven security operations.
+> **Ask the stack. Chat stays in Slack.**
 
-Muster connects application telemetry, endpoint detections, security investigations and incident case management in one auditable workspace.
+Muster is an **ops brain** for security tooling — not a chat product and not a case or EDR platform.
 
-**Bring the signal together.**
+It watches upstream systems of record, then exposes a small **HTTP API** and **[Mastra](https://mastra.ai/)** tools so a Slack (or other) agent can answer operational questions with real data.
 
-![Muster security operations workspace](docs/images/muster-security-workspace.png)
+Typical questions:
 
-Muster is a self-hosted workspace where analysts, responders, engineers, security products, and permission-scoped agents work in persistent security rooms. Signals, investigations, approvals, response actions, and linked cases arrive as channel activity instead of separate operational dashboards. Muster complements—not replaces—SIEM, EDR, SOAR, or formal case-management systems.
+- Which endpoints are healthy, stale, or offline?
+- Which incident cases need attention, and what is the MTTR signal?
+- Does this IP, domain, or hash have threat-intelligence context?
+- What is on fire right now? (structured briefing)
 
-## Connected security stack
+Humans talk to **one agent in their workspace chat** (for example Slack). That agent calls Muster tools. Muster does **not** host rooms, DMs, or an in-app conversation UI.
 
-Muster is most useful alongside:
+## Companion products
 
-- [Kelpie](https://github.com/jusso-dev/Kelpie) for authoritative incident response and formal security case management
-- [Tawny](https://github.com/jusso-dev/tawny) for endpoint telemetry, detections, hunting, and bounded response actions
-- [Bower](https://github.com/jusso-dev/bower) for trusted application and legacy-system telemetry delivery health
+Muster is designed to sit alongside (not replace):
 
-Muster links their signals and actions into rooms without duplicating their
-authoritative data models.
+| Role | Example open-source projects |
+|------|------------------------------|
+| Endpoint fleet / detections | [Tawny](https://github.com/jusso-dev/tawny) |
+| Incident cases / IR queue | [Kelpie](https://github.com/jusso-dev/Kelpie) |
+| Threat-intel context API | [Brolga](https://github.com/jusso-dev/Brolga) (often fed by OpenCTI or similar) |
+| Chat UX | Slack, Teams, or any bot host |
 
-## What works
+Connectors are configured with base URLs and API tokens. You can point them at those projects or any compatible APIs.
 
-- Slack-familiar security rooms with channels, direct messages, threads, reactions, mentions, structured event cards, drafts, SSE updates, and responsive navigation
-- A durable task board for assigning bounded work to analysts or permission-scoped Codex agents, with human review and approval gates for external actions
-- Alert, investigation, approval, response, evidence, and linked-case activity rendered directly into durable room timelines
-- Kelpie case, Tawny endpoint, and Bower telemetry-health adapters with explicit mock mode
-- Versioned MSEP contracts, signed ingestion, replay protection, JSON Schema generation, and typed client primitives
-- PostgreSQL-scoped domain services, transactional outbox, nine policy-separated BullMQ queues, idempotency, and hash-chained audit events
-- Better Auth password, verification, TOTP, recovery-code, passkey, OIDC/Entra-ready configuration
-- Capability-based authorisation and default approval policy for response actions
-- Subscription-backed Codex agent runtime, typed outputs, read-only/no-network isolation, cancellation, kill switch, and governed continuous learning
-- PWA shell with safe offline page and local draft preservation; sensitive data is not cached offline
+See [PRODUCT.md](./PRODUCT.md) and [architecture](./docs/architecture/README.md).
 
-## Quick start
+## Repository layout
 
-Requirements: Docker Compose, or Node.js 24+, pnpm 11, PostgreSQL 17+, Redis 8+, and S3-compatible storage.
+```text
+packages/ops/     # Upstream clients + fleet / cases / TI / briefing domain
+apps/ops/         # REST API + Mastra agent and tools  ← start here
+apps/web/         # Optional read-only /ops status page
+```
+
+## Quick start (ops API)
+
+Requirements: Node.js 22+, pnpm 11.
 
 ```bash
-./scripts/bootstrap.sh
+pnpm install
+cp .env.example .env
+# Set TAWNY_*, KELPIE_*, BROLGA_* (as needed), OPENAI_API_KEY, MUSTER_OPS_TOKEN
+
+pnpm dev:ops
+# → http://localhost:3010
 ```
 
-Or start everything directly:
+### REST
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/health` | Liveness |
+| `GET` | `/api/v1/briefing` | Combined “what’s on fire” payload |
+| `GET` | `/api/v1/fleet` | Endpoint fleet health |
+| `GET` | `/api/v1/cases/open` | Open / aging cases |
+| `GET` | `/api/v1/brolga/stats` | TI store volume |
+| `POST` | `/api/v1/ti/lookup` | Body `{ "kind", "value" }` → TI context |
+| `POST` | `/api/v1/agent/generate` | Body `{ "message" }` → Mastra agent reply |
+| `GET` | `/api/v1/tools` | Tool ids for bot wiring |
+
+If `MUSTER_OPS_TOKEN` is set, send `Authorization: Bearer <token>` on `/api/v1/*`.
+
+### Mastra tools
+
+| Tool | Use |
+|------|-----|
+| `fleet_list` / `fleet_host` | Host healthy / stale / offline |
+| `cases_open` | Open cases, aging, MTTR hint |
+| `ti_lookup` | Observable TI via Brolga-compatible API |
+| `brolga_stats` | TI store counts |
+| `ops_briefing` | Single digest for Slack or cron |
+
+Wire a Slack bot to `POST /api/v1/agent/generate`, or import tools from `apps/ops/src/mastra` into your own Mastra host. See [docs/operations/slack.md](./docs/operations/slack.md) and [Mastra docs](https://mastra.ai/docs).
+
+## Docker
 
 ```bash
-docker compose up --build
+cp .env.example .env
+# fill upstream URLs and tokens
+
+docker compose up -d --build ops
+curl -sS http://127.0.0.1:3010/health
 ```
 
-Published releases are available from GitHub Container Registry:
+Optional status UI:
 
 ```bash
-docker pull ghcr.io/jusso-dev/muster:latest
+docker compose --profile ui up -d --build
 ```
 
-The default CI workflow publishes an Intel/AMD `linux/amd64` image as `latest`,
-version tags, and immutable SHA tags with SBOM and provenance on pushes to
-`main`. Its final publication gate logs out of GHCR and verifies an anonymous
-pull, so CI fails if the package is not public.
+See [docs/operations/deployment.md](./docs/operations/deployment.md).
 
-Muster uses the Codex SDK and your ChatGPT Codex subscription for agent runs.
-Authenticate the persistent private Docker volume once:
+## Optional web UI
 
 ```bash
-docker compose --profile setup run --rm codex-login
+export MUSTER_OPS_URL=http://127.0.0.1:3010
+pnpm dev:web
+# open http://localhost:3000/ops
 ```
 
-The gateway never uses the credential as an OpenAI API key. Codex runs receive
-organisation-scoped PostgreSQL context, typed output schemas, an empty read-only
-workspace, disabled network/web search, and no action approval. State-changing
-security actions still use Muster tools and approval records outside Codex.
-
-For a single-node homelab installation that pulls the public image:
-
-```bash
-./scripts/install-homelab.sh
-```
-
-The homelab example listens on port `3004` and trusts both
-`http://192.168.1.19:3004` and `http://homelab:3004`.
-
-Open:
-
-- Muster: http://localhost:3000
-- Mailpit: http://localhost:8025
-- MinIO console: http://localhost:9001
-
-The bootstrap prints generated local credentials. New installations contain only
-the workspace administrator, empty starter rooms, and permission-scoped agent
-definitions—no synthetic operational activity. Demonstration data is opt-in and
-reserved for tests and screenshot generation. Mock integrations remain visibly
-labelled; mock success is never represented as production delivery.
-
-## Architecture
-
-```mermaid
-flowchart LR
-  B[Browser/PWA] -->|HTTP commands| W[Next.js web]
-  W --> P[(PostgreSQL)]
-  W -->|transactional outbox| P
-  W -->|SSE| B
-  P --> O[Outbox dispatcher]
-  O --> Q[Redis + BullMQ]
-  Q --> K[Worker]
-  Q --> G[Agent gateway]
-  K --> E[S3-compatible evidence]
-  K --> X[Kelpie · Tawny · Bower · Sentinel]
-  G --> R[Codex SDK · ChatGPT subscription]
-  K -->|ephemeral fan-out| W
-```
-
-PostgreSQL is authoritative. Redis holds execution and ephemeral fan-out state only. Kelpie remains authoritative for formal cases; Tawny for endpoint telemetry and bounded response; Bower for application telemetry selection and delivery evidence.
-
-See [architecture](docs/architecture/README.md), [current upstream contracts](docs/integrations/current-upstream-contracts.md), and [threat model](docs/security/threat-model.md).
+Read-only briefing only. Chat remains in Slack.
 
 ## Development
 
 ```bash
 pnpm install
-pnpm db:migrate
-pnpm db:bootstrap
-pnpm dev
-```
-
-To populate a disposable database for screenshots or tests only:
-
-```bash
-MUSTER_DEMO_MODE=true NEXT_PUBLIC_MUSTER_DEMO_MODE=true pnpm db:seed
-```
-
-Quality gates:
-
-```bash
-pnpm lint
 pnpm typecheck
 pnpm test
-pnpm build
-pnpm test:e2e
-pnpm screenshots
+pnpm dev:ops
 ```
 
-Public API contracts are under `/api/v1`; see [OpenAPI](docs/openapi.yaml). Generate MSEP JSON Schemas with `pnpm contracts:generate`.
+## Security
 
-## Security model
-
-- Every domain record and query is organisation scoped.
-- Routes, services, workers, integration tools, and agent tools enforce capabilities server-side.
-- Dangerous state changes require an approval record; detection publication requires two approvers; evidence deletion is prohibited.
-- Telemetry, files, URLs, documents, comments, and tool results enter prompts only as `untrusted_evidence`.
-- Agent memories are evidence-backed. Skill proposals are immutable, evaluated, human-approved, versioned, and reversible; they cannot expand their own tools, permissions, data allowance, runtime, token, or cost limits.
-- Evidence uses private object storage, short-lived access, hash verification, classification, quarantine, and audit metadata.
-
-Read [SECURITY.md](SECURITY.md) before production use.
-
-## Project status
-
-This repository is an MVP reference implementation. External-product mocks are suitable only for local demonstration. Validate real connector versions, identity policies, retention, object lock, malware scanning, egress controls, backups, and high-availability design before production rollout.
+- Prefer private networks (LAN, VPC, Tailscale) for the ops API.
+- Require `MUSTER_OPS_TOKEN` outside local dev.
+- Upstream tokens need only read scopes where possible.
+- Report vulnerabilities privately — see [SECURITY.md](./SECURITY.md).
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](./LICENSE).

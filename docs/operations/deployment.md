@@ -1,29 +1,65 @@
-# Production deployment
+# Deployment
 
-Docker Compose is the supported development and single-node evaluation topology. Production may use equivalent containers or Helm/Terraform modules after local security review.
+## Requirements
 
-Required services: PostgreSQL, Redis, private S3-compatible object storage, web replicas, worker replicas, agent gateway, SMTP, and configured product connectors. Terminate TLS at a trusted proxy. Keep PostgreSQL/object storage private; Redis must not be internet reachable.
+- Docker Compose **or** Node.js 22+ and pnpm 11  
+- Network reachability to the upstream APIs you configure (endpoint, case, TI)  
+- An LLM API key if you use `POST /api/v1/agent/generate` (Mastra model router)  
 
-Before go-live:
+No PostgreSQL or Redis is required for the ops API path.
 
-- replace every example secret and disable all mocks
-- enforce SSO/MFA, approved domains, and least privilege
-- configure malware scanning, object lock, lifecycle, legal hold, and egress policy
-- set connector timeouts/rate limits and test idempotent retries
-- centralise JSON logs, metrics, traces, and hash-chain audit exports
-- test backup/restore and response kill switches
+## Configuration
 
-Scale web processes independently. SSE fan-out uses Redis pub/sub; durable events remain in PostgreSQL. Scale workers per queue policy and integration rate limit.
+Copy [`.env.example`](../../.env.example) and set:
 
-## Codex subscription authentication
+| Variable | Purpose |
+|----------|---------|
+| `TAWNY_BASE_URL` / `TAWNY_API_TOKEN` | Endpoint fleet API |
+| `KELPIE_BASE_URL` / `KELPIE_API_TOKEN` | Case / IR API |
+| `BROLGA_BASE_URL` / `BROLGA_API_TOKEN` | Threat-intel context API |
+| `MUSTER_OPS_TOKEN` | Bearer token for `/api/v1/*` (recommended) |
+| `OPENAI_API_KEY` (or other provider env) | Required for Mastra agent generate |
+| `MUSTER_MASTRA_MODEL` | Model id, e.g. `openai/gpt-5-mini` |
+| `MUSTER_FLEET_STALE_MINUTES` | Heartbeat staleness threshold (default 15) |
+| `MUSTER_CASE_AGING_HOURS` | Open-case aging threshold (default 24) |
 
-The Codex credential is runtime state, not image content. Authenticate once:
+You may omit an upstream if you do not use that tool; the briefing will report it as unconfigured.
+
+## Docker (API only)
 
 ```bash
-docker compose --profile setup run --rm codex-login
+cp .env.example .env
+# edit secrets and upstream URLs
+
+docker compose up -d --build ops
+curl -sS http://127.0.0.1:3010/health
 ```
 
-Compose stores the resulting `auth.json` in the private `codex-state` volume.
-Restrict Docker access, never publish or log this file, and revoke the Codex
-session if the host is compromised. The gateway reports
-`authentication_required` until the credential exists.
+## Docker (API + status UI)
+
+```bash
+docker compose --profile ui up -d --build
+# ops :3010, web :3000
+```
+
+Set `MUSTER_OPS_URL` for the web service (compose default is `http://ops:3010`).
+
+## Local development
+
+```bash
+pnpm install
+pnpm dev:ops          # API + Mastra
+pnpm dev:web          # optional UI
+```
+
+## Network exposure
+
+Prefer private networks (LAN, VPC, Tailscale, reverse proxy with auth). Do not expose the ops port to the public internet without TLS and a strong `MUSTER_OPS_TOKEN`.
+
+## Health checks
+
+```bash
+curl -sS http://127.0.0.1:3010/health
+curl -sS -H "Authorization: Bearer $MUSTER_OPS_TOKEN" \
+  http://127.0.0.1:3010/api/v1/briefing
+```

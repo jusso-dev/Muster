@@ -4,50 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --hostname 0.0.0.0",
+    "dev": "next dev --hostname 0.0.0.0 --port 3000",
     "build": "next build",
-    "start": "next start --hostname 0.0.0.0",
+    "start": "next start --hostname 0.0.0.0 --port 3000",
     "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit",
-    "test": "vitest run"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@fontsource-variable/ibm-plex-sans": "^5.2.7",
-    "@fontsource-variable/jetbrains-mono": "^5.2.7",
-    "@monaco-editor/react": "4.7.0",
-    "@muster/auth": "workspace:*",
-    "@muster/authz": "workspace:*",
-    "@muster/contracts": "workspace:*",
-    "@muster/database": "workspace:*",
-    "@muster/event-protocol": "workspace:*",
-    "@muster/investigations": "workspace:*",
-    "@muster/rooms": "workspace:*",
-    "@tailwindcss/postcss": "4.3.3",
-    "@tanstack/react-query": "5.101.4",
-    "@tanstack/react-table": "8.21.3",
-    "@tiptap/extension-placeholder": "3.29.0",
-    "@tiptap/react": "3.29.0",
-    "@tiptap/starter-kit": "3.29.0",
-    "better-auth": "1.6.25",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "drizzle-orm": "0.45.2",
-    "ioredis": "5.8.2",
-    "lucide-react": "1.27.0",
     "next": "16.2.12",
-    "radix-ui": "^1.4.3",
     "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "recharts": "3.10.1",
-    "tailwind-merge": "^3.3.1",
-    "tailwindcss": "4.3.3",
-    "zod": "4.4.3"
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
-    "typescript": "catalog:",
-    "vitest": "4.1.10"
+    "typescript": "5.9.3"
   }
 }

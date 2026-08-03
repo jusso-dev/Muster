@@ -1,45 +1,59 @@
-# Muster Product Context
-
-## Register
-
-product
+# Muster product
 
 ## Users
 
-Muster serves experienced security analysts, incident responders, detection engineers, threat hunters, security managers, auditors, and trusted AI agents. Users work under time pressure across alert triage, investigation, approval, response, and incident coordination. They need dense, trustworthy context without losing provenance or tenant boundaries.
+Security operators and a **workspace chat agent** (for example Slack). People chat in Slack or Teams, not inside Muster. The agent calls Muster tools to answer fleet, case, and threat-intel questions under time pressure.
 
-## Product Purpose
+## Purpose
 
-Muster is the shared workspace for human and agent-driven security operations.
+**Muster is an ops brain for a security stack — not a chat product.**
 
-Muster connects application telemetry, endpoint detections, security investigations and incident case management in one auditable workspace. Persistent rooms are the primary operating surface: related signals, human discussion, agent work, evidence, approvals, response results, and authoritative Kelpie case links become one searchable channel history.
+It reads from systems of record and answers operational questions through tools:
 
-Tagline: Bring the signal together.
+| Upstream role | Typical authority |
+|---------------|-------------------|
+| Endpoint platform | Fleet health, host last-seen, detections |
+| Case / IR platform | Open cases, aging, MTTR / SLA signals |
+| Threat-intel API | Context packs for IPs, domains, hashes |
 
-## Brand Personality
+Reference open-source companions (optional, swappable):
 
-Credible, utilitarian, restrained. Muster should feel calm under pressure, precise about state and authority, and familiar to experienced operators. Language is direct and evidence-led.
+- [Tawny](https://github.com/jusso-dev/tawny) — endpoints  
+- [Kelpie](https://github.com/jusso-dev/Kelpie) — cases  
+- [Brolga](https://github.com/jusso-dev/Brolga) — TI context (often fed by OpenCTI or similar)  
 
-## Anti-references
+Muster exposes:
 
-- Generic admin-template reskins
-- Neon cyberpunk, hacker, Matrix, or glowing visual treatments
-- Decorative executive dashboards
-- Excessive gradients, giant metric cards, and low-density whitespace
-- Cartoon mascots or robot emoji as agent identity
-- AI sparkle iconography and hype-heavy autonomy claims
-- Slack branding or copied proprietary assets
-- Interfaces that blur mocks, recommendations, approvals, and executed actions
+- **HTTP API** for bots and automation  
+- **Mastra tools + agent** ([mastra.ai](https://mastra.ai/)) for tool-calling hosts  
+- **Thin status UI** (optional) — read-only briefing, not the operating surface  
 
-## Design Principles
+Tagline: **Ask the stack. Chat stays in Slack.**
 
-1. Keep the interaction model immediately familiar to users of channel-based collaboration tools.
-2. Make state, ownership, severity, and next action obvious inside room activity.
-3. Keep conversation lightweight while giving structured security records distinct forms.
-4. Preserve evidence, decisions, approvals, and provenance in the operating flow.
-5. Prefer familiar collaboration patterns and deterministic behaviour over novelty.
-6. Make dangerous actions visibly gated and mock integrations unmistakable.
+## What Muster is not
 
-## Accessibility & Inclusion
+- Not a replacement for Slack / Teams (no rooms or DMs as product)  
+- Not the case system of record  
+- Not an EDR or telemetry warehouse  
+- Not a TI collector or feed pipeline  
+- Not an autonomous response engine (no silent isolate/kill without upstream approval)  
 
-Target WCAG 2.2 AA where practical. Support full keyboard navigation, visible focus, screen-reader labels, semantic structure, reduced motion, high contrast, text zoom, touch targets, and non-colour severity cues. Desktop is primary; tablet remains fully usable; mobile supports essential triage, room, thread, approval, case, and notification tasks.
+## Primary jobs
+
+1. **Fleet** — which hosts are healthy, stale, offline, noisy  
+2. **Compromise signal** — host alerts + TI context on related observables  
+3. **TI lookup** — context for an IP, domain, or hash  
+4. **IR queue** — open cases, aging, unassigned, MTTR hints  
+5. **Briefing** — one structured “what’s on fire” payload for digests and bots  
+
+## Design principles
+
+1. Chat UX lives in the workspace; Muster is tools and facts.  
+2. Every answer should cite the upstream source.  
+3. Prefer fail-closed, explicit configuration over silent mocks in production.  
+4. Propose dangerous actions only; execution stays in the authoritative product.  
+5. Small surface: API + Mastra tools first; UI last.  
+
+## Brand personality
+
+Credible, utilitarian, restrained. Direct and evidence-led. No AI sparkle theatre, no fake autonomy claims.

@@ -1,215 +1,58 @@
-x-muster-environment: &muster-environment
+# Muster ops brain — no chat UI, no rooms, no Codex gateway.
+# Chat is in Slack; this stack is REST + Mastra tools (+ optional status web).
+
+x-ops-env: &ops-env
   NODE_ENV: production
-  DATABASE_URL: postgresql://muster:muster@postgres:5432/muster
-  REDIS_URL: redis://redis:6379
-  BETTER_AUTH_URL: http://localhost:3000
-  AUTH_TRUSTED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
-  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-local-only-change-me-32-characters}
-  AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
-  AUTH_SECURE_COOKIES: "false"
-  AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-1000}
-  AUTH_SENSITIVE_RATE_LIMIT_MAX: ${AUTH_SENSITIVE_RATE_LIMIT_MAX:-100}
-  MUSTER_LOCAL_ADMIN_EMAIL: ${MUSTER_LOCAL_ADMIN_EMAIL:-admin@muster.local}
-  MUSTER_ORGANISATION_NAME: ${MUSTER_ORGANISATION_NAME:-Muster Workspace}
-  MUSTER_ORGANISATION_SLUG: ${MUSTER_ORGANISATION_SLUG:-muster}
-  MUSTER_DEFAULT_TIMEZONE: ${MUSTER_DEFAULT_TIMEZONE:-UTC}
-  OBJECT_STORAGE_ENDPOINT: http://minio:9000
-  OBJECT_STORAGE_REGION: us-east-1
-  OBJECT_STORAGE_BUCKET: muster-evidence
-  OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-muster}
-  OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-local-minio-secret}
-  SMTP_HOST: mailpit
-  SMTP_PORT: 1025
-  KELPIE_BASE_URL: http://mock-kelpie:4011
-  KELPIE_API_TOKEN: mock-kelpie-token
-  TAWNY_BASE_URL: http://mock-tawny:4012
-  TAWNY_API_TOKEN: mock-tawny-token
-  BOWER_BASE_URL: http://mock-bower:4013
-  BOWER_API_TOKEN: mock-bower-token
-  MUSTER_MOCK_INTEGRATIONS: "true"
-  MUSTER_AGENT_RUNTIME: ${MUSTER_AGENT_RUNTIME:-codex}
-  AGENT_GATEWAY_URL: http://agent-gateway:3002
-  CODEX_HOME: /var/lib/muster/codex
+  MUSTER_OPS_PORT: "3010"
+  MUSTER_OPS_TOKEN: ${MUSTER_OPS_TOKEN:-}
+  MUSTER_MASTRA_MODEL: ${MUSTER_MASTRA_MODEL:-openai/gpt-5-mini}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  TAWNY_BASE_URL: ${TAWNY_BASE_URL:-}
+  TAWNY_API_TOKEN: ${TAWNY_API_TOKEN:-}
+  KELPIE_BASE_URL: ${KELPIE_BASE_URL:-}
+  KELPIE_API_TOKEN: ${KELPIE_API_TOKEN:-}
+  BROLGA_BASE_URL: ${BROLGA_BASE_URL:-}
+  BROLGA_API_TOKEN: ${BROLGA_API_TOKEN:-}
+  MUSTER_FLEET_STALE_MINUTES: ${MUSTER_FLEET_STALE_MINUTES:-15}
+  MUSTER_CASE_AGING_HOURS: ${MUSTER_CASE_AGING_HOURS:-24}
 
 services:
-  postgres:
-    image: postgres:17.6-bookworm
-    environment:
-      POSTGRES_USER: muster
-      POSTGRES_PASSWORD: muster
-      POSTGRES_DB: muster
-    volumes:
-      - muster-postgres:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U muster -d muster"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  redis:
-    image: redis:8.2.1-bookworm
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes:
-      - muster-redis:/data
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY:-muster}
-      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY:-local-minio-secret}
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - muster-minio:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
-    depends_on:
-      minio:
-        condition: service_healthy
-    environment:
-      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY:-muster}
-      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY:-local-minio-secret}
-    entrypoint:
-      - /bin/sh
-      - -c
-      - >
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
-        mc mb --ignore-existing local/muster-evidence &&
-        mc version enable local/muster-evidence &&
-        mc anonymous set none local/muster-evidence
-
-  mailpit:
-    image: axllent/mailpit:v1.27.8
-    ports:
-      - "1025:1025"
-      - "8025:8025"
-
-  web:
-    image: muster:local
+  ops:
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["/app/runtime/boot-web.mjs"]
+      target: ops
     environment:
-      <<: *muster-environment
-      MUSTER_HEALTHCHECK_URL: http://localhost:3000/api/v1/health
+      <<: *ops-env
     ports:
-      - "3000:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
+      - "${MUSTER_OPS_PORT:-3010}:3010"
     healthcheck:
-      test: ["CMD", "/nodejs/bin/node", "/app/runtime/healthcheck.mjs"]
-      interval: 10s
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3010/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
       timeout: 5s
-      retries: 30
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
 
-  worker:
-    image: muster:local
+  web:
+    profiles: ["ui"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
     environment:
-      <<: *muster-environment
-      MUSTER_HEALTHCHECK_URL: http://localhost:3001/ready
-    command: ["/app/worker/dist/index.js"]
+      NODE_ENV: production
+      MUSTER_OPS_URL: ${MUSTER_OPS_URL:-http://ops:3010}
+      MUSTER_OPS_TOKEN: ${MUSTER_OPS_TOKEN:-}
+    ports:
+      - "${MUSTER_WEB_PORT:-3000}:3000"
     depends_on:
-      web:
+      ops:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/nodejs/bin/node", "/app/runtime/healthcheck.mjs"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-
-  agent-gateway:
-    image: muster:local
-    environment:
-      <<: *muster-environment
-      MUSTER_HEALTHCHECK_URL: http://localhost:3002/ready
-    command: ["/app/agent-gateway/dist/index.js"]
-    volumes:
-      - muster-codex:/var/lib/muster/codex
-    ports:
-      - "3002:3002"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/nodejs/bin/node", "/app/runtime/healthcheck.mjs"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-
-  codex-login:
-    image: muster:local
-    profiles: ["setup"]
-    environment:
-      CODEX_HOME: /var/lib/muster/codex
-    command: ["/app/agent-gateway/dist/codex-login.js"]
-    volumes:
-      - muster-codex:/var/lib/muster/codex
-    stdin_open: true
-    tty: true
-
-  mock-kelpie:
-    image: node:24-bookworm-slim
-    working_dir: /mock
-    command: ["node", "mock.mjs"]
-    environment:
-      PORT: 4011
-      MOCK_PRODUCT: Kelpie
-    volumes:
-      - ./integrations/kelpie/mock.mjs:/mock/mock.mjs:ro
-    ports:
-      - "4011:4011"
-
-  mock-tawny:
-    image: node:24-bookworm-slim
-    working_dir: /mock
-    command: ["node", "mock.mjs"]
-    environment:
-      PORT: 4012
-      MOCK_PRODUCT: Tawny
-    volumes:
-      - ./integrations/tawny/mock.mjs:/mock/mock.mjs:ro
-    ports:
-      - "4012:4012"
-
-  mock-bower:
-    image: node:24-bookworm-slim
-    working_dir: /mock
-    command: ["node", "mock.mjs"]
-    environment:
-      PORT: 4013
-      MOCK_PRODUCT: Bower
-    volumes:
-      - ./integrations/bower/mock.mjs:/mock/mock.mjs:ro
-    ports:
-      - "4013:4013"
-
-volumes:
-  muster-postgres:
-  muster-redis:
-  muster-minio:
-  muster-codex:
+    restart: unless-stopped

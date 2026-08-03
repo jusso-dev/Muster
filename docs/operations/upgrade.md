@@ -1,7 +1,29 @@
-# Upgrade process
+# Upgrade
 
-Read release notes and connector compatibility first. Back up PostgreSQL and evidence metadata. Test the new image against a restored staging copy with mocks disabled only for dedicated non-production connector instances.
+## Container
 
-Run migration verification, tenant-boundary tests, workflow parsing, MSEP compatibility, and connector health. Apply additive database migrations before rolling web/worker/gateway processes. Keep the previous image available until queue age, SSE, search, audit chain, and the required demonstration workflow are healthy.
+```bash
+docker compose pull   # if using published images
+docker compose up -d --build ops
+curl -sS http://127.0.0.1:3010/health
+```
 
-Downgrade only when release notes declare it safe. Database migrations and published workflow/agent versions may require forward repair rather than binary rollback.
+## From source
+
+```bash
+git pull
+pnpm install
+pnpm typecheck
+pnpm test
+pnpm dev:ops   # or rebuild/restart your process manager
+```
+
+## Breaking changes
+
+- Watch release notes for env renames and REST path changes.  
+- Upstream API shape changes may require connector updates in `packages/ops`.  
+- Mastra and model ids change over time; verify `MUSTER_MASTRA_MODEL` against current Mastra docs.  
+
+## Rollback
+
+Redeploy the previous image tag or git revision and restore the previous env file. Because ops is stateless, rollback does not require database migration reverse steps.

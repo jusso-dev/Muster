@@ -1,25 +1,43 @@
-# Contributing to Muster
+# Contributing
 
-Thank you for improving the shared workspace for human and agent-driven security operations.
+## Product
 
-## Ground rules
+Muster is an **ops brain** (HTTP API + Mastra tools). Chat lives in Slack or another bot host.  
+See [PRODUCT.md](./PRODUCT.md) and [AGENTS.md](./AGENTS.md).
 
-- Follow [AGENTS.md](AGENTS.md).
-- Keep PostgreSQL authoritative and every domain operation organisation scoped.
-- Preserve audit and message history. Never weaken an approval, capability, prompt-trust, evidence, or integration boundary to simplify a feature.
-- Use synthetic fixtures only.
-- Add tests for behaviour and failure recovery, not implementation details.
-- Do not claim a mock connector completed a production action.
+## Local setup
 
-## Workflow
+```bash
+pnpm install
+pnpm typecheck
+pnpm test
+pnpm dev:ops
+```
 
-1. Open an issue describing the operator problem and security impact.
-2. Add or update an architecture decision record for material boundary changes.
-3. Run `pnpm check` and the relevant Playwright project.
-4. Explain migrations, capability changes, connector compatibility, and rollback in the pull request.
+Optional status UI:
 
-Commit generated migrations and public JSON Schemas. Do not hand-edit generated Drizzle snapshots.
+```bash
+export MUSTER_OPS_URL=http://127.0.0.1:3010
+pnpm dev:web
+```
 
-## Developer certificate
+## Layout
 
-By contributing, you certify that you have the right to submit the work under Apache-2.0 and agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
+| Path | Role |
+|------|------|
+| `packages/ops` | Upstream clients and domain logic |
+| `apps/ops` | REST + Mastra agent/tools |
+| `apps/web` | Optional `/ops` status page |
+
+Do not reintroduce rooms, DMs, or in-app agent chat as product features.
+
+## Pull requests
+
+- Keep changes focused.  
+- Add or update tests for domain logic when behaviour changes.  
+- Update public docs when APIs or env vars change.  
+- Do not commit secrets or production data.  
+
+## Code of conduct
+
+See [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md).

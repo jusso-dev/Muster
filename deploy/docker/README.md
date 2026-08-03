@@ -1,17 +1,20 @@
-# Docker deployment
+# Docker
 
-The root `Dockerfile` builds web, worker, and agent-gateway artifacts. The root Compose file is the reference single-node local topology. Pin and scan the resulting image digest in production.
-
-The homelab profile pulls the public GHCR image and keeps PostgreSQL, Redis,
-MinIO, Mailpit, and synthetic product mocks on the internal Compose network:
+## Ops API
 
 ```bash
-./scripts/install-homelab.sh
+cp ../../.env.example ../../.env
+# edit upstream URLs and tokens
+
+cd ../..
+docker compose up -d --build ops
+curl -sS http://127.0.0.1:3010/health
 ```
 
-The installer creates a mode-600 `.env.homelab`, generates independent
-database, authentication, storage, and administrator secrets, pulls the public
-image, starts the stack, waits for health, and creates the local administrator.
-Only Muster's configured HTTP port is published. The default uses plain HTTP
-for the trusted local network at `192.168.1.19`; use an HTTPS reverse proxy and set
-`AUTH_SECURE_COOKIES=true` when exposing Muster beyond it.
+## With optional status UI
+
+```bash
+docker compose --profile ui up -d --build
+```
+
+The CI pipeline publishes the `ops` image target to GHCR on pushes to `main`.

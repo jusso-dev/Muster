@@ -1,35 +1,25 @@
 {
   "name": "muster",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "The shared workspace for human and agent-driven security operations.",
+  "description": "Ops brain for Tawny fleet, Kelpie cases, and Brolga TI — Mastra tools for Slack; no in-app chat.",
   "license": "Apache-2.0",
   "packageManager": "pnpm@11.17.0",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
-    "build": "turbo build",
-    "dev": "turbo dev --parallel",
-    "lint": "turbo lint",
-    "typecheck": "turbo typecheck",
-    "test": "turbo test",
-    "test:unit": "vitest run",
-    "test:e2e": "playwright test",
-    "contracts:generate": "pnpm --filter @muster/contracts generate",
-    "db:generate": "pnpm --filter @muster/database generate",
-    "db:migrate": "pnpm --filter @muster/database migrate",
-    "db:bootstrap": "pnpm --filter @muster/database bootstrap",
-    "db:seed": "pnpm --filter @muster/database seed",
-    "screenshots": "playwright test tests/screenshots.spec.ts",
-    "format": "prettier --write .",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "dev": "pnpm dev:ops",
+    "dev:ops": "pnpm --filter @muster/ops-app dev",
+    "dev:web": "pnpm --filter @muster/web dev",
+    "start:ops": "pnpm --filter @muster/ops-app start",
+    "build": "pnpm --filter @muster/web build",
+    "typecheck": "pnpm -r --filter @muster/ops --filter @muster/ops-app --filter @muster/web typecheck",
+    "test": "vitest run",
+    "lint": "pnpm typecheck"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.0",
     "@types/node": "^24.0.0",
-    "prettier": "^3.6.2",
-    "turbo": "2.10.7",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
   }
