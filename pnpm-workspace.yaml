@@ -6,7 +6,7 @@ injectWorkspacePackages: true
 
 allowBuilds:
   esbuild: true
-  sharp: set this to true or false
+  sharp: true
 
 catalog:
   typescript: 7.0.2
