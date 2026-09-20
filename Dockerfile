@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-bookworm-slim AS base
+FROM node:25-bookworm-slim AS base
 WORKDIR /app
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -41,7 +41,7 @@ COPY package.json pnpm-workspace.yaml ./
 WORKDIR /app/apps/web
 RUN pnpm exec next build
 
-FROM node:24-bookworm-slim AS web
+FROM node:25-bookworm-slim AS web
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
