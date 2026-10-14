@@ -1,0 +1,9 @@
+title = "Muster"
+
+[allowlist]
+description = "Removed MCP test fixtures and homelab example placeholders that trip generic-api-key"
+paths = [
+  '''packages/mcp/src/knowledge\.test\.ts''',
+  '''packages/mcp/src/actions\.test\.ts''',
+  '''deploy/docker/\.env\.homelab\.example''',
+]
